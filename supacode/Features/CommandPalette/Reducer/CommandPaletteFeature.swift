@@ -259,88 +259,72 @@ struct CommandPaletteFeature {
 
 private func globalCommandItems(showsNewWorktreeAction: Bool) -> [CommandPaletteItem] {
   var items: [CommandPaletteItem] = [
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalCheckForUpdates,
       title: "Check for Updates",
-      subtitle: nil,
-      kind: .checkForUpdates,
       category: .app,
-      defaultSuggestion: true,
+      kind: .checkForUpdates,
       keywords: ["update", "version"]
     ),
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalOpenSettings,
       title: "Open Settings",
-      subtitle: nil,
-      kind: .openSettings,
       category: .app,
-      defaultSuggestion: true,
+      kind: .openSettings,
       keywords: ["preferences", "config"]
     ),
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalOpenRepository,
       title: "Open Repository",
-      subtitle: nil,
-      kind: .openRepository,
       category: .app,
-      defaultSuggestion: true,
+      kind: .openRepository,
       keywords: ["repo", "add repo"]
     ),
   ]
   if showsNewWorktreeAction {
     items.append(
-      CommandPaletteItem(
+      .appShortcut(
         id: CommandPaletteItemID.globalNewWorktree,
         title: "New Worktree",
-        subtitle: nil,
-        kind: .newWorktree,
         category: .worktree,
-        defaultSuggestion: true,
+        kind: .newWorktree,
         keywords: ["worktree", "branch"]
       )
     )
   }
   items.append(
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalRefreshWorktrees,
       title: "Refresh Worktrees",
-      subtitle: nil,
-      kind: .refreshWorktrees,
       category: .worktree,
-      defaultSuggestion: true,
+      kind: .refreshWorktrees,
       keywords: ["reload", "rescan"]
     )
   )
   items.append(
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalJumpToLatestUnread,
       title: "Jump to Latest Unread",
-      subtitle: nil,
-      kind: .jumpToLatestUnread,
       category: .navigation,
-      defaultSuggestion: true,
+      kind: .jumpToLatestUnread,
       keywords: ["unread", "bell", "notification"]
     )
   )
   items.append(
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalViewArchivedWorktrees,
       title: "View Archived Worktrees",
-      subtitle: nil,
-      kind: .viewArchivedWorktrees,
       category: .worktree,
-      defaultSuggestion: true,
+      kind: .viewArchivedWorktrees,
       keywords: ["archive", "history"]
     )
   )
   items.append(
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalInstallCLI,
       title: "Install Command Line Tool",
-      subtitle: nil,
-      kind: .installCLI,
       category: .app,
-      defaultSuggestion: true,
+      kind: .installCLI,
       keywords: ["cli", "command line", "terminal", "prowl"]
     )
   )
@@ -826,6 +810,39 @@ private let filteredGhosttyActionKeys: Set<String> = [
 private func ghosttyCommandItems(_ commands: [GhosttyCommand]) -> [CommandPaletteItem] {
   commands.compactMap { command in
     guard !filteredGhosttyActionKeys.contains(command.actionKey) else { return nil }
+    return .ghosttyCommand(command)
+  }
+}
+
+extension CommandPaletteItem {
+  /// Build a top-level command backed by an `AppShortcuts` hotkey. Defaults to
+  /// `defaultSuggestion: true` (since these are the kinds of actions worth
+  /// listing when the palette opens with no query) and uses no subtitle (the
+  /// hotkey hint and title already do the work).
+  static func appShortcut(
+    id: String,
+    title: String,
+    category: Category,
+    kind: Kind,
+    keywords: [String] = [],
+    priorityTier: Int = defaultPriorityTier
+  ) -> CommandPaletteItem {
+    CommandPaletteItem(
+      id: id,
+      title: title,
+      subtitle: nil,
+      kind: kind,
+      category: category,
+      defaultSuggestion: true,
+      keywords: keywords,
+      priorityTier: priorityTier
+    )
+  }
+
+  /// Build an item wrapping a Ghostty command exposed via the runtime.
+  /// Lives in `.terminal`, ranks below regular suggestions (priority +100),
+  /// and is search-only (never surfaces on empty query).
+  static func ghosttyCommand(_ command: GhosttyCommand) -> CommandPaletteItem {
     let subtitle = command.description.trimmingCharacters(in: .whitespacesAndNewlines)
     return CommandPaletteItem(
       id: CommandPaletteItemID.ghosttyCommand(command),
