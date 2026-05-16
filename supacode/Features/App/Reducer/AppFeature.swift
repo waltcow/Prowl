@@ -54,6 +54,7 @@ struct AppFeature {
     var launchRestoreMode: LaunchRestoreMode
     var suppressLayoutSaveUntilRelaunch = false
     var launchedAt: Date?
+    var leftSidebarVisibility: NavigationSplitViewVisibility = .all
     @Presents var alert: AlertState<Alert>?
 
     init(
@@ -83,6 +84,9 @@ struct AppFeature {
     case requestQuit
     case newTerminal
     case jumpToLatestUnread
+    case toggleLeftSidebar
+    case showLeftSidebar
+    case setLeftSidebarVisibility(NavigationSplitViewVisibility)
     case runScript
     case runCustomCommand(Int)
     case runScriptDraftChanged(String)
@@ -679,6 +683,18 @@ struct AppFeature {
           }
         )
 
+      case .toggleLeftSidebar:
+        state.leftSidebarVisibility = state.leftSidebarVisibility == .detailOnly ? .all : .detailOnly
+        return .none
+
+      case .showLeftSidebar:
+        state.leftSidebarVisibility = .all
+        return .none
+
+      case .setLeftSidebarVisibility(let visibility):
+        state.leftSidebarVisibility = visibility
+        return .none
+
       case .runScript:
         guard let worktree = state.repositories.selectedTerminalWorktree else {
           return .none
@@ -1017,6 +1033,35 @@ struct AppFeature {
 
       case .commandPalette(.delegate(.installCLI)):
         return .send(.settings(.installCLIButtonTapped(showAlert: false)))
+
+      case .commandPalette(.delegate(.toggleLeftSidebar)):
+        return .send(.toggleLeftSidebar)
+
+      case .commandPalette(.delegate(.toggleActiveAgentsPanel)):
+        return .send(.repositories(.activeAgents(.togglePanelVisibility)))
+
+      case .commandPalette(.delegate(.toggleCanvas)):
+        return .send(.repositories(.toggleCanvas))
+
+      case .commandPalette(.delegate(.toggleShelf)):
+        return .send(.repositories(.toggleShelf))
+
+      case .commandPalette(.delegate(.showDiff)):
+        guard let worktreeID = state.repositories.selectedWorktreeID,
+          let worktree = state.repositories.worktree(for: worktreeID)
+        else {
+          return .none
+        }
+        let keybindings = state.resolvedKeybindings
+        return .run { _ in
+          await MainActor.run {
+            DiffWindowManager.shared.show(
+              worktreeURL: worktree.workingDirectory,
+              branchName: worktree.name,
+              resolvedKeybindings: keybindings
+            )
+          }
+        }
 
       case .commandPalette(.delegate(.ghosttyCommand(let action))):
         guard let worktree = state.repositories.selectedTerminalWorktree else {

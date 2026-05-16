@@ -538,7 +538,8 @@ private struct CommandPaletteRowView: View {
       .openPullRequest, .openRepositoryOnCodeHost, .markPullRequestReady, .mergePullRequest, .closePullRequest,
       .copyFailingJobURL,
       .copyCiFailureLogs,
-      .rerunFailedJobs, .openFailingCheckDetails, .worktreeSelect, .changeFocusedTabIcon:
+      .rerunFailedJobs, .openFailingCheckDetails, .worktreeSelect, .changeFocusedTabIcon,
+      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
       return nil
     case .removeWorktree:
       return "Remove"
@@ -595,6 +596,16 @@ private struct CommandPaletteRowView: View {
       return "trash"
     case .archiveWorktree:
       return "archivebox"
+    case .toggleLeftSidebar:
+      return "sidebar.left"
+    case .toggleActiveAgentsPanel:
+      return "person.2"
+    case .toggleCanvas:
+      return "square.grid.2x2"
+    case .toggleShelf:
+      return "books.vertical"
+    case .showDiff:
+      return "doc.text.magnifyingglass"
     #if DEBUG
       case .debugTestToast:
         return "ladybug"
@@ -611,7 +622,8 @@ private struct CommandPaletteRowView: View {
       .openPullRequest, .openRepositoryOnCodeHost, .markPullRequestReady, .mergePullRequest, .closePullRequest,
       .copyFailingJobURL,
       .copyCiFailureLogs,
-      .rerunFailedJobs, .openFailingCheckDetails, .changeFocusedTabIcon:
+      .rerunFailedJobs, .openFailingCheckDetails, .changeFocusedTabIcon,
+      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
       return true
     case .worktreeSelect, .removeWorktree, .archiveWorktree:
       return false
@@ -731,6 +743,16 @@ private struct CommandPaletteRowView: View {
       base = "Install Command Line Tool"
     case .changeFocusedTabIcon:
       base = "Change Tab Icon"
+    case .toggleLeftSidebar:
+      base = "Toggle Sidebar"
+    case .toggleActiveAgentsPanel:
+      base = "Toggle Active Agents Panel"
+    case .toggleCanvas:
+      base = "Toggle Canvas"
+    case .toggleShelf:
+      base = "Toggle Shelf"
+    case .showDiff:
+      base = "Show Diff"
     #if DEBUG
       case .debugTestToast, .debugSimulateUpdateFound:
         base = row.title

@@ -19,6 +19,10 @@ struct CommandPaletteFeatureTests {
       "global.jump-to-latest-unread",
       "global.view-archived-worktrees",
       "global.install-cli",
+      "global.toggle-left-sidebar",
+      "global.toggle-active-agents-panel",
+      "global.toggle-canvas",
+      "global.toggle-shelf",
     ]
     #if DEBUG
       expectedIDs.append(contentsOf: [
@@ -28,6 +32,22 @@ struct CommandPaletteFeatureTests {
       ])
     #endif
     expectNoDifference(items.map(\.id), expectedIDs)
+  }
+
+  @Test func commandPaletteItems_includesShowDiffWhenWorktreeSelected() {
+    let rootPath = "/tmp/repo-diff"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    #expect(items.contains { $0.id == "global.show-diff" })
+  }
+
+  @Test func commandPaletteItems_omitsShowDiffWithoutSelectedWorktree() {
+    let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
+    #expect(!items.contains { $0.id == "global.show-diff" })
   }
 
   @Test func commandPaletteItems_includeJumpToLatestUnreadAction() {
@@ -1441,6 +1461,8 @@ private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteIt
     return .pullRequest
   case .ghosttyCommand:
     return .terminal
+  case .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
+    return .view
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound:
       return .debug
@@ -1453,7 +1475,8 @@ private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
   case .checkForUpdates, .openSettings, .openRepository, .installCLI,
     .newWorktree, .refreshWorktrees, .viewArchivedWorktrees, .jumpToLatestUnread,
     .openPullRequest, .markPullRequestReady, .mergePullRequest, .closePullRequest,
-    .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails:
+    .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails,
+    .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
     return true
   case .worktreeSelect, .removeWorktree, .archiveWorktree, .changeFocusedTabIcon,
     .ghosttyCommand, .openRepositoryOnCodeHost:

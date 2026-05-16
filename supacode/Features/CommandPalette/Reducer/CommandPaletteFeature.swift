@@ -52,6 +52,11 @@ struct CommandPaletteFeature {
     case openFailingCheckDetails(Worktree.ID)
     case installCLI
     case changeFocusedTabIcon(Worktree.ID)
+    case toggleLeftSidebar
+    case toggleActiveAgentsPanel
+    case toggleCanvas
+    case toggleShelf
+    case showDiff
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -207,6 +212,17 @@ struct CommandPaletteFeature {
       repositories.repositories.isEmpty
       || repositories.repositories.contains { $0.capabilities.supportsWorktrees }
     var items = globalCommandItems(showsNewWorktreeAction: showsNewWorktreeAction)
+    if repositories.selectedWorktreeID != nil {
+      items.append(
+        .appShortcut(
+          id: CommandPaletteItemID.globalShowDiff,
+          title: "Show Diff",
+          category: .view,
+          kind: .showDiff,
+          keywords: ["diff", "changes", "git"]
+        )
+      )
+    }
     if let terminalWorktree = repositories.selectedTerminalWorktree {
       items.append(
         CommandPaletteItem(
@@ -328,7 +344,41 @@ private func globalCommandItems(showsNewWorktreeAction: Bool) -> [CommandPalette
       keywords: ["cli", "command line", "terminal", "prowl"]
     )
   )
+  items.append(contentsOf: viewToggleCommandItems())
   return items
+}
+
+private func viewToggleCommandItems() -> [CommandPaletteItem] {
+  [
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleLeftSidebar,
+      title: "Toggle Sidebar",
+      category: .view,
+      kind: .toggleLeftSidebar,
+      keywords: ["sidebar", "hide", "left panel"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleActiveAgentsPanel,
+      title: "Toggle Active Agents Panel",
+      category: .view,
+      kind: .toggleActiveAgentsPanel,
+      keywords: ["agents", "panel"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleCanvas,
+      title: "Toggle Canvas",
+      category: .view,
+      kind: .toggleCanvas,
+      keywords: ["canvas", "overview", "grid"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleShelf,
+      title: "Toggle Shelf",
+      category: .view,
+      kind: .toggleShelf,
+      keywords: ["shelf", "books"]
+    ),
+  ]
 }
 
 private func selectedCodeHostItems(
@@ -598,6 +648,11 @@ private enum CommandPaletteItemID {
   static let globalJumpToLatestUnread = "global.jump-to-latest-unread"
   static let globalViewArchivedWorktrees = "global.view-archived-worktrees"
   static let globalInstallCLI = "global.install-cli"
+  static let globalToggleLeftSidebar = "global.toggle-left-sidebar"
+  static let globalToggleActiveAgentsPanel = "global.toggle-active-agents-panel"
+  static let globalToggleCanvas = "global.toggle-canvas"
+  static let globalToggleShelf = "global.toggle-shelf"
+  static let globalShowDiff = "global.show-diff"
 
   static var globalIDs: [CommandPaletteItem.ID] {
     [
@@ -609,6 +664,11 @@ private enum CommandPaletteItemID {
       globalJumpToLatestUnread,
       globalViewArchivedWorktrees,
       globalInstallCLI,
+      globalToggleLeftSidebar,
+      globalToggleActiveAgentsPanel,
+      globalToggleCanvas,
+      globalToggleShelf,
+      globalShowDiff,
     ]
   }
 
@@ -720,7 +780,12 @@ private func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPalette
     .viewArchivedWorktrees,
     .refreshWorktrees,
     .jumpToLatestUnread,
-    .installCLI:
+    .installCLI,
+    .toggleLeftSidebar,
+    .toggleActiveAgentsPanel,
+    .toggleCanvas,
+    .toggleShelf,
+    .showDiff:
     fatalError("appDelegateAction should handle app-level command palette actions")
   }
 }
@@ -743,6 +808,16 @@ private func appDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPale
     return .jumpToLatestUnread
   case .installCLI:
     return .installCLI
+  case .toggleLeftSidebar:
+    return .toggleLeftSidebar
+  case .toggleActiveAgentsPanel:
+    return .toggleActiveAgentsPanel
+  case .toggleCanvas:
+    return .toggleCanvas
+  case .toggleShelf:
+    return .toggleShelf
+  case .showDiff:
+    return .showDiff
   default:
     return nil
   }
@@ -781,7 +856,12 @@ private func pullRequestDelegateAction(
     .jumpToLatestUnread,
     .installCLI,
     .ghosttyCommand,
-    .changeFocusedTabIcon:
+    .changeFocusedTabIcon,
+    .toggleLeftSidebar,
+    .toggleActiveAgentsPanel,
+    .toggleCanvas,
+    .toggleShelf,
+    .showDiff:
     return nil
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound:

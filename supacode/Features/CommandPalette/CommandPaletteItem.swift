@@ -63,6 +63,11 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case openFailingCheckDetails(Worktree.ID)
     case installCLI
     case changeFocusedTabIcon(Worktree.ID)
+    case toggleLeftSidebar
+    case toggleActiveAgentsPanel
+    case toggleCanvas
+    case toggleShelf
+    case showDiff
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -100,6 +105,16 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case .openPullRequest,
       .openRepositoryOnCodeHost:
       return AppShortcuts.CommandID.openPullRequest
+    case .toggleLeftSidebar:
+      return AppShortcuts.CommandID.toggleLeftSidebar
+    case .toggleActiveAgentsPanel:
+      return AppShortcuts.CommandID.toggleActiveAgentsPanel
+    case .toggleCanvas:
+      return AppShortcuts.CommandID.toggleCanvas
+    case .toggleShelf:
+      return AppShortcuts.CommandID.toggleShelf
+    case .showDiff:
+      return AppShortcuts.CommandID.showDiff
     case .ghosttyCommand,
       .markPullRequestReady,
       .mergePullRequest,
