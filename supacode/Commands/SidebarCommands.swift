@@ -55,7 +55,7 @@ struct SidebarCommands: Commands {
       )
       .help(helpText(title: "Select Previous Book", commandID: AppShortcuts.CommandID.selectPreviousShelfBook))
       shelfBookMenuButtons
-      Button("Show Diff") {
+      Button("Show Diff", systemImage: "plusminus.circle") {
         let repos = store.repositories
         guard let worktreeID = repos.selectedWorktreeID,
           let worktree = repos.worktree(for: worktreeID)
