@@ -50,6 +50,28 @@ struct CommandPaletteFeatureTests {
     #expect(!items.contains { $0.id == "global.show-diff" })
   }
 
+  @Test func commandPaletteItems_includesWorktreeNavigationWhenWorktreeSelected() {
+    let rootPath = "/tmp/repo-nav"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let ids = Set(items.map(\.id))
+    #expect(ids.contains("global.reveal-in-finder"))
+    #expect(ids.contains("global.copy-path"))
+    #expect(ids.contains("global.reveal-in-sidebar"))
+  }
+
+  @Test func commandPaletteItems_omitsWorktreeNavigationWithoutSelectedWorktree() {
+    let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
+    let ids = Set(items.map(\.id))
+    #expect(!ids.contains("global.reveal-in-finder"))
+    #expect(!ids.contains("global.copy-path"))
+    #expect(!ids.contains("global.reveal-in-sidebar"))
+  }
+
   @Test func commandPaletteItems_includeJumpToLatestUnreadAction() {
     let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
     let item = items.first { $0.id == "global.jump-to-latest-unread" }
@@ -1453,7 +1475,7 @@ private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteIt
   case .newWorktree, .refreshWorktrees, .viewArchivedWorktrees,
     .removeWorktree, .archiveWorktree, .changeFocusedTabIcon:
     return .worktree
-  case .jumpToLatestUnread, .worktreeSelect:
+  case .jumpToLatestUnread, .worktreeSelect, .revealInFinder, .copyPath, .revealInSidebar:
     return .navigation
   case .openPullRequest, .openRepositoryOnCodeHost, .markPullRequestReady,
     .mergePullRequest, .closePullRequest, .copyFailingJobURL, .copyCiFailureLogs,
@@ -1476,7 +1498,8 @@ private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
     .newWorktree, .refreshWorktrees, .viewArchivedWorktrees, .jumpToLatestUnread,
     .openPullRequest, .markPullRequestReady, .mergePullRequest, .closePullRequest,
     .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails,
-    .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
+    .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
+    .revealInFinder, .copyPath, .revealInSidebar:
     return true
   case .worktreeSelect, .removeWorktree, .archiveWorktree, .changeFocusedTabIcon,
     .ghosttyCommand, .openRepositoryOnCodeHost:

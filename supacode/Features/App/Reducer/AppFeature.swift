@@ -135,6 +135,21 @@ struct AppFeature {
     }
   }
 
+  /// Delegate actions that intentionally shift focus elsewhere (selection
+  /// changes, view changes that swap the focused terminal). These skip the
+  /// post-delegate focus restore so we don't fight the natural new focus.
+  private static func commandPaletteDelegateChangesActiveSelection(
+    _ delegate: CommandPaletteFeature.Delegate
+  ) -> Bool {
+    switch delegate {
+    case .selectWorktree, .jumpToLatestUnread, .viewArchivedWorktrees,
+      .newWorktree, .toggleCanvas:
+      return true
+    default:
+      return false
+    }
+  }
+
   private func commandPaletteTerminalFocusTarget(repositories: RepositoriesFeature.State) -> Worktree? {
     if let worktree = repositories.selectedTerminalWorktree {
       return worktree
@@ -994,10 +1009,7 @@ struct AppFeature {
         return .send(.repositories(.selectWorktree(worktreeID)))
 
       case .commandPalette(.delegate(.checkForUpdates)):
-        return .merge(
-          .send(.updates(.checkForUpdates)),
-          restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
-        )
+        return .send(.updates(.checkForUpdates))
 
       case .commandPalette(.delegate(.openSettings)):
         return .merge(
@@ -1023,10 +1035,7 @@ struct AppFeature {
         return .send(.repositories(.selectArchivedWorktrees))
 
       case .commandPalette(.delegate(.refreshWorktrees)):
-        return .merge(
-          .send(.repositories(.refreshWorktrees)),
-          restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
-        )
+        return .send(.repositories(.refreshWorktrees))
 
       case .commandPalette(.delegate(.jumpToLatestUnread)):
         return .send(.jumpToLatestUnread)
@@ -1062,6 +1071,28 @@ struct AppFeature {
             )
           }
         }
+
+      case .commandPalette(.delegate(.revealInFinder)):
+        return .send(.openWorktree(.finder))
+
+      case .commandPalette(.delegate(.copyPath)):
+        guard let worktree = state.repositories.selectedTerminalWorktree else {
+          return .none
+        }
+        let path = worktree.workingDirectory.path
+        return .run { _ in
+          await MainActor.run {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(path, forType: .string)
+          }
+        }
+
+      case .commandPalette(.delegate(.revealInSidebar)):
+        guard state.repositories.selectedWorktreeID != nil else { return .none }
+        return .merge(
+          .send(.showLeftSidebar),
+          .send(.repositories(.revealSelectedWorktreeInSidebar))
+        )
 
       case .commandPalette(.delegate(.ghosttyCommand(let action))):
         guard let worktree = state.repositories.selectedTerminalWorktree else {
@@ -1107,10 +1138,7 @@ struct AppFeature {
 
       #if DEBUG
         case .commandPalette(.delegate(.debugTestToast(let toast))):
-          return .merge(
-            .send(.repositories(.showToast(toast))),
-            restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
-          )
+          return .send(.repositories(.showToast(toast)))
 
         case .commandPalette(.delegate(.debugSimulateUpdateFound)):
           return .send(.updates(.debugSimulateUpdateFound))
@@ -1244,6 +1272,18 @@ struct AppFeature {
       }
     }
     core
+    Reduce<State, Action> { state, action in
+      // Default-on focus restore: every command-palette delegate action that
+      // doesn't intentionally shift selection sends focus back to the active
+      // terminal once its effect has dispatched. Runs after `core` so it
+      // sees the same action and adds a parallel effect.
+      guard case .commandPalette(.delegate(let delegate)) = action,
+        !Self.commandPaletteDelegateChangesActiveSelection(delegate)
+      else {
+        return .none
+      }
+      return restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
+    }
     Scope(state: \.repositories, action: \.repositories) {
       RepositoriesFeature()
     }

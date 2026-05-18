@@ -539,7 +539,8 @@ private struct CommandPaletteRowView: View {
       .copyFailingJobURL,
       .copyCiFailureLogs,
       .rerunFailedJobs, .openFailingCheckDetails, .worktreeSelect, .changeFocusedTabIcon,
-      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
+      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
+      .revealInFinder, .copyPath, .revealInSidebar:
       return nil
     case .removeWorktree:
       return "Remove"
@@ -606,6 +607,12 @@ private struct CommandPaletteRowView: View {
       return "books.vertical"
     case .showDiff:
       return "plusminus.circle"
+    case .revealInFinder:
+      return "folder"
+    case .copyPath:
+      return "doc.on.clipboard"
+    case .revealInSidebar:
+      return "sidebar.left.badge.dot"
     #if DEBUG
       case .debugTestToast:
         return "ladybug"
@@ -623,7 +630,8 @@ private struct CommandPaletteRowView: View {
       .copyFailingJobURL,
       .copyCiFailureLogs,
       .rerunFailedJobs, .openFailingCheckDetails, .changeFocusedTabIcon,
-      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
+      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
+      .revealInFinder, .copyPath, .revealInSidebar:
       return true
     case .worktreeSelect, .removeWorktree, .archiveWorktree:
       return false
@@ -753,6 +761,12 @@ private struct CommandPaletteRowView: View {
       base = "Toggle Shelf"
     case .showDiff:
       base = "Show Diff"
+    case .revealInFinder:
+      base = "Reveal in Finder"
+    case .copyPath:
+      base = "Copy Path"
+    case .revealInSidebar:
+      base = "Reveal in Sidebar"
     #if DEBUG
       case .debugTestToast, .debugSimulateUpdateFound:
         base = row.title

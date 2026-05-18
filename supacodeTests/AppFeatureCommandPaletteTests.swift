@@ -1,7 +1,9 @@
+import AppKit
 import ComposableArchitecture
 import DependenciesTestSupport
 import Foundation
 import IdentifiedCollections
+import SwiftUI
 import Testing
 
 @testable import supacode
@@ -325,11 +327,170 @@ struct AppFeatureCommandPaletteTests {
     await store.send(.commandPalette(.delegate(.ghosttyCommand("goto_split:right"))))
     await store.finish()
 
-    #expect(
-      sent.value == [
-        .performBindingAction(worktree, action: "goto_split:right")
-      ]
+    // Two effects run in parallel (.merge) — assert both fire without
+    // depending on dispatch order.
+    #expect(sent.value.count == 2)
+    #expect(sent.value.contains(.performBindingAction(worktree, action: "goto_split:right")))
+    #expect(sent.value.contains(.focusSelectedTab(worktree)))
+  }
+
+  @Test(.dependencies) func viewToggleDelegateRestoresTerminalFocusByDefault() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-view-toggle/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-view-toggle"
     )
+    let repository = makeRepository(id: "/tmp/repo-view-toggle", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.send = { command in
+        sent.withValue { $0.append(command) }
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.toggleLeftSidebar)))
+    await store.finish()
+
+    #expect(sent.value.contains(.focusSelectedTab(worktree)))
+  }
+
+  @Test(.dependencies) func toggleCanvasDelegateDoesNotRestoreTerminalFocus() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-canvas-toggle/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-canvas-toggle"
+    )
+    let repository = makeRepository(id: "/tmp/repo-canvas-toggle", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.send = { command in
+        sent.withValue { $0.append(command) }
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.toggleCanvas)))
+    await store.finish()
+
+    #expect(!sent.value.contains(.focusSelectedTab(worktree)))
+  }
+
+  @Test(.dependencies) func revealInFinderDispatchesOpenWorktreeFinder() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-finder/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-finder"
+    )
+    let repository = makeRepository(id: "/tmp/repo-finder", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.revealInFinder)))
+    await store.receive(\.openWorktree)
+  }
+
+  @Test(.dependencies) func copyPathWritesWorktreePathToPasteboard() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-copy/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-copy"
+    )
+    let repository = makeRepository(id: "/tmp/repo-copy", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    }
+
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString("__sentinel__", forType: .string)
+
+    await store.send(.commandPalette(.delegate(.copyPath)))
+    await store.finish()
+
+    #expect(NSPasteboard.general.string(forType: .string) == worktree.workingDirectory.path)
+  }
+
+  @Test(.dependencies) func copyPathWithoutSelectedWorktreeIsNoop() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+
+    await store.send(.commandPalette(.delegate(.copyPath)))
+    await store.finish()
+  }
+
+  @Test(.dependencies) func revealInSidebarShowsSidebarAndReveals() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-reveal/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-reveal"
+    )
+    let repository = makeRepository(id: "/tmp/repo-reveal", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    var appState = AppFeature.State(
+      repositories: repositoriesState,
+      settings: SettingsFeature.State()
+    )
+    appState.leftSidebarVisibility = .detailOnly
+    let store = TestStore(initialState: appState) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.revealInSidebar)))
+    await store.receive(\.showLeftSidebar) {
+      $0.leftSidebarVisibility = .all
+    }
+    await store.receive(\.repositories.revealSelectedWorktreeInSidebar)
+  }
+
+  @Test(.dependencies) func revealInSidebarWithoutSelectedWorktreeIsNoop() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+
+    await store.send(.commandPalette(.delegate(.revealInSidebar)))
+    await store.finish()
   }
 
   @Test(.dependencies) func closePullRequestDispatchesAction() async {

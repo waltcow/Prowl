@@ -68,6 +68,9 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case toggleCanvas
     case toggleShelf
     case showDiff
+    case revealInFinder
+    case copyPath
+    case revealInSidebar
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -115,6 +118,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
       return AppShortcuts.CommandID.toggleShelf
     case .showDiff:
       return AppShortcuts.CommandID.showDiff
+    case .revealInSidebar:
+      return AppShortcuts.CommandID.revealInSidebar
     case .ghosttyCommand,
       .markPullRequestReady,
       .mergePullRequest,
@@ -127,7 +132,9 @@ struct CommandPaletteItem: Identifiable, Equatable {
       .worktreeSelect,
       .removeWorktree,
       .archiveWorktree,
-      .changeFocusedTabIcon:
+      .changeFocusedTabIcon,
+      .revealInFinder,
+      .copyPath:
       return nil
     #if DEBUG
       case .debugTestToast, .debugSimulateUpdateFound:

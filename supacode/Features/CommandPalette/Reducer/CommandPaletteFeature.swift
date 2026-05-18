@@ -57,6 +57,9 @@ struct CommandPaletteFeature {
     case toggleCanvas
     case toggleShelf
     case showDiff
+    case revealInFinder
+    case copyPath
+    case revealInSidebar
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -222,6 +225,7 @@ struct CommandPaletteFeature {
           keywords: ["diff", "changes", "git"]
         )
       )
+      items.append(contentsOf: worktreeNavigationCommandItems())
     }
     if let terminalWorktree = repositories.selectedTerminalWorktree {
       items.append(
@@ -346,6 +350,32 @@ private func globalCommandItems(showsNewWorktreeAction: Bool) -> [CommandPalette
   )
   items.append(contentsOf: viewToggleCommandItems())
   return items
+}
+
+private func worktreeNavigationCommandItems() -> [CommandPaletteItem] {
+  [
+    .appShortcut(
+      id: CommandPaletteItemID.globalRevealInFinder,
+      title: "Reveal in Finder",
+      category: .navigation,
+      kind: .revealInFinder,
+      keywords: ["finder", "open", "show"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalCopyPath,
+      title: "Copy Path",
+      category: .navigation,
+      kind: .copyPath,
+      keywords: ["copy", "path", "clipboard"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalRevealInSidebar,
+      title: "Reveal in Sidebar",
+      category: .navigation,
+      kind: .revealInSidebar,
+      keywords: ["reveal", "locate", "find worktree"]
+    ),
+  ]
 }
 
 private func viewToggleCommandItems() -> [CommandPaletteItem] {
@@ -653,6 +683,9 @@ private enum CommandPaletteItemID {
   static let globalToggleCanvas = "global.toggle-canvas"
   static let globalToggleShelf = "global.toggle-shelf"
   static let globalShowDiff = "global.show-diff"
+  static let globalRevealInFinder = "global.reveal-in-finder"
+  static let globalCopyPath = "global.copy-path"
+  static let globalRevealInSidebar = "global.reveal-in-sidebar"
 
   static var globalIDs: [CommandPaletteItem.ID] {
     [
@@ -669,6 +702,9 @@ private enum CommandPaletteItemID {
       globalToggleCanvas,
       globalToggleShelf,
       globalShowDiff,
+      globalRevealInFinder,
+      globalCopyPath,
+      globalRevealInSidebar,
     ]
   }
 
@@ -785,12 +821,18 @@ private func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPalette
     .toggleActiveAgentsPanel,
     .toggleCanvas,
     .toggleShelf,
-    .showDiff:
+    .showDiff,
+    .revealInFinder,
+    .copyPath,
+    .revealInSidebar:
     fatalError("appDelegateAction should handle app-level command palette actions")
   }
 }
 
 private func appDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.Delegate? {
+  if let delegate = navigationDelegateAction(for: kind) {
+    return delegate
+  }
   switch kind {
   case .checkForUpdates:
     return .checkForUpdates
@@ -818,6 +860,19 @@ private func appDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPale
     return .toggleShelf
   case .showDiff:
     return .showDiff
+  default:
+    return nil
+  }
+}
+
+private func navigationDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.Delegate? {
+  switch kind {
+  case .revealInFinder:
+    return .revealInFinder
+  case .copyPath:
+    return .copyPath
+  case .revealInSidebar:
+    return .revealInSidebar
   default:
     return nil
   }
@@ -861,7 +916,10 @@ private func pullRequestDelegateAction(
     .toggleActiveAgentsPanel,
     .toggleCanvas,
     .toggleShelf,
-    .showDiff:
+    .showDiff,
+    .revealInFinder,
+    .copyPath,
+    .revealInSidebar:
     return nil
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound:
