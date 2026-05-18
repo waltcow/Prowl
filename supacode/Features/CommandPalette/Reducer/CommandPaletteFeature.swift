@@ -64,7 +64,6 @@ struct CommandPaletteFeature {
     case stopRunScript
     case togglePinWorktree(Worktree.ID, isCurrentlyPinned: Bool)
     case renameBranch
-    case newTab
     case openRepositorySettings(Repository.ID)
     case runCustomCommand(Int)
     #if DEBUG
@@ -244,15 +243,6 @@ struct CommandPaletteFeature {
     }
     items.append(contentsOf: customCommandItems(customCommands))
     if let terminalWorktree = repositories.selectedTerminalWorktree {
-      items.append(
-        .appShortcut(
-          id: CommandPaletteItemID.globalNewTab,
-          title: "New Tab",
-          category: .worktree,
-          kind: .newTab,
-          keywords: ["new", "tab", "terminal"]
-        )
-      )
       items.append(
         CommandPaletteItem(
           id: CommandPaletteItemID.changeFocusedTabIcon(terminalWorktree.id),
@@ -853,7 +843,6 @@ private enum CommandPaletteItemID {
   static let globalTogglePinWorktree = "global.toggle-pin-worktree"
   static let globalRenameBranch = "global.rename-branch"
   static let globalDeleteWorktree = "global.delete-worktree"
-  static let globalNewTab = "global.new-tab"
 
   static func openRepositorySettings(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
     "repo.\(repositoryID).open-settings"
@@ -886,7 +875,6 @@ private enum CommandPaletteItemID {
       globalTogglePinWorktree,
       globalRenameBranch,
       globalDeleteWorktree,
-      globalNewTab,
     ]
   }
 
@@ -1016,8 +1004,7 @@ private func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPalette
     .revealInSidebar,
     .runScript,
     .stopRunScript,
-    .renameBranch,
-    .newTab:
+    .renameBranch:
     fatalError("appDelegateAction should handle app-level command palette actions")
   }
 }
@@ -1052,8 +1039,6 @@ private func appDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPale
     return .stopRunScript
   case .renameBranch:
     return .renameBranch
-  case .newTab:
-    return .newTab
   default:
     return nil
   }
@@ -1136,7 +1121,6 @@ private func pullRequestDelegateAction(
     .togglePinWorktree,
     .renameBranch,
     .deleteWorktree,
-    .newTab,
     .openRepositorySettings,
     .runCustomCommand:
     return nil

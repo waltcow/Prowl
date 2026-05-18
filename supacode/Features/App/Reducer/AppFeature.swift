@@ -1107,9 +1107,6 @@ struct AppFeature {
         guard let worktreeID = state.repositories.selectedWorktreeID else { return .none }
         return .send(.repositories(.requestRenameBranchPrompt(worktreeID)))
 
-      case .commandPalette(.delegate(.newTab)):
-        return .send(.newTerminal)
-
       case .commandPalette(.delegate(.openRepositorySettings(let repositoryID))):
         return .merge(
           .send(.settings(.setSelection(.repository(repositoryID)))),
