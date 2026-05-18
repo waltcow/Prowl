@@ -64,6 +64,7 @@ struct CommandPaletteFeature {
     case stopRunScript
     case togglePinWorktree(Worktree.ID, isCurrentlyPinned: Bool)
     case renameBranch
+    case openRepositorySettings(Repository.ID)
     case runCustomCommand(Int)
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
@@ -254,6 +255,19 @@ struct CommandPaletteFeature {
       )
       items.append(contentsOf: ghosttyCommandItems(ghosttyCommands))
     }
+    if let repository = activeRepository(in: repositories) {
+      items.append(
+        CommandPaletteItem(
+          id: CommandPaletteItemID.openRepositorySettings(repository.id),
+          title: "Repo Settings",
+          subtitle: repository.name,
+          kind: .openRepositorySettings(repository.id),
+          category: .app,
+          defaultSuggestion: true,
+          keywords: ["repo", "settings", "configure", "preferences"]
+        )
+      )
+    }
     items.append(contentsOf: selectedCodeHostItems(from: repositories))
     #if DEBUG
       items.append(contentsOf: debugToastItems())
@@ -284,6 +298,7 @@ struct CommandPaletteFeature {
     ids.append(contentsOf: customCommands.map { CommandPaletteItemID.customCommand($0.id) })
     for repository in repositories {
       ids.append(contentsOf: CommandPaletteItemID.pullRequestIDs(repositoryID: repository.id))
+      ids.append(CommandPaletteItemID.openRepositorySettings(repository.id))
       for worktree in repository.worktrees {
         ids.append(CommandPaletteItemID.worktreeSelect(worktree.id))
         ids.append(CommandPaletteItemID.changeFocusedTabIcon(worktree.id))
@@ -435,6 +450,24 @@ private func worktreeActionCommandItems(
     )
   }
   return items
+}
+
+/// Resolves the "active" repository for repo-scoped palette commands:
+/// prefers an explicitly selected repo, then falls back to the repo that
+/// owns the currently-selected worktree. Returns nil when nothing relevant
+/// is selected (e.g., archived view, empty palette).
+private func activeRepository(
+  in repositories: RepositoriesFeature.State
+) -> Repository? {
+  if let repository = repositories.selectedRepository {
+    return repository
+  }
+  guard let worktreeID = repositories.selectedWorktreeID,
+    let repositoryID = repositories.repositoryID(containing: worktreeID)
+  else {
+    return nil
+  }
+  return repositories.repositories[id: repositoryID]
 }
 
 private func customCommandItems(_ commands: [UserCustomCommand]) -> [CommandPaletteItem] {
@@ -811,6 +844,10 @@ private enum CommandPaletteItemID {
   static let globalRenameBranch = "global.rename-branch"
   static let globalDeleteWorktree = "global.delete-worktree"
 
+  static func openRepositorySettings(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
+    "repo.\(repositoryID).open-settings"
+  }
+
   static func customCommand(_ commandID: String) -> CommandPaletteItem.ID {
     "custom-command.\(commandID)"
   }
@@ -929,6 +966,8 @@ private func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPalette
     return .changeFocusedTabIcon(worktreeID)
   case .togglePinWorktree(let worktreeID, let isCurrentlyPinned):
     return .togglePinWorktree(worktreeID, isCurrentlyPinned: isCurrentlyPinned)
+  case .openRepositorySettings(let repositoryID):
+    return .openRepositorySettings(repositoryID)
   case .runCustomCommand(let index, _, _):
     return .runCustomCommand(index)
   case .openPullRequest,
@@ -1082,6 +1121,7 @@ private func pullRequestDelegateAction(
     .togglePinWorktree,
     .renameBranch,
     .deleteWorktree,
+    .openRepositorySettings,
     .runCustomCommand:
     return nil
   #if DEBUG

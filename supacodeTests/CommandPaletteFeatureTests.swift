@@ -214,6 +214,37 @@ struct CommandPaletteFeatureTests {
     )
   }
 
+  @Test func commandPaletteItems_includesRepoSettingsForSelectedWorktree() {
+    let rootPath = "/tmp/repo-settings"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let item = items.first { $0.id == "repo.\(repository.id).open-settings" }
+    #expect(item?.title == "Repo Settings")
+    #expect(item?.subtitle == "Repo")
+    #expect(item?.kind == .openRepositorySettings(repository.id))
+    #expect(item?.category == .app)
+  }
+
+  @Test func commandPaletteItems_includesRepoSettingsForSelectedRepository() {
+    let rootPath = "/tmp/repo-settings-direct"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "RepoDirect", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .repository(repository.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    #expect(items.contains { $0.id == "repo.\(repository.id).open-settings" })
+  }
+
+  @Test func commandPaletteItems_omitsRepoSettingsWithoutSelection() {
+    let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
+    #expect(!items.contains { $0.id.hasPrefix("repo.") })
+  }
+
   @Test func commandPaletteItems_customCommandSubtitleVariants() {
     let shellCmd = UserCustomCommand(
       id: "cmd-shell",
@@ -1659,7 +1690,8 @@ private func makeItem(
 
 private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteItem.Category {
   switch kind {
-  case .checkForUpdates, .openSettings, .openRepository, .installCLI:
+  case .checkForUpdates, .openSettings, .openRepository, .installCLI,
+    .openRepositorySettings:
     return .app
   case .newWorktree, .refreshWorktrees, .viewArchivedWorktrees,
     .removeWorktree, .archiveWorktree, .changeFocusedTabIcon,
@@ -1691,7 +1723,8 @@ private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
     .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails,
     .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
     .revealInFinder, .copyPath, .revealInSidebar,
-    .runScript, .stopRunScript, .togglePinWorktree, .renameBranch:
+    .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
+    .openRepositorySettings:
     return true
   case .worktreeSelect, .removeWorktree, .archiveWorktree, .changeFocusedTabIcon,
     .ghosttyCommand, .openRepositoryOnCodeHost,

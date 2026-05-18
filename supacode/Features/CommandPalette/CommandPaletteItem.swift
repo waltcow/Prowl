@@ -76,6 +76,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case togglePinWorktree(Worktree.ID, isCurrentlyPinned: Bool)
     case deleteWorktree(Worktree.ID, Repository.ID)
     case renameBranch
+    case openRepositorySettings(Repository.ID)
     case runCustomCommand(index: Int, commandID: String, systemImage: String)
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
@@ -149,6 +150,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
       .copyPath,
       .togglePinWorktree,
       .deleteWorktree,
+      .openRepositorySettings,
       .runCustomCommand:
       return nil
     #if DEBUG
