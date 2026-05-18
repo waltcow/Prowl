@@ -242,6 +242,13 @@ private struct WorktreeRowPreview: View {
         id: "diff", name: "feature/sidebar-redesign", worktreeName: "sidebar-redesign",
         addedLines: 120, removedLines: 45
       )
+      row(
+        id: "long-diff",
+        name: "feature/long-running-sidebar-layout-stress-case",
+        worktreeName: "sidebar-layout-stress",
+        addedLines: 632,
+        removedLines: 344
+      )
       row(id: "pinned", name: "feature/pinned-branch", worktreeName: "pinned-branch", isPinned: true)
       row(id: "running", name: "feature/auth-flow", worktreeName: "auth-flow", taskStatus: .running)
       row(id: "loading", name: "creating-worktree...", worktreeName: "Setting up", isLoading: true)
@@ -329,6 +336,7 @@ private struct WorktreeRowChangeCountView: View {
     .lineLimit(1)
     .padding(.horizontal, 4)
     .padding(.vertical, 0)
+    .fixedSize(horizontal: true, vertical: false)
     .overlay {
       RoundedRectangle(cornerRadius: 4, style: .continuous)
         .stroke(isSelected ? AnyShapeStyle(.secondary.opacity(0.3)) : AnyShapeStyle(.tertiary), lineWidth: 1)
