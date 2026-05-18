@@ -541,7 +541,8 @@ private struct CommandPaletteRowView: View {
       .rerunFailedJobs, .openFailingCheckDetails, .worktreeSelect, .changeFocusedTabIcon,
       .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
       .revealInFinder, .copyPath, .revealInSidebar,
-      .runScript, .stopRunScript, .togglePinWorktree, .renameBranch, .runCustomCommand:
+      .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
+      .newTab, .openRepositorySettings, .runCustomCommand:
       return nil
     case .removeWorktree:
       return "Remove"
@@ -624,6 +625,10 @@ private struct CommandPaletteRowView: View {
       return isCurrentlyPinned ? "pin.slash" : "pin"
     case .renameBranch:
       return "pencil"
+    case .newTab:
+      return "plus.rectangle.on.rectangle"
+    case .openRepositorySettings:
+      return "gearshape"
     case .deleteWorktree:
       return "trash"
     case .runCustomCommand(_, _, let systemImage):
@@ -648,6 +653,7 @@ private struct CommandPaletteRowView: View {
       .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
+      .newTab, .openRepositorySettings,
       .deleteWorktree, .runCustomCommand:
       return true
     case .worktreeSelect, .removeWorktree, .archiveWorktree:
@@ -792,6 +798,10 @@ private struct CommandPaletteRowView: View {
       base = isCurrentlyPinned ? "Unpin Worktree" : "Pin Worktree"
     case .renameBranch:
       base = "Rename Branch"
+    case .newTab:
+      base = "New Tab"
+    case .openRepositorySettings:
+      base = "Open Repo Settings"
     case .deleteWorktree:
       base = "Delete \(row.title)"
     case .runCustomCommand:
