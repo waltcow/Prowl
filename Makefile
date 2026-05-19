@@ -29,7 +29,7 @@ PROWL_POSTHOG_API_KEY ?=
 PROWL_POSTHOG_HOST ?=
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _check-ghostty-hash _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-cli-smoke test-cli-integration bump-version bump-and-release log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _check-ghostty-hash _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration bump-version bump-and-release log-stream
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -71,7 +71,7 @@ _check-ghostty-hash:
 	done; \
 	if [ "$$current_sha" != "$$last_sha" ] || [ "$$artifacts_ok" -ne 1 ]; then \
 		echo "Syncing GhosttyKit for submodule $$current_sha"; \
-		$(MAKE) -B build-ghostty-xcframework; \
+		$(MAKE) -B build-ghostty-xcframework || exit $$?; \
 		if [ "$$current_sha" != "$$last_sha" ]; then \
 			rm -rf ~/Library/Developer/Xcode/DerivedData/supacode-*; \
 			echo "Cleared Xcode DerivedData for ghostty header/module changes"; \
@@ -276,7 +276,9 @@ archive: build-ghostty-xcframework embed-cli # Archive Release build for distrib
 export-archive: # Export xarchive
 	bash -o pipefail -c 'xcodebuild -exportArchive -archivePath build/supacode.xcarchive -exportPath build/export -exportOptionsPlist build/ExportOptions.plist 2>&1 | mise exec -- xcsift -qw --format toon'
 
-test: ensure-ghostty
+test: ensure-ghostty embed-cli-debug test-app
+
+test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	@set -euo pipefail; \
 	result_bundle="$(CURRENT_MAKEFILE_DIR)/build/test-results/supacode-tests.xcresult"; \
 	mkdir -p "$$(dirname "$$result_bundle")"; \

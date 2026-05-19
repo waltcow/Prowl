@@ -26,9 +26,40 @@ jobs:
       - uses: ./.github/actions/setup-macos
       - run: make lint
       - run: make build-app
-      - run: make test
-      - run: make test-cli-smoke
-      - run: make test-cli-integration
+      - name: Run tests in parallel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci-logs
+
+          run_task() {
+            local name="$1"
+            shift
+            local log="build/ci-logs/${name}.log"
+            echo "::group::${name}"
+            if "$@" >"$log" 2>&1; then
+              cat "$log"
+              echo "::endgroup::"
+              return 0
+            fi
+            local status=$?
+            cat "$log"
+            echo "::endgroup::"
+            return "$status"
+          }
+
+          run_task app-tests make test-app &
+          pid_app=$!
+          run_task cli-smoke make test-cli-smoke &
+          pid_smoke=$!
+          run_task cli-integration make test-cli-integration &
+          pid_cli=$!
+
+          failed=0
+          wait "$pid_app" || failed=1
+          wait "$pid_smoke" || failed=1
+          wait "$pid_cli" || failed=1
+          exit "$failed"
       - name: Upload xcresult bundle (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
