@@ -78,97 +78,7 @@ struct CanvasView: View {
           .onTapGesture { clearSelection(states: activeStates) }
           .gesture(canvasPanGesture)
 
-        // Cards layer: one card per open tab across all worktrees.
-        // Uses .offset() (not .position()) to avoid parent size proposals
-        // reaching the NSView, keeping terminal grid stable during zoom.
-        ForEach(activeStates, id: \.worktreeID) { state in
-          ForEach(state.tabManager.tabs) { tab in
-            if state.surfaceView(for: tab.id) != nil {
-              let tree = state.splitTree(for: tab.id)
-              let cardKey = tab.id.rawValue.uuidString
-              let baseLayout = layoutStore.cardLayouts[cardKey] ?? CanvasCardLayout(position: .zero)
-              let resized = resizedFrame(for: tab.id, baseLayout: baseLayout)
-              let screenCenter = screenPosition(for: resized.center)
-              let cardTotalHeight = resized.size.height + titleBarHeight
-              let unfocusedSplitOverlay = terminalManager.unfocusedSplitOverlay()
-              let splitDivider = terminalManager.splitDividerAppearance()
-
-              let repositoryAppearance = appearance(for: state.repositoryRootURL)
-              let resolvedRepositoryName = repositoryDisplayName(for: state.repositoryRootURL)
-              CanvasCardView(
-                repositoryName: resolvedRepositoryName,
-                worktreeName: tab.displayTitle,
-                repositoryIcon: repositoryAppearance.icon,
-                repositoryColor: repositoryAppearance.color?.color,
-                repositoryRootURL: state.repositoryRootURL,
-                tree: tree,
-                activeSurfaceID: state.activeSurfaceID(for: tab.id),
-                unfocusedSplitOverlay: unfocusedSplitOverlay,
-                splitDivider: splitDivider,
-                isFocused: selectionState.primaryTabID == tab.id,
-                isSelected: selectionState.selectedTabIDs.contains(tab.id),
-                hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
-                cardSize: resized.size,
-                canvasScale: canvasScale,
-                showsSelectionShield: showsSelectionShield(for: tab.id),
-                onTap: {
-                  let cmdHeld = NSEvent.modifierFlags.contains(.command)
-                  if cmdHeld {
-                    handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
-                  } else {
-                    focusSingleCard(tab.id, surfaceState: state, states: activeStates)
-                  }
-                },
-                onSelectionTap: {
-                  handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
-                },
-                onDragCommit: { translation in commitDrag(for: cardKey, translation: translation) },
-                onResize: { edge, translation in
-                  activeResize[tab.id] = ActiveResize(
-                    edge: edge,
-                    translation: CGSize(
-                      width: translation.width / canvasScale,
-                      height: translation.height / canvasScale
-                    )
-                  )
-                },
-                onResizeEnd: { commitResize(for: tab.id, cardKey: cardKey, surfaces: tree.leaves()) },
-                onSplitOperation: { operation in
-                  state.performSplitOperation(operation, in: tab.id)
-                  if selectionState.isBroadcasting {
-                    syncBroadcastCallbacks(states: activeStates)
-                  }
-                },
-                onTitleBarTap: {
-                  let wasAlreadyFocused =
-                    selectionState.primaryTabID == tab.id
-                    && selectionState.selectedTabIDs.count <= 1
-                  focusSingleCard(tab.id, surfaceState: state, states: activeStates)
-                  let now = Date()
-                  if wasAlreadyFocused,
-                    now.timeIntervalSince(lastTitleBarTapDate) <= NSEvent.doubleClickInterval
-                  {
-                    onExitToTab()
-                  }
-                  lastTitleBarTapDate = now
-                },
-                onExpand: {
-                  focusSingleCard(tab.id, surfaceState: state, states: activeStates)
-                  onExitToTab()
-                },
-                onClose: {
-                  state.closeTab(tab.id)
-                }
-              )
-              .scaleEffect(canvasScale, anchor: .center)
-              .offset(
-                x: screenCenter.x - resized.size.width / 2,
-                y: screenCenter.y - cardTotalHeight / 2
-              )
-              .zIndex(zIndex(for: tab.id))
-            }
-          }
-        }
+        cardsLayer(activeStates: activeStates)
       }
       .contentShape(.rect)
       .simultaneousGesture(canvasZoomGesture)
@@ -218,6 +128,112 @@ struct CanvasView: View {
     if selectionState.isSelecting { return true }
     if selectionState.isBroadcasting, selectionState.primaryTabID != tabID { return true }
     return false
+  }
+
+  // MARK: - Cards Layer
+
+  /// Cards layer: one card per open tab across all worktrees.
+  /// Uses .offset() (not .position()) to avoid parent size proposals
+  /// reaching the NSView, keeping terminal grid stable during zoom.
+  @ViewBuilder
+  private func cardsLayer(activeStates: [WorktreeTerminalState]) -> some View {
+    ForEach(activeStates, id: \.worktreeID) { state in
+      ForEach(state.tabManager.tabs) { tab in
+        if state.surfaceView(for: tab.id) != nil {
+          cardView(for: tab, in: state, activeStates: activeStates)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func cardView(
+    for tab: TerminalTabItem,
+    in state: WorktreeTerminalState,
+    activeStates: [WorktreeTerminalState]
+  ) -> some View {
+    let tree = state.splitTree(for: tab.id)
+    let cardKey = tab.id.rawValue.uuidString
+    let baseLayout = layoutStore.cardLayouts[cardKey] ?? CanvasCardLayout(position: .zero)
+    let resized = resizedFrame(for: tab.id, baseLayout: baseLayout)
+    let screenCenter = screenPosition(for: resized.center)
+    let cardTotalHeight = resized.size.height + titleBarHeight
+    let unfocusedSplitOverlay = terminalManager.unfocusedSplitOverlay()
+    let splitDivider = terminalManager.splitDividerAppearance()
+    let repositoryAppearance = appearance(for: state.repositoryRootURL)
+    let resolvedRepositoryName = repositoryDisplayName(for: state.repositoryRootURL)
+
+    CanvasCardView(
+      repositoryName: resolvedRepositoryName,
+      worktreeName: tab.displayTitle,
+      repositoryIcon: repositoryAppearance.icon,
+      repositoryColor: repositoryAppearance.color?.color,
+      repositoryRootURL: state.repositoryRootURL,
+      tree: tree,
+      activeSurfaceID: state.activeSurfaceID(for: tab.id),
+      unfocusedSplitOverlay: unfocusedSplitOverlay,
+      splitDivider: splitDivider,
+      isFocused: selectionState.primaryTabID == tab.id,
+      isSelected: selectionState.selectedTabIDs.contains(tab.id),
+      hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
+      cardSize: resized.size,
+      canvasScale: canvasScale,
+      showsSelectionShield: showsSelectionShield(for: tab.id),
+      onTap: {
+        let cmdHeld = NSEvent.modifierFlags.contains(.command)
+        if cmdHeld {
+          handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
+        } else {
+          focusSingleCard(tab.id, surfaceState: state, states: activeStates)
+        }
+      },
+      onSelectionTap: {
+        handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
+      },
+      onDragCommit: { translation in commitDrag(for: cardKey, translation: translation) },
+      onResize: { edge, translation in
+        activeResize[tab.id] = ActiveResize(
+          edge: edge,
+          translation: CGSize(
+            width: translation.width / canvasScale,
+            height: translation.height / canvasScale
+          )
+        )
+      },
+      onResizeEnd: { commitResize(for: tab.id, cardKey: cardKey, surfaces: tree.leaves()) },
+      onSplitOperation: { operation in
+        state.performSplitOperation(operation, in: tab.id)
+        if selectionState.isBroadcasting {
+          syncBroadcastCallbacks(states: activeStates)
+        }
+      },
+      onTitleBarTap: {
+        let wasAlreadyFocused =
+          selectionState.primaryTabID == tab.id
+          && selectionState.selectedTabIDs.count <= 1
+        focusSingleCard(tab.id, surfaceState: state, states: activeStates)
+        let now = Date()
+        if wasAlreadyFocused,
+          now.timeIntervalSince(lastTitleBarTapDate) <= NSEvent.doubleClickInterval
+        {
+          onExitToTab()
+        }
+        lastTitleBarTapDate = now
+      },
+      onExpand: {
+        focusSingleCard(tab.id, surfaceState: state, states: activeStates)
+        onExitToTab()
+      },
+      onClose: {
+        state.closeTab(tab.id)
+      }
+    )
+    .scaleEffect(canvasScale, anchor: .center)
+    .offset(
+      x: screenCenter.x - resized.size.width / 2,
+      y: screenCenter.y - cardTotalHeight / 2
+    )
+    .zIndex(zIndex(for: tab.id))
   }
 
   // MARK: - Canvas Gestures

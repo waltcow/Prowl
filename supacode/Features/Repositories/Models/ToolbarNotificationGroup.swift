@@ -33,27 +33,19 @@ extension RepositoriesFeature.State {
     terminalManager: WorktreeTerminalManager,
     customTitles: [Repository.ID: String] = [:]
   ) -> [ToolbarNotificationRepositoryGroup] {
-    let repositoriesByID = Dictionary(uniqueKeysWithValues: repositories.map { ($0.id, $0) })
+    var repositoriesByID: [Repository.ID: Repository] = [:]
+    repositoriesByID.reserveCapacity(repositories.count)
+    for repository in repositories {
+      repositoriesByID[repository.id] = repository
+    }
+
     var groups: [ToolbarNotificationRepositoryGroup] = []
-
     for repositoryID in orderedRepositoryIDs() {
-      guard let repository = repositoriesByID[repositoryID] else {
-        continue
-      }
-
-      let worktreeGroups: [ToolbarNotificationWorktreeGroup] =
-        orderedWorktrees(in: repository).compactMap { worktree -> ToolbarNotificationWorktreeGroup? in
-          guard let state = terminalManager.stateIfExists(for: worktree.id), !state.notifications.isEmpty else {
-            return nil
-          }
-          return ToolbarNotificationWorktreeGroup(
-            id: worktree.id,
-            name: worktree.name,
-            notifications: state.notifications,
-            hasUnseenNotifications: terminalManager.hasUnseenNotifications(for: worktree.id)
-          )
-        }
-
+      guard let repository = repositoriesByID[repositoryID] else { continue }
+      let worktreeGroups = worktreeNotificationGroups(
+        repository: repository,
+        terminalManager: terminalManager
+      )
       if !worktreeGroups.isEmpty {
         groups.append(
           ToolbarNotificationRepositoryGroup(
@@ -64,7 +56,27 @@ extension RepositoriesFeature.State {
         )
       }
     }
-
     return groups
+  }
+
+  private func worktreeNotificationGroups(
+    repository: Repository,
+    terminalManager: WorktreeTerminalManager
+  ) -> [ToolbarNotificationWorktreeGroup] {
+    var result: [ToolbarNotificationWorktreeGroup] = []
+    for worktree in orderedWorktrees(in: repository) {
+      guard let state = terminalManager.stateIfExists(for: worktree.id),
+        !state.notifications.isEmpty
+      else { continue }
+      result.append(
+        ToolbarNotificationWorktreeGroup(
+          id: worktree.id,
+          name: worktree.name,
+          notifications: state.notifications,
+          hasUnseenNotifications: terminalManager.hasUnseenNotifications(for: worktree.id)
+        )
+      )
+    }
+    return result
   }
 }

@@ -13,59 +13,9 @@ struct WorktreeTerminalTabsView: View {
   var body: some View {
     let state = manager.state(for: worktree) { shouldRunSetupScript }
     let _ = configReloadCounter
-    let unfocusedSplitOverlay = manager.unfocusedSplitOverlay()
-    let splitDivider = manager.splitDividerAppearance()
     VStack(spacing: 0) {
-      TerminalTabBarView(
-        manager: state.tabManager,
-        createTab: createTab,
-        splitHorizontally: {
-          _ = state.performBindingActionOnFocusedSurface("new_split:down")
-        },
-        splitVertically: {
-          _ = state.performBindingActionOnFocusedSurface("new_split:right")
-        },
-        canSplit: state.tabManager.selectedTabId != nil,
-        renameTab: { tabId in
-          state.tabManager.beginTabRename(tabId)
-        },
-        changeIcon: { tabId in
-          state.presentIconPicker(for: tabId)
-        },
-        closeTab: { tabId in
-          state.closeTab(tabId)
-        },
-        closeOthers: { tabId in
-          state.closeOtherTabs(keeping: tabId)
-        },
-        closeToRight: { tabId in
-          state.closeTabsToRight(of: tabId)
-        },
-        closeAll: {
-          state.closeAllTabs()
-        },
-        hasNotification: { tabId in
-          state.hasUnseenNotification(for: tabId)
-        }
-      )
-      if let selectedId = state.tabManager.selectedTabId {
-        TerminalTabContentStack(tabs: state.tabManager.tabs, selectedTabId: selectedId) { tabId in
-          TerminalSplitTreeAXContainer(
-            tree: state.splitTree(for: tabId),
-            activeSurfaceID: state.activeSurfaceID(for: tabId),
-            unfocusedSplitOverlay: unfocusedSplitOverlay,
-            splitDivider: splitDivider,
-            hasNotification: { surfaceID in
-              state.hasUnseenNotification(forSurfaceID: surfaceID)
-            },
-            action: { operation in
-              state.performSplitOperation(operation, in: tabId)
-            }
-          )
-        }
-      } else {
-        EmptyTerminalPaneView(message: "No terminals open")
-      }
+      tabBar(state: state)
+      tabContent(state: state)
     }
     .sheet(
       item: Binding(
@@ -73,18 +23,7 @@ struct WorktreeTerminalTabsView: View {
         set: { state.iconPickerTabId = $0 }
       )
     ) { tabId in
-      let currentIcon = state.tabManager.tabs.first(where: { $0.id == tabId })?.icon
-      TabIconPickerView(
-        initialIcon: currentIcon,
-        defaultIcon: state.defaultIcon(for: tabId),
-        onApply: { newIcon in
-          state.applyIconChange(tabId, icon: newIcon)
-          state.dismissIconPicker()
-        },
-        onCancel: {
-          state.dismissIconPicker()
-        }
-      )
+      iconPickerSheet(state: state, tabId: tabId)
     }
     .background(
       WindowFocusObserverView { activity in
@@ -110,6 +49,80 @@ struct WorktreeTerminalTabsView: View {
     .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
       configReloadCounter &+= 1
     }
+  }
+
+  private func tabBar(state: WorktreeTerminalState) -> some View {
+    TerminalTabBarView(
+      manager: state.tabManager,
+      createTab: createTab,
+      splitHorizontally: {
+        _ = state.performBindingActionOnFocusedSurface("new_split:down")
+      },
+      splitVertically: {
+        _ = state.performBindingActionOnFocusedSurface("new_split:right")
+      },
+      canSplit: state.tabManager.selectedTabId != nil,
+      renameTab: { tabId in
+        state.tabManager.beginTabRename(tabId)
+      },
+      changeIcon: { tabId in
+        state.presentIconPicker(for: tabId)
+      },
+      closeTab: { tabId in
+        state.closeTab(tabId)
+      },
+      closeOthers: { tabId in
+        state.closeOtherTabs(keeping: tabId)
+      },
+      closeToRight: { tabId in
+        state.closeTabsToRight(of: tabId)
+      },
+      closeAll: {
+        state.closeAllTabs()
+      },
+      hasNotification: { tabId in
+        state.hasUnseenNotification(for: tabId)
+      }
+    )
+  }
+
+  @ViewBuilder
+  private func tabContent(state: WorktreeTerminalState) -> some View {
+    let unfocusedSplitOverlay = manager.unfocusedSplitOverlay()
+    let splitDivider = manager.splitDividerAppearance()
+    if let selectedId = state.tabManager.selectedTabId {
+      TerminalTabContentStack(tabs: state.tabManager.tabs, selectedTabId: selectedId) { tabId in
+        TerminalSplitTreeAXContainer(
+          tree: state.splitTree(for: tabId),
+          activeSurfaceID: state.activeSurfaceID(for: tabId),
+          unfocusedSplitOverlay: unfocusedSplitOverlay,
+          splitDivider: splitDivider,
+          hasNotification: { surfaceID in
+            state.hasUnseenNotification(forSurfaceID: surfaceID)
+          },
+          action: { operation in
+            state.performSplitOperation(operation, in: tabId)
+          }
+        )
+      }
+    } else {
+      EmptyTerminalPaneView(message: "No terminals open")
+    }
+  }
+
+  private func iconPickerSheet(state: WorktreeTerminalState, tabId: TerminalTabID) -> some View {
+    let currentIcon = state.tabManager.tabs.first(where: { $0.id == tabId })?.icon
+    return TabIconPickerView(
+      initialIcon: currentIcon,
+      defaultIcon: state.defaultIcon(for: tabId),
+      onApply: { newIcon in
+        state.applyIconChange(tabId, icon: newIcon)
+        state.dismissIconPicker()
+      },
+      onCancel: {
+        state.dismissIconPicker()
+      }
+    )
   }
 
   private var shouldAutoFocusTerminal: Bool {

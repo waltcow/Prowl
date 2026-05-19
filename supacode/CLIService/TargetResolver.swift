@@ -243,11 +243,11 @@ enum TargetResolutionSnapshotBuilder {
     repositoriesState: RepositoriesFeature.State,
     terminalManager: WorktreeTerminalManager
   ) -> TargetResolutionSnapshot {
-    let activeSnapshots = Dictionary(
-      uniqueKeysWithValues: terminalManager.activeWorktreeStates.map {
-        ($0.worktreeID, $0)
-      }
-    )
+    var activeSnapshots: [String: WorktreeTerminalState] = [:]
+    activeSnapshots.reserveCapacity(terminalManager.activeWorktreeStates.count)
+    for state in terminalManager.activeWorktreeStates {
+      activeSnapshots[state.worktreeID] = state
+    }
 
     let orderedContexts = ListRuntimeSnapshotBuilder.orderedWorktreeContexts(from: repositoriesState)
     let focusedWorktreeID = terminalManager.selectedWorktreeID ?? terminalManager.canvasFocusedWorktreeID

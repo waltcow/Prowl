@@ -1729,13 +1729,18 @@ extension RepositoriesFeature.State {
     return worktrees.filter { !archivedSet.contains($0.id) }
   }
 
-  func archivedWorktreesByRepository() -> [(repository: Repository, worktrees: [Worktree])] {
+  struct ArchivedWorktreeGroup: Equatable {
+    var repository: Repository
+    var worktrees: [Worktree]
+  }
+
+  func archivedWorktreesByRepository() -> [ArchivedWorktreeGroup] {
     let archivedSet = archivedWorktreeIDSet
-    var groups: [(repository: Repository, worktrees: [Worktree])] = []
+    var groups: [ArchivedWorktreeGroup] = []
     for repository in repositories {
       let worktrees = Array(repository.worktrees.filter { archivedSet.contains($0.id) })
       if !worktrees.isEmpty {
-        groups.append((repository: repository, worktrees: worktrees))
+        groups.append(ArchivedWorktreeGroup(repository: repository, worktrees: worktrees))
       }
     }
     return groups

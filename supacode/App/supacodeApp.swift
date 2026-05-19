@@ -201,17 +201,7 @@ struct SupacodeApp: App {
     let cliServer = Self.makeCLISocketServer(appStore: appStore, terminalManager: terminalManager)
     _cliSocketServer = State(initialValue: cliServer)
 
-    let watchdog = MemoryWatchdog(
-      analyticsCapture: AnalyticsClient.liveValue.capture,
-      contextProvider: { [appStore, terminalManager] in
-        let state = appStore.state
-        return MemoryWatchdog.Context(
-          repositoryCount: state.repositories.repositories.count,
-          openedWorktreeCount: state.repositories.repositories.flatMap(\.worktrees).count,
-          terminalTabCount: terminalManager.activeWorktreeStates.flatMap(\.tabManager.tabs).count
-        )
-      }
-    )
+    let watchdog = Self.makeMemoryWatchdog(appStore: appStore, terminalManager: terminalManager)
     #if !DEBUG
       watchdog.start()
     #endif
@@ -231,6 +221,28 @@ struct SupacodeApp: App {
     #if DEBUG
       DebugWindowManager.shared.configure(store: appStore)
     #endif
+  }
+
+  private static func makeMemoryWatchdog(
+    appStore: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager
+  ) -> MemoryWatchdog {
+    MemoryWatchdog(
+      analyticsCapture: AnalyticsClient.liveValue.capture,
+      contextProvider: { [appStore, terminalManager] in
+        let repositoriesState = appStore.state.repositories
+        let repositories = repositoriesState.repositories
+        let repositoryCount = repositories.count
+        let openedWorktreeCount = repositories.reduce(0) { $0 + $1.worktrees.count }
+        let activeStates = terminalManager.activeWorktreeStates
+        let terminalTabCount = activeStates.reduce(0) { $0 + $1.tabManager.tabs.count }
+        return MemoryWatchdog.Context(
+          repositoryCount: repositoryCount,
+          openedWorktreeCount: openedWorktreeCount,
+          terminalTabCount: terminalTabCount
+        )
+      }
+    )
   }
 
   private static func makeTerminalClient(terminalManager: WorktreeTerminalManager) -> TerminalClient {

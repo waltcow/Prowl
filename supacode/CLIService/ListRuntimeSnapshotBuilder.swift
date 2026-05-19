@@ -14,10 +14,12 @@ enum ListRuntimeSnapshotBuilder {
     repositoriesState: RepositoriesFeature.State,
     terminalManager: WorktreeTerminalManager
   ) -> ListRuntimeSnapshot {
-    let activeSnapshots = Dictionary(
-      uniqueKeysWithValues: terminalManager.activeWorktreeStates.map {
-        ($0.worktreeID, $0.makeCLIListSnapshot())
-      })
+    let activeStates = terminalManager.activeWorktreeStates
+    var activeSnapshots: [String: CLIWorktreeTerminalSnapshot] = [:]
+    activeSnapshots.reserveCapacity(activeStates.count)
+    for state in activeStates {
+      activeSnapshots[state.worktreeID] = state.makeCLIListSnapshot()
+    }
 
     let orderedContexts = orderedWorktreeContexts(from: repositoriesState)
     let focusedWorktreeID = terminalManager.selectedWorktreeID ?? terminalManager.canvasFocusedWorktreeID
