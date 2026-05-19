@@ -60,6 +60,12 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
-        key: ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v0
+        # Rotate when SPM deps or the Xcode project itself changes (target add/remove,
+        # build setting tweaks). Day-to-day .swift edits keep the same primary key, so
+        # `actions/cache` restores without re-uploading — the cache is content-addressed
+        # by file hash, so unchanged files still hit; changed files miss and recompile
+        # locally without invalidating the saved snapshot.
+        key: ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v1-${{ hashFiles('Package.resolved', 'supacode.xcodeproj/project.pbxproj') }}
         restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v1-
           ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-
