@@ -515,7 +515,7 @@ struct WorktreeDetailView: View {
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
     var body: some ToolbarContent {
-      ToolbarItem {
+      ToolbarItem(placement: .navigation) {
         WorktreeDetailTitleView(
           title: toolbarState.title,
           onSubmit: toolbarState.title.supportsRename ? onRenameBranch : nil,
@@ -524,9 +524,7 @@ struct WorktreeDetailView: View {
         )
       }
 
-      ToolbarSpacer(.flexible)
-
-      ToolbarItemGroup {
+      ToolbarItem(placement: .principal) {
         ToolbarStatusView(
           toast: toolbarState.statusToast,
           pullRequest: toolbarState.pullRequest,
@@ -535,7 +533,6 @@ struct WorktreeDetailView: View {
         .padding(.horizontal)
       }
 
-      ToolbarSpacer(.fixed)
       ToolbarItemGroup {
         ToolbarNotificationsPopoverButton(
           groups: toolbarState.notificationGroups,
@@ -551,7 +548,7 @@ struct WorktreeDetailView: View {
         }
       }
 
-      ToolbarSpacer(.flexible)
+      ToolbarSpacer(.fixed)
 
       ToolbarItemGroup {
         openMenu(
