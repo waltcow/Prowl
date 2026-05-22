@@ -24,6 +24,7 @@ struct CanvasView: View {
   @State private var lastTitleBarTapDate: Date = .distantPast
   @State private var activeResize: [TerminalTabID: ActiveResize] = [:]
   @State private var hasPerformedInitialFit = false
+  @State private var hasSeenCanvasCards = false
   @State private var viewportSize: CGSize = .zero
   @State private var showsCanvasHelp = false
   @State private var configReloadCounter = 0
@@ -59,15 +60,29 @@ struct CanvasView: View {
         // Background layer: handles canvas pan and tap-to-clear.
         Color.clear
           .onAppear {
+            if !allCardKeys.isEmpty {
+              hasSeenCanvasCards = true
+            }
             ensureLayouts(for: allCardKeys)
+            if !allCardKeys.isEmpty {
+              layoutStore.ensureZOrder(for: allCardKeys)
+            }
             pruneSelection(previousOrder: [], currentOrder: allTabIDs, states: activeStates)
             syncBroadcastCallbacks(states: activeStates)
           }
           .onChange(of: allCardKeys) { _, newKeys in
             if newKeys.isEmpty {
               CanvasLayoutStore.hasAutoArrangedInSession = false
+              if hasSeenCanvasCards {
+                layoutStore.prune(to: [])
+              }
+            } else {
+              hasSeenCanvasCards = true
             }
             ensureLayouts(for: newKeys)
+            if !newKeys.isEmpty {
+              layoutStore.ensureZOrder(for: newKeys)
+            }
             syncBroadcastCallbacks(states: activeStates)
           }
           .onChange(of: allTabIDs) { oldTabIDs, newTabIDs in
@@ -86,11 +101,14 @@ struct CanvasView: View {
         proxy.size
       } action: { newSize in
         viewportSize = newSize
-        if !hasPerformedInitialFit {
+        let currentCardKeys = collectCardKeys(from: terminalManager.activeWorktreeStates)
+        if !hasPerformedInitialFit, !currentCardKeys.isEmpty {
           hasPerformedInitialFit = true
           if !CanvasLayoutStore.hasAutoArrangedInSession {
             CanvasLayoutStore.hasAutoArrangedInSession = true
-            arrangeCards()
+            if layoutStore.shouldAutoArrangeOnInitialEntry(for: currentCardKeys) {
+              arrangeCards()
+            }
           }
           fitToView(canvasSize: newSize)
         }
@@ -233,7 +251,7 @@ struct CanvasView: View {
       x: screenCenter.x - resized.size.width / 2,
       y: screenCenter.y - cardTotalHeight / 2
     )
-    .zIndex(zIndex(for: tab.id))
+    .zIndex(zIndex(for: tab.id, cardKey: cardKey))
   }
 
   // MARK: - Canvas Gestures
@@ -301,7 +319,7 @@ struct CanvasView: View {
         position: gridPosition(index: positionedCount + offset, columns: columns)
       )
     }
-    layoutStore.cardLayouts = layouts
+    layoutStore.setCardLayouts(layouts)
   }
 
   /// Balanced grid: columns ≈ sqrt(N). No viewport constraint — the canvas
@@ -392,7 +410,7 @@ struct CanvasView: View {
         position: gridPosition(index: index, columns: columns)
       )
     }
-    layoutStore.cardLayouts = layouts
+    layoutStore.setCardLayouts(layouts, zOrder: keys)
   }
 
   /// Arrange cards using MaxRects-BSSF bin packing. Preserves each card's
@@ -412,7 +430,7 @@ struct CanvasView: View {
     let result = packer.pack(cards: cards, targetRatio: targetRatio)
 
     guard !result.layouts.isEmpty else { return }
-    layoutStore.cardLayouts = result.layouts
+    layoutStore.setCardLayouts(result.layouts, zOrder: keys)
   }
 
   /// Adjust scale and offset so all cards fit within the viewport.
@@ -460,13 +478,8 @@ struct CanvasView: View {
   /// Remove stored layouts for tabs that no longer exist.
   private func cleanStaleLayouts() {
     let visibleKeys = Set(collectCardKeys(from: terminalManager.activeWorktreeStates))
-    let staleKeys = layoutStore.cardLayouts.keys.filter { !visibleKeys.contains($0) }
-    guard !staleKeys.isEmpty else { return }
-    var layouts = layoutStore.cardLayouts
-    for key in staleKeys {
-      layouts.removeValue(forKey: key)
-    }
-    layoutStore.cardLayouts = layouts
+    guard !visibleKeys.isEmpty || hasSeenCanvasCards else { return }
+    layoutStore.prune(to: visibleKeys)
   }
 
   private var canvasHelpButton: some View {
@@ -580,14 +593,15 @@ struct CanvasView: View {
     .padding()
   }
 
-  private func zIndex(for tabID: TerminalTabID) -> Double {
+  private func zIndex(for tabID: TerminalTabID, cardKey: String) -> Double {
+    let base = layoutStore.zIndex(for: cardKey)
     if selectionState.primaryTabID == tabID {
-      return 2
+      return 10_000 + base
     }
     if selectionState.selectedTabIDs.contains(tabID) {
-      return 1
+      return 9_000 + base
     }
-    return 0
+    return base
   }
 
   // MARK: - Drag
@@ -633,6 +647,7 @@ struct CanvasView: View {
     surfaceState _: WorktreeTerminalState,
     states: [WorktreeTerminalState]
   ) {
+    layoutStore.moveToFront(tabID.rawValue.uuidString)
     mutateSelection(states: states) { state in
       state.focusSingle(tabID)
     }
@@ -700,6 +715,7 @@ struct CanvasView: View {
       return
     }
 
+    layoutStore.moveToFront(newTabID.rawValue.uuidString)
     ownerState.tabManager.selectTab(newTabID)
     terminalManager.canvasFocusedWorktreeID = ownerState.worktreeID
     surfaceView.focusDidChange(true)

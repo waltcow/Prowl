@@ -236,23 +236,103 @@ final class CanvasLayoutStore {
   /// Whether auto-arrange has run in this app session. Resets on app launch.
   static var hasAutoArrangedInSession = false
 
+  private let defaults: UserDefaults
+  private let initiallyLoadedCardKeys: Set<String>
+
   var cardLayouts: [String: CanvasCardLayout] {
     didSet { save() }
   }
 
-  init() {
-    if let data = UserDefaults.standard.data(forKey: Self.storageKey),
-      let layouts = try? JSONDecoder().decode([String: CanvasCardLayout].self, from: data)
-    {
-      self.cardLayouts = layouts
-    } else {
-      self.cardLayouts = [:]
+  var zOrder: [String] {
+    didSet { save() }
+  }
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    let stored = Self.load(from: defaults)
+    cardLayouts = stored.cardLayouts
+    zOrder = stored.zOrder
+    initiallyLoadedCardKeys = Set(stored.cardLayouts.keys)
+  }
+
+  func shouldAutoArrangeOnInitialEntry(for cardKeys: [String]) -> Bool {
+    guard !cardKeys.isEmpty else { return false }
+    return !cardKeys.contains { initiallyLoadedCardKeys.contains($0) }
+  }
+
+  func setCardLayouts(_ layouts: [String: CanvasCardLayout], zOrder newZOrder: [String]? = nil) {
+    cardLayouts = layouts
+    zOrder = normalizedZOrder(newZOrder ?? zOrder, visibleKeys: Array(layouts.keys))
+  }
+
+  func ensureZOrder(for visibleKeys: [String]) {
+    zOrder = normalizedZOrder(zOrder, visibleKeys: visibleKeys)
+  }
+
+  func prune(to visibleKeys: Set<String>) {
+    cardLayouts = cardLayouts.filter { visibleKeys.contains($0.key) }
+    zOrder = zOrder.filter { visibleKeys.contains($0) }
+  }
+
+  func moveToFront(_ cardKey: String) {
+    guard cardLayouts[cardKey] != nil else { return }
+    zOrder.removeAll { $0 == cardKey }
+    zOrder.append(cardKey)
+  }
+
+  func zIndex(for cardKey: String) -> Double {
+    guard let index = zOrder.firstIndex(of: cardKey) else { return 0 }
+    return Double(index)
+  }
+
+  private static func load(from defaults: UserDefaults) -> CanvasLayoutStoragePayload {
+    guard let data = defaults.data(forKey: storageKey) else {
+      return CanvasLayoutStoragePayload(cardLayouts: [:], zOrder: [])
     }
+
+    if let payload = try? JSONDecoder().decode(CanvasLayoutStoragePayload.self, from: data) {
+      return CanvasLayoutStoragePayload(
+        cardLayouts: payload.cardLayouts,
+        zOrder: normalizedZOrder(payload.zOrder, visibleKeys: Array(payload.cardLayouts.keys))
+      )
+    }
+
+    if let layouts = try? JSONDecoder().decode([String: CanvasCardLayout].self, from: data) {
+      return CanvasLayoutStoragePayload(cardLayouts: layouts, zOrder: Array(layouts.keys).sorted())
+    }
+
+    return CanvasLayoutStoragePayload(cardLayouts: [:], zOrder: [])
   }
 
   private func save() {
-    if let data = try? JSONEncoder().encode(cardLayouts) {
-      UserDefaults.standard.set(data, forKey: Self.storageKey)
+    let payload = CanvasLayoutStoragePayload(
+      cardLayouts: cardLayouts,
+      zOrder: Self.normalizedZOrder(zOrder, visibleKeys: Array(cardLayouts.keys))
+    )
+    if let data = try? JSONEncoder().encode(payload) {
+      defaults.set(data, forKey: Self.storageKey)
     }
   }
+
+  private func normalizedZOrder(_ order: [String], visibleKeys: [String]) -> [String] {
+    Self.normalizedZOrder(order, visibleKeys: visibleKeys)
+  }
+
+  private static func normalizedZOrder(_ order: [String], visibleKeys: [String]) -> [String] {
+    let visibleKeySet = Set(visibleKeys)
+    var seen: Set<String> = []
+    var normalized: [String] = []
+    for key in order where visibleKeySet.contains(key) && seen.insert(key).inserted {
+      normalized.append(key)
+    }
+    for key in visibleKeys.sorted() where seen.insert(key).inserted {
+      normalized.append(key)
+    }
+    return normalized
+  }
+}
+
+private struct CanvasLayoutStoragePayload: Codable, Equatable {
+  var cardLayouts: [String: CanvasCardLayout]
+  var zOrder: [String]
 }
