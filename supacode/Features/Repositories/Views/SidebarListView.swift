@@ -42,6 +42,8 @@ struct SidebarListView: View {
   @State private var sidebarHeight = 0.0
   @State private var sidebarFooterHeight = 0.0
   @State private var resizingPanelHeight: Double?
+  @Namespace private var topSegmentNamespace
+  @Environment(\.resolvedKeybindings) private var resolvedKeybindings
   @Shared(.repositoryAppearances) private var repositoryAppearances
 
   var body: some View {
@@ -76,36 +78,23 @@ struct SidebarListView: View {
 
     ScrollViewReader { scrollProxy in
       ScrollView {
-        LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
-          Section {
-            if repositoryItems.isEmpty {
-              emptyRepositoryHint()
-            } else {
-              repositoryListHeader(
-                action: repositoryListHeaderAction,
-                expandableRepositoryIDs: expandableRepositoryIDs
-              )
-            }
-            ForEach(Array(repositoryItems.enumerated()), id: \.element.id) { index, item in
-              repositoryItemView(
-                item,
-                index: index,
-                repositoryOrderIDs: presentation.repositoryOrderIDs,
-                hotkeyRows: hotkeyRows,
-                selectedWorktreeIDs: selectedWorktreeIDs
-              )
-            }
-          } header: {
-            Picker("", selection: $store.topSegment.sending(\.setTopSegment)) {
-              Text("Tabbed").tag(TopSegment.tabbed)
-              Text("Canvas").tag(TopSegment.canvas)
-              Text("Shelf").tag(TopSegment.shelf)
-            }
-            .pickerStyle(.segmented)
-            .controlSize(.large)
-            .labelsHidden()
-            .padding(.horizontal)
-            .padding(.vertical, 4)
+        LazyVStack(spacing: 0) {
+          if repositoryItems.isEmpty {
+            emptyRepositoryHint()
+          } else {
+            repositoryListHeader(
+              action: repositoryListHeaderAction,
+              expandableRepositoryIDs: expandableRepositoryIDs
+            )
+          }
+          ForEach(Array(repositoryItems.enumerated()), id: \.element.id) { index, item in
+            repositoryItemView(
+              item,
+              index: index,
+              repositoryOrderIDs: presentation.repositoryOrderIDs,
+              hotkeyRows: hotkeyRows,
+              selectedWorktreeIDs: selectedWorktreeIDs
+            )
           }
         }
         .padding(.vertical, 2)
@@ -127,6 +116,9 @@ struct SidebarListView: View {
         if case .dataTransferCompleted = session.phase {
           endSidebarDrag()
         }
+      }
+      .safeAreaInset(edge: .top, spacing: 0) {
+        topSegmentBar
       }
       .safeAreaInset(edge: .bottom, spacing: 0) {
         SidebarFooterView(store: store)
@@ -185,6 +177,66 @@ struct SidebarListView: View {
         }
       }
     }  // ScrollViewReader
+  }
+
+  // Fixed, opaque top bar (Xcode-navigator style): stays put while the list
+  // scrolls underneath, so it neither bounces with the scroll nor lets repo
+  // rows show through. Custom segmented control because the system .segmented
+  // Picker only renders bare icon/text and ignores option layout, so it can't
+  // be widened to fill; equal-width buttons inside a glass capsule track give
+  // the macOS 26 look while truly filling the width.
+  private var topSegmentBar: some View {
+    HStack(spacing: 4) {
+      topSegmentButton(.tabbed, systemImage: "checklist.unchecked", title: "Default")
+      topSegmentButton(
+        .canvas,
+        systemImage: "square.grid.2x2",
+        title: "Canvas",
+        shortcutCommandID: AppShortcuts.CommandID.toggleCanvas
+      )
+      topSegmentButton(
+        .shelf,
+        systemImage: "distribute.horizontal.fill",
+        title: "Shelf",
+        shortcutCommandID: AppShortcuts.CommandID.toggleShelf
+      )
+    }
+    .background(.thinMaterial, in: Capsule())
+    .padding(.horizontal, 8)
+    .padding(.vertical, 2)
+  }
+
+  private func topSegmentButton(
+    _ segment: TopSegment,
+    systemImage: String,
+    title: String,
+    shortcutCommandID: String? = nil
+  ) -> some View {
+    let isSelected = store.topSegment == segment
+    let helpText =
+      shortcutCommandID.map {
+        AppShortcuts.helpText(title: title, commandID: $0, in: resolvedKeybindings)
+      } ?? title
+    return Button {
+      store.send(.setTopSegment(segment))
+    } label: {
+      Image(systemName: systemImage)
+        .accessibilityHidden(true)
+        .frame(maxWidth: .infinity)
+        .frame(height: 22)
+        .foregroundStyle(isSelected ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
+        .background {
+          if isSelected {
+            Capsule()
+              .fill(Color.accentColor)
+              .matchedGeometryEffect(id: "topSegmentPill", in: topSegmentNamespace)
+          }
+        }
+        .contentShape(.capsule)
+    }
+    .buttonStyle(.plain)
+    .help(helpText)
+    .accessibilityLabel(Text(title))
   }
 
   private func focusTerminalAfterSidebarSelection(worktreeID: Worktree.ID?) {
