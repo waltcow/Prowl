@@ -30,7 +30,8 @@ struct TerminalTabLabelView: View {
         .frame(width: TerminalTabBarMetrics.closeButtonSize)
     }
     .frame(maxHeight: .infinity)
-    .overlay(alignment: .trailing) {
+    // Leading, sharing the close button's slot (they are mutually exclusive).
+    .overlay(alignment: .leading) {
       if showsShortcutHint, let shortcutHint {
         ShortcutHintView(text: shortcutHint, color: TerminalTabBarColors.inactiveText)
       }
