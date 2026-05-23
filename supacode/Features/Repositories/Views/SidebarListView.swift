@@ -223,7 +223,7 @@ struct SidebarListView: View {
       Image(systemName: systemImage)
         .accessibilityHidden(true)
         .frame(maxWidth: .infinity)
-        .frame(height: 22)
+        .frame(height: 28)
         .foregroundStyle(isSelected ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
         .background {
           if isSelected {
