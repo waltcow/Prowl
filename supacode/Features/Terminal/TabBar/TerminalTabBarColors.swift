@@ -3,7 +3,7 @@ import SwiftUI
 
 enum TerminalTabBarColors {
   static var barBackground: Color {
-    adaptiveFill(dark: { .labelColor.withAlphaComponent(0.10) }, light: { .labelColor.withAlphaComponent(0.05) })
+    adaptiveFill(dark: { .labelColor.withAlphaComponent(0.10) }, light: { .labelColor.withAlphaComponent(0.08) })
   }
 
   // Selection is conveyed by a brightness ladder layered over `barBackground`,

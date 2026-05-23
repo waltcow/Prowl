@@ -8,8 +8,6 @@ struct TerminalTabBarTrailingAccessories: View {
 
   @Environment(GhosttyShortcutManager.self)
   private var ghosttyShortcuts
-  @Environment(CommandKeyObserver.self)
-  private var commandKeyObserver
 
   @State private var isHoveringButton = false
   @State private var isHoveringPopover = false
@@ -44,18 +42,8 @@ struct TerminalTabBarTrailingAccessories: View {
       createTab()
       isHoverPopoverPresented = false
     } label: {
-      if commandKeyObserver.isPressed {
-        HStack(spacing: TerminalTabBarMetrics.contentSpacing) {
-          Text("New Tab")
-            .font(.caption)
-          if let shortcut = ghosttyShortcuts.display(for: "new_tab") {
-            ShortcutHintView(text: shortcut, color: TerminalTabBarColors.inactiveText)
-          }
-        }
-      } else {
-        Label("New Tab", systemImage: "plus")
-          .labelStyle(.iconOnly)
-      }
+      Label("New Tab", systemImage: "plus")
+        .labelStyle(.iconOnly)
     }
     .buttonStyle(.borderless)
     .help(helpText("New Tab", shortcut: ghosttyShortcuts.display(for: "new_tab")))
@@ -89,18 +77,8 @@ struct TerminalTabBarTrailingAccessories: View {
     let shortcut = ghosttyShortcuts.display(for: shortcutBinding)
 
     return Button(action: action) {
-      if commandKeyObserver.isPressed {
-        HStack(spacing: TerminalTabBarMetrics.contentSpacing) {
-          Text(title)
-            .font(.caption)
-          if let shortcut {
-            ShortcutHintView(text: shortcut, color: TerminalTabBarColors.inactiveText)
-          }
-        }
-      } else {
-        Label(title, systemImage: systemImage)
-          .labelStyle(.iconOnly)
-      }
+      Label(title, systemImage: systemImage)
+        .labelStyle(.iconOnly)
     }
     .buttonStyle(.borderless)
     .help(helpText(title, shortcut: shortcut))

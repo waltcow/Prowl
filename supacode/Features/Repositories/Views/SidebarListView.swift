@@ -146,7 +146,7 @@ struct SidebarListView: View {
             store.send(.activeAgents(.panelHeightChanged(height)))
           }
         )
-        .padding(8)
+        .padding(6)
         .frame(height: panelHeight)
         .offset(y: panelOffset)
         .clipped()
