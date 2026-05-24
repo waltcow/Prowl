@@ -129,6 +129,21 @@ struct ActiveAgentsFeatureTests {
     await store.send(.selectPreviousEntry)
   }
 
+  @Test func entryTappedUpdatesFocusAnchor() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    // Tapping mirrors the entry's surface into the focus anchor so keyboard
+    // navigation continues from the just-selected agent, without relying on the
+    // (per-worktree deduplicated) async `focusChanged` event.
+    await store.send(.entryTapped(UUID(2))) {
+      $0.focusedSurfaceID = UUID(2)
+    }
+  }
+
   @Test func focusedSurfaceChangedUpdatesAnchor() async {
     let store = TestStore(initialState: ActiveAgentsFeature.State()) {
       ActiveAgentsFeature()

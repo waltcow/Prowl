@@ -928,6 +928,55 @@ struct RepositoriesFeatureTests {
     await store.receive(\.delegate.selectedWorktreeChanged)
   }
 
+  @Test func activeAgentEntryTappedFocusesSurfaceBeforeSelectingWorktree() async {
+    let worktree = makeWorktree(id: "/tmp/repo/wt", name: "wt")
+    let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
+    var state = makeState(repositories: [repository])
+    let surfaceID = UUID()
+    let entry = ActiveAgentEntry(
+      id: surfaceID,
+      worktreeID: worktree.id,
+      worktreeName: worktree.name,
+      tabID: TerminalTabID(rawValue: UUID()),
+      tabTitle: "agent",
+      surfaceID: surfaceID,
+      paneIndex: 0,
+      agent: .codex,
+      rawState: .working,
+      displayState: .working,
+      lastChangedAt: Date(timeIntervalSince1970: 0)
+    )
+    state.activeAgents.entries = [entry]
+
+    let focusedSurface = LockIsolated<(Worktree.ID, UUID)?>(nil)
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.terminalClient.focusSurface = { worktreeID, surface in
+        focusedSurface.setValue((worktreeID, surface))
+        return true
+      }
+    }
+
+    // Tapping mirrors the surface into the keyboard-nav anchor synchronously...
+    await store.send(.activeAgents(.entryTapped(entry.id))) {
+      $0.activeAgents.focusedSurfaceID = surfaceID
+    }
+    // ...then the worktree is selected with `focusTerminal` (proved by the pending
+    // focus set) only after the target surface has already been focused, so the
+    // worktree shows the right tab the instant it becomes visible.
+    await store.receive(\.selectWorktree) {
+      $0.selection = .worktree(worktree.id)
+      $0.sidebarSelectedWorktreeIDs = [worktree.id]
+      $0.openedWorktreeIDs = [worktree.id]
+      $0.pendingTerminalFocusWorktreeIDs = [worktree.id]
+    }
+    await store.receive(\.delegate.selectedWorktreeChanged)
+
+    #expect(focusedSurface.value?.0 == worktree.id)
+    #expect(focusedSurface.value?.1 == surfaceID)
+  }
+
   @Test func selectWorktreeCollapsesSidebarSelectedWorktreeIDs() async {
     let wt1 = makeWorktree(id: "/tmp/repo/wt1", name: "wt1", repoRoot: "/tmp/repo")
     let wt2 = makeWorktree(id: "/tmp/repo/wt2", name: "wt2", repoRoot: "/tmp/repo")

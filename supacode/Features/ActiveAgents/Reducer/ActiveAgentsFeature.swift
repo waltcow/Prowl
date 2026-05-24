@@ -50,7 +50,13 @@ struct ActiveAgentsFeature {
         state.entries.remove(id: id)
         return .none
 
-      case .entryTapped:
+      case .entryTapped(let id):
+        // Mirror the tapped surface into the focus anchor so the panel highlight and
+        // keyboard navigation step from the just-selected agent immediately. The async
+        // `focusChanged` event can't be relied on here: it is deduplicated per worktree
+        // (`emitFocusChangedIfNeeded`), so re-focusing a worktree's previously focused
+        // surface emits nothing and would leave the anchor stale.
+        state.focusedSurfaceID = state.entries[id: id]?.surfaceID
         return .none
 
       case .focusedSurfaceChanged(let surfaceID):

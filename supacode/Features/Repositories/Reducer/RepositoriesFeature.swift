@@ -418,12 +418,15 @@ struct RepositoriesFeature {
 
         case .activeAgents(.entryTapped(let id)):
           guard let entry = state.activeAgents.entries[id: id] else { return .none }
-          return .merge(
-            .send(.selectWorktree(entry.worktreeID, focusTerminal: false)),
-            .run { _ in
-              _ = await terminalClient.focusSurface(entry.worktreeID, entry.surfaceID)
-            }
-          )
+          return .run { send in
+            // Focus the target surface (which selects its tab) before making the
+            // worktree visible, so it shows the right tab immediately instead of
+            // flashing its previously-focused tab. Then select the worktree with
+            // `focusTerminal` so the terminal view focuses the now-correct selected
+            // tab once it appears, regardless of where first responder currently is.
+            _ = await terminalClient.focusSurface(entry.worktreeID, entry.surfaceID)
+            await send(.selectWorktree(entry.worktreeID, focusTerminal: true))
+          }
 
         case .activeAgents:
           return .none

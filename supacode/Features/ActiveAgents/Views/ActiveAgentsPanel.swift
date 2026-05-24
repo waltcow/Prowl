@@ -133,14 +133,13 @@ struct ActiveAgentsPanel: View {
   }
 
   private func isDimmed(_ entry: ActiveAgentEntry) -> Bool {
-    // Prefer the reducer-tracked focused surface so keyboard navigation highlights
-    // the target immediately. `selectedSurfaceID` is derived from the selected
-    // worktree's active surface and only catches up once the async `focusSurface`
-    // completes, which would otherwise flash that worktree's previous agent for a
-    // frame when navigation wraps across worktrees. Falls back to it before the
-    // first focus is recorded.
-    if let activeSurfaceID = store.focusedSurfaceID ?? selectedSurfaceID {
-      return entry.surfaceID != activeSurfaceID
+    // Highlight the selected worktree's active surface. `entryTapped` now focuses
+    // the target surface before selecting its worktree, so `selectedSurfaceID` is
+    // already correct by the time the selection lands — no cross-worktree flash and
+    // no dependence on the reducer's focus anchor, which can go stale when the
+    // per-worktree `focusChanged` dedup suppresses an event.
+    if let selectedSurfaceID {
+      return entry.surfaceID != selectedSurfaceID
     }
     return false
   }
