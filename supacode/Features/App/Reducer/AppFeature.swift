@@ -1292,6 +1292,11 @@ struct AppFeature {
         guard remainingTabs == 0 else { return .none }
         return .send(.repositories(.markWorktreeClosed(worktreeID)))
 
+      case .terminalEvent(.focusChanged(_, let surfaceID)):
+        // Keep the Active Agents panel's keyboard-navigation anchor in sync with
+        // the surface that actually has focus, so ⌃⌥↑/↓ steps from the right place.
+        return .send(.repositories(.activeAgents(.focusedSurfaceChanged(surfaceID))))
+
       case .terminalEvent:
         return .none
       }

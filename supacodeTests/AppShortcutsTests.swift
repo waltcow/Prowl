@@ -309,6 +309,36 @@ struct AppShortcutsTests {
     #expect(arguments.contains("--keybind=ctrl+m=goto_tab:1") == false)
   }
 
+  @Test func activeAgentsNavigationDisplayMergesDefaultBindings() {
+    #expect(AppShortcuts.activeAgentsNavigationDisplay(in: .appDefaults) == "⌥⌃↑↓")
+  }
+
+  @Test func activeAgentsNavigationDisplayHiddenWhenEitherBindingCustomized() {
+    let nextOverridden = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: KeybindingUserOverrideStore(
+        overrides: [
+          AppShortcuts.CommandID.selectNextActiveAgent: KeybindingUserOverride(
+            binding: Keybinding(key: "j", modifiers: .init(command: true))
+          )
+        ]
+      )
+    )
+    #expect(AppShortcuts.activeAgentsNavigationDisplay(in: nextOverridden) == nil)
+
+    let previousOverridden = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: KeybindingUserOverrideStore(
+        overrides: [
+          AppShortcuts.CommandID.selectPreviousActiveAgent: KeybindingUserOverride(
+            binding: Keybinding(key: "k", modifiers: .init(command: true))
+          )
+        ]
+      )
+    )
+    #expect(AppShortcuts.activeAgentsNavigationDisplay(in: previousOverridden) == nil)
+  }
+
   @Test func disabledManagedGhosttyActionKeepsDefaultUnboundWithoutBindingAction() {
     let overrides = KeybindingUserOverrideStore(
       overrides: [

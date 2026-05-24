@@ -28,6 +28,22 @@ struct SidebarCommands: Commands {
         KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.toggleActiveAgentsPanel))
       )
       .help(helpText(title: "Active Agents", commandID: AppShortcuts.CommandID.toggleActiveAgentsPanel))
+      Button("Select Next Agent") {
+        store.send(.repositories(.activeAgents(.selectNextEntry)))
+      }
+      .modifier(
+        KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.selectNextActiveAgent))
+      )
+      .help(helpText(title: "Select Next Agent", commandID: AppShortcuts.CommandID.selectNextActiveAgent))
+      Button("Select Previous Agent") {
+        store.send(.repositories(.activeAgents(.selectPreviousEntry)))
+      }
+      .modifier(
+        KeyboardShortcutModifier(
+          shortcut: keyboardShortcut(for: AppShortcuts.CommandID.selectPreviousActiveAgent)
+        )
+      )
+      .help(helpText(title: "Select Previous Agent", commandID: AppShortcuts.CommandID.selectPreviousActiveAgent))
       Button("Canvas") {
         store.send(.repositories(.toggleCanvas))
       }

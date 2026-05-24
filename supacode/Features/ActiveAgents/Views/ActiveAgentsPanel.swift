@@ -8,6 +8,9 @@ struct ActiveAgentsPanel: View {
   let branchNamesByWorktreeID: [Worktree.ID: String]
   let repositoryColorsByWorktreeID: [Worktree.ID: RepositoryColorChoice]
   let selectedSurfaceID: UUID?
+  /// Merged "⌥⌃↑↓" hint shown while Cmd is held; `nil` hides it (bindings customized
+  /// or Cmd not held). Resolved by the parent so the panel stays presentational.
+  let navigationShortcutHint: String?
   let height: Double
   let maximumHeight: Double
   let onHeightChanged: (Double) -> Void
@@ -23,10 +26,15 @@ struct ActiveAgentsPanel: View {
           .font(.caption)
           .foregroundStyle(.secondary)
         Spacer()
+        if let navigationShortcutHint, !store.entries.isEmpty {
+          ShortcutHintView(text: navigationShortcutHint, color: .secondary)
+            .transition(.opacity)
+        }
       }
       .padding(.horizontal, 12)
       .padding(.top, 8)
       .padding(.bottom, 4)
+      .animation(.easeInOut(duration: 0.15), value: navigationShortcutHint)
 
       if store.entries.isEmpty {
         Spacer(minLength: 0)
@@ -125,8 +133,14 @@ struct ActiveAgentsPanel: View {
   }
 
   private func isDimmed(_ entry: ActiveAgentEntry) -> Bool {
-    if let selectedSurfaceID {
-      return entry.surfaceID != selectedSurfaceID
+    // Prefer the reducer-tracked focused surface so keyboard navigation highlights
+    // the target immediately. `selectedSurfaceID` is derived from the selected
+    // worktree's active surface and only catches up once the async `focusSurface`
+    // completes, which would otherwise flash that worktree's previous agent for a
+    // frame when navigation wraps across worktrees. Falls back to it before the
+    // first focus is recorded.
+    if let activeSurfaceID = store.focusedSurfaceID ?? selectedSurfaceID {
+      return entry.surfaceID != activeSurfaceID
     }
     return false
   }

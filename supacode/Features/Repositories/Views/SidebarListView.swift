@@ -44,6 +44,7 @@ struct SidebarListView: View {
   @State private var resizingPanelHeight: Double?
   @Namespace private var topSegmentNamespace
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
+  @Environment(CommandKeyObserver.self) private var commandKeyObserver
   @Shared(.repositoryAppearances) private var repositoryAppearances
 
   var body: some View {
@@ -60,6 +61,12 @@ struct SidebarListView: View {
     let selectedSurfaceID = state.selectedWorktreeID.flatMap { worktreeID in
       terminalManager.stateIfExists(for: worktreeID)?.activeSurfaceID
     }
+    // Only surface the hint while Cmd is held and the bindings are still at their
+    // defaults; a customized binding makes the merged "⌥⌃↑↓" glyph inaccurate.
+    let activeAgentsShortcutHint =
+      commandKeyObserver.isPressed
+      ? AppShortcuts.activeAgentsNavigationDisplay(in: resolvedKeybindings)
+      : nil
     let pendingSidebarReveal = state.pendingSidebarReveal
 
     let maximumPanelHeight =
@@ -149,6 +156,7 @@ struct SidebarListView: View {
           branchNamesByWorktreeID: agentWorktreeMetadata.branchNamesByWorktreeID,
           repositoryColorsByWorktreeID: agentWorktreeMetadata.repositoryColorsByWorktreeID,
           selectedSurfaceID: selectedSurfaceID,
+          navigationShortcutHint: activeAgentsShortcutHint,
           height: panelHeight,
           maximumHeight: maximumPanelHeight,
           onHeightChanged: { height in

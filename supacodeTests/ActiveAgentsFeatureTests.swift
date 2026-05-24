@@ -69,6 +69,88 @@ struct ActiveAgentsFeatureTests {
     #expect(ActiveAgentsFeature.maximumPanelHeight(forContainerHeight: 250) == 120)
   }
 
+  @Test func navigationReturnsNilForEmptyList() {
+    let entries: IdentifiedArrayOf<ActiveAgentEntry> = []
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == nil)
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == nil)
+  }
+
+  @Test func navigationWithoutAnchorStartsFromEdges() {
+    let entries = sampleEntries()
+    // No focus, or focus on a surface that is not in the list, anchors on an edge.
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == UUID(0))
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == UUID(2))
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .next, in: entries) == UUID(0))
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .previous, in: entries) == UUID(2))
+  }
+
+  @Test func navigationStepsAndWrapsAroundAnchor() {
+    let entries = sampleEntries()
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .next, in: entries) == UUID(1))
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(2), direction: .next, in: entries) == UUID(0))
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(1), direction: .previous, in: entries) == UUID(0))
+    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .previous, in: entries) == UUID(2))
+  }
+
+  @Test func selectNextEntryAdvancesAnchorAndTapsNeighbour() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.focusedSurfaceID = UUID(0)
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.selectNextEntry) {
+      $0.focusedSurfaceID = UUID(1)
+    }
+    await store.receive(.entryTapped(UUID(1)))
+  }
+
+  @Test func selectPreviousEntryWrapsToLastWhenAtFirst() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.focusedSurfaceID = UUID(0)
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.selectPreviousEntry) {
+      $0.focusedSurfaceID = UUID(2)
+    }
+    await store.receive(.entryTapped(UUID(2)))
+  }
+
+  @Test func navigationWithoutEntriesIsNoOp() async {
+    let store = TestStore(initialState: ActiveAgentsFeature.State()) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.selectNextEntry)
+    await store.send(.selectPreviousEntry)
+  }
+
+  @Test func focusedSurfaceChangedUpdatesAnchor() async {
+    let store = TestStore(initialState: ActiveAgentsFeature.State()) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.focusedSurfaceChanged(UUID(7))) {
+      $0.focusedSurfaceID = UUID(7)
+    }
+    await store.send(.focusedSurfaceChanged(nil)) {
+      $0.focusedSurfaceID = nil
+    }
+  }
+
+  private func sampleEntries() -> IdentifiedArrayOf<ActiveAgentEntry> {
+    let now = Date(timeIntervalSince1970: 10)
+    return [
+      entry(id: UUID(0), state: .working, changedAt: now),
+      entry(id: UUID(1), state: .idle, changedAt: now),
+      entry(id: UUID(2), state: .blocked, changedAt: now),
+    ]
+  }
+
   private func entry(id: UUID, state: AgentDisplayState, changedAt: Date) -> ActiveAgentEntry {
     ActiveAgentEntry(
       id: id,
