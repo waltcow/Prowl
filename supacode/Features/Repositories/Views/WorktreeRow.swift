@@ -338,7 +338,7 @@ private struct WorktreeRowChangeCountView: View {
     .padding(.vertical, 0)
     .fixedSize(horizontal: true, vertical: false)
     .overlay {
-      RoundedRectangle(cornerRadius: 4, style: .continuous)
+      Capsule()
         .stroke(isSelected ? AnyShapeStyle(.secondary.opacity(0.3)) : AnyShapeStyle(.tertiary), lineWidth: 1)
     }
     .monospacedDigit()

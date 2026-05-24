@@ -29,6 +29,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var defaultViewMode: DefaultViewMode
   var dimUnfocusedSplits: Bool
   var autoShowActiveAgentsPanel: Bool
+  var windowTintMode: WindowTintMode
+  var windowTintCustomColor: TintColor
 
   static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -60,7 +62,9 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     keybindingUserOverrides: .empty,
     defaultViewMode: .normal,
     dimUnfocusedSplits: true,
-    autoShowActiveAgentsPanel: false
+    autoShowActiveAgentsPanel: false,
+    windowTintMode: .repositoryColor,
+    windowTintCustomColor: .default
   )
 
   init(
@@ -93,7 +97,9 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     keybindingUserOverrides: KeybindingUserOverrideStore = .empty,
     defaultViewMode: DefaultViewMode = .normal,
     dimUnfocusedSplits: Bool = true,
-    autoShowActiveAgentsPanel: Bool = false
+    autoShowActiveAgentsPanel: Bool = false,
+    windowTintMode: WindowTintMode = .repositoryColor,
+    windowTintCustomColor: TintColor = .default
   ) {
     self.appearanceMode = appearanceMode
     self.defaultEditorID = defaultEditorID
@@ -125,6 +131,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.defaultViewMode = defaultViewMode
     self.dimUnfocusedSplits = dimUnfocusedSplits
     self.autoShowActiveAgentsPanel = autoShowActiveAgentsPanel
+    self.windowTintMode = windowTintMode
+    self.windowTintCustomColor = windowTintCustomColor
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -159,6 +167,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encode(defaultViewMode, forKey: .defaultViewMode)
     try container.encode(dimUnfocusedSplits, forKey: .dimUnfocusedSplits)
     try container.encode(autoShowActiveAgentsPanel, forKey: .autoShowActiveAgentsPanel)
+    try container.encode(windowTintMode, forKey: .windowTintMode)
+    try container.encode(windowTintCustomColor, forKey: .windowTintCustomColor)
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -192,6 +202,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case defaultViewMode
     case dimUnfocusedSplits
     case autoShowActiveAgentsPanel
+    case windowTintMode
+    case windowTintCustomColor
     // Legacy key for migration
     case automaticallyArchiveMergedWorktrees
   }
@@ -290,5 +302,11 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     autoShowActiveAgentsPanel =
       try container.decodeIfPresent(Bool.self, forKey: .autoShowActiveAgentsPanel)
       ?? Self.default.autoShowActiveAgentsPanel
+    windowTintMode =
+      try container.decodeIfPresent(WindowTintMode.self, forKey: .windowTintMode)
+      ?? Self.default.windowTintMode
+    windowTintCustomColor =
+      try container.decodeIfPresent(TintColor.self, forKey: .windowTintCustomColor)
+      ?? Self.default.windowTintCustomColor
   }
 }

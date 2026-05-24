@@ -493,9 +493,9 @@ final class GhosttySurfaceView: NSView, Identifiable {
   private func applyWindowBackgroundAppearance() {
     guard let window, window.isVisible else { return }
     let opacity = runtime.backgroundOpacity()
+    window.titlebarAppearsTransparent = true
     if !isBackgroundOpaqueOverride, !window.styleMask.contains(.fullScreen), opacity < 1 {
       window.isOpaque = false
-      window.titlebarAppearsTransparent = true
       let isDark = window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
       window.backgroundColor = GhosttyRuntime.chromeBackgroundColor(for: isDark ? .black : .white)
       if let app = runtime.app {
@@ -507,7 +507,6 @@ final class GhosttySurfaceView: NSView, Identifiable {
       return
     }
     window.isOpaque = true
-    window.titlebarAppearsTransparent = false
     window.backgroundColor = runtime.backgroundColor().withAlphaComponent(1)
   }
 

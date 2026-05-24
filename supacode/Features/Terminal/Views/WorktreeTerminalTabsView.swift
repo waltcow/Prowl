@@ -7,12 +7,20 @@ struct WorktreeTerminalTabsView: View {
   let shouldRunSetupScript: Bool
   let forceAutoFocus: Bool
   let createTab: () -> Void
+  /// Chrome tint for the tab bar background, matching the toolbar / nav
+  /// bands so the bar reads as part of the same tinted chrome. `nil` keeps
+  /// the neutral system bar background.
+  var barTint: WindowChromeTint.Fill?
   @State private var windowActivity = WindowActivityState.inactive
   @State private var configReloadCounter = 0
 
   var body: some View {
     let state = manager.state(for: worktree) { shouldRunSetupScript }
     let _ = configReloadCounter
+    // The gap between the tab bar and the terminal surface lives inside the
+    // tab bar (`TerminalTabBarMetrics.barBottomGap`) so the chrome tint band
+    // fills it, rather than a transparent VStack seam that reveals the
+    // translucent window background when `background-opacity` < 1.
     VStack(spacing: 0) {
       tabBar(state: state)
       tabContent(state: state)
@@ -54,6 +62,7 @@ struct WorktreeTerminalTabsView: View {
   private func tabBar(state: WorktreeTerminalState) -> some View {
     TerminalTabBarView(
       manager: state.tabManager,
+      barTint: barTint,
       createTab: createTab,
       splitHorizontally: {
         _ = state.performBindingActionOnFocusedSurface("new_split:down")

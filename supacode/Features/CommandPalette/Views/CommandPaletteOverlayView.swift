@@ -230,20 +230,7 @@ private struct CommandPaletteCard: View {
       }
     }
     .frame(maxWidth: 500)
-    .background(
-      ZStack {
-        Rectangle().fill(.ultraThinMaterial)
-        Rectangle()
-          .fill(backgroundColor)
-          .blendMode(.color)
-      }
-      .compositingGroup()
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 10))
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .stroke(Color(nsColor: .tertiaryLabelColor).opacity(0.75))
-    )
+    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
     .shadow(radius: 32, x: 0, y: 12)
     .padding(Self.padding)
     .environment(\.colorScheme, colorScheme)
@@ -696,9 +683,8 @@ private struct CommandPaletteRowView: View {
         }
       }
       .padding(8)
-      .contentShape(Rectangle())
       .background(rowBackground)
-      .clipShape(.rect(cornerRadius: 5))
+      .clipShape(.rect(cornerRadius: 14))
     }
     .buttonStyle(.plain)
     .help(helpText)
@@ -712,7 +698,7 @@ private struct CommandPaletteRowView: View {
       if isSelected {
         Color(nsColor: .selectedContentBackgroundColor)
       } else if hoveredID == row.id {
-        Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+        Color(nsColor: .unemphasizedSelectedContentBackgroundColor).opacity(0.7)
       } else {
         Color.clear
       }

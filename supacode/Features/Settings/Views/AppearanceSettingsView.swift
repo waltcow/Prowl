@@ -46,6 +46,27 @@ struct AppearanceSettingsView: View {
           .font(.footnote)
           .foregroundStyle(.secondary)
         }
+        Section("Window Tint") {
+          Picker("Tint nav & toolbar", selection: $store.windowTintMode) {
+            ForEach(WindowTintMode.allCases) { mode in
+              Text(mode.title).tag(mode)
+            }
+          }
+          .help(
+            "Color the navigation panel and toolbar. The Shelf spine always uses its repository color."
+          )
+          if store.windowTintMode == .custom {
+            ColorPicker(
+              "Custom tint color",
+              selection: $store.windowTintCustomColor,
+              supportsOpacity: false
+            )
+            .help("Tint the nav and toolbar with this color in every view, ignoring repository colors.")
+          }
+          Text(tintFootnote)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
         Section("Splits") {
           Toggle(
             "Dim unfocused split panes",
@@ -96,5 +117,16 @@ struct AppearanceSettingsView: View {
       .formStyle(.grouped)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+
+  private var tintFootnote: String {
+    switch store.windowTintMode {
+    case .none:
+      return "No tint. The nav and toolbar use the neutral system chrome."
+    case .repositoryColor:
+      return "Uses the active repository's color. Uncolored repositories get a neutral surface."
+    case .custom:
+      return "Uses your chosen color everywhere, regardless of per-repository colors."
+    }
   }
 }

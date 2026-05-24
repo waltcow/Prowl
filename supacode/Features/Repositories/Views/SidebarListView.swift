@@ -42,6 +42,8 @@ struct SidebarListView: View {
   @State private var sidebarHeight = 0.0
   @State private var sidebarFooterHeight = 0.0
   @State private var resizingPanelHeight: Double?
+  @Namespace private var topSegmentNamespace
+  @Environment(\.resolvedKeybindings) private var resolvedKeybindings
   @Shared(.repositoryAppearances) private var repositoryAppearances
 
   var body: some View {
@@ -54,12 +56,6 @@ struct SidebarListView: View {
       expandableRepositoryIDs: expandableRepositoryIDs
     )
     let repositoryItems = presentation.items.filter(\.isRepositoryOrderItem)
-    let showsRepositoryListHeader = presentation.items.contains { item in
-      if case .listHeader = item {
-        return true
-      }
-      return false
-    }
     let selectedWorktreeIDs = Self.selectedWorktreeIDs(in: state)
     let selectedSurfaceID = state.selectedWorktreeID.flatMap { worktreeID in
       terminalManager.stateIfExists(for: worktreeID)?.activeSurfaceID
@@ -83,17 +79,15 @@ struct SidebarListView: View {
     ScrollViewReader { scrollProxy in
       ScrollView {
         LazyVStack(spacing: 0) {
-          if showsRepositoryListHeader {
+          // When there are no repositories the sidebar stays empty — the
+          // detail pane's `EmptyStateView` ("Open a repository or folder")
+          // carries the prompt and the Add Repository button instead.
+          if !repositoryItems.isEmpty {
             repositoryListHeader(
               action: repositoryListHeaderAction,
               expandableRepositoryIDs: expandableRepositoryIDs
             )
           }
-
-          if repositoryItems.isEmpty {
-            emptyRepositoryHint()
-          }
-
           ForEach(Array(repositoryItems.enumerated()), id: \.element.id) { index, item in
             repositoryItemView(
               item,
@@ -109,7 +103,6 @@ struct SidebarListView: View {
       }
       .scrollIndicators(.never)
       .frame(minWidth: 220)
-      .background(.bar)
       .clipped()
       .onGeometryChange(for: Double.self) { proxy in
         Double(proxy.size.height)
@@ -126,22 +119,7 @@ struct SidebarListView: View {
         }
       }
       .safeAreaInset(edge: .top, spacing: 0) {
-        HStack(spacing: 4) {
-          CanvasSidebarButton(
-            store: store,
-            isSelected: state.isShowingCanvas
-          )
-          ShelfSidebarButton(
-            store: store,
-            isSelected: state.isShowingShelf
-          )
-        }
-        .padding(.top, 4)
-        .padding(.horizontal, 4)
-        .background(.bar)
-        .overlay(alignment: .bottom) {
-          Divider()
-        }
+        topSegmentBar
       }
       .safeAreaInset(edge: .bottom, spacing: 0) {
         SidebarFooterView(store: store)
@@ -150,29 +128,40 @@ struct SidebarListView: View {
           } action: { newHeight in
             sidebarFooterHeight = newHeight
           }
+          .padding(.vertical, 4)
+      }
+      .overlay {
+        if repositoryItems.isEmpty {
+          Text("Repositories you add will appear here")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+            // Sit above dead-center for better visual balance in the tall panel.
+            .offset(y: -40)
+            .accessibilityAddTraits(.isStaticText)
+        }
       }
       .overlay(alignment: .bottom) {
-        ZStack(alignment: .bottom) {
-          ActiveAgentsPanel(
-            store: store.scope(state: \.activeAgents, action: \.activeAgents),
-            repositoryNamesByWorktreeID: agentWorktreeMetadata.repositoryNamesByWorktreeID,
-            branchNamesByWorktreeID: agentWorktreeMetadata.branchNamesByWorktreeID,
-            repositoryColorsByWorktreeID: agentWorktreeMetadata.repositoryColorsByWorktreeID,
-            selectedSurfaceID: selectedSurfaceID,
-            height: panelHeight,
-            maximumHeight: maximumPanelHeight,
-            onHeightChanged: { height in
-              resizingPanelHeight = height
-            },
-            onHeightChangeEnded: { height in
-              resizingPanelHeight = nil
-              store.send(.activeAgents(.panelHeightChanged(height)))
-            }
-          )
-          .frame(height: panelHeight)
-          .offset(y: panelOffset)
-        }
+        ActiveAgentsPanel(
+          store: store.scope(state: \.activeAgents, action: \.activeAgents),
+          repositoryNamesByWorktreeID: agentWorktreeMetadata.repositoryNamesByWorktreeID,
+          branchNamesByWorktreeID: agentWorktreeMetadata.branchNamesByWorktreeID,
+          repositoryColorsByWorktreeID: agentWorktreeMetadata.repositoryColorsByWorktreeID,
+          selectedSurfaceID: selectedSurfaceID,
+          height: panelHeight,
+          maximumHeight: maximumPanelHeight,
+          onHeightChanged: { height in
+            resizingPanelHeight = height
+          },
+          onHeightChangeEnded: { height in
+            resizingPanelHeight = nil
+            store.send(.activeAgents(.panelHeightChanged(height)))
+          }
+        )
+        .padding(6)
         .frame(height: panelHeight)
+        .offset(y: panelOffset)
         .clipped()
         .padding(.bottom, sidebarFooterHeight)
         .allowsHitTesting(!state.activeAgents.isPanelHidden)
@@ -190,7 +179,94 @@ struct SidebarListView: View {
       .task(id: pendingSidebarReveal?.id) {
         await revealPendingSidebarWorktree(pendingSidebarReveal, with: scrollProxy)
       }
+      .toolbar {
+        ToolbarItem(placement: .automatic) {
+          Button {
+            store.send(.setOpenPanelPresented(true))
+          } label: {
+            Label("Add Repository", systemImage: "folder.badge.plus")
+          }
+          .help("Add Repository")
+        }
+      }
     }  // ScrollViewReader
+  }
+
+  // Fixed, opaque top bar (Xcode-navigator style): stays put while the list
+  // scrolls underneath, so it neither bounces with the scroll nor lets repo
+  // rows show through. Custom segmented control because the system .segmented
+  // Picker only renders bare icon/text and ignores option layout, so it can't
+  // be widened to fill; equal-width buttons inside a glass capsule track give
+  // the macOS 26 look while truly filling the width.
+  private var topSegmentBar: some View {
+    HStack(spacing: 4) {
+      topSegmentButton(.tabbed, systemImage: "checklist.unchecked", title: "Default")
+      topSegmentButton(
+        .canvas,
+        systemImage: "square.grid.2x2",
+        title: "Canvas",
+        shortcutCommandID: AppShortcuts.CommandID.toggleCanvas,
+        requiresRepository: true
+      )
+      topSegmentButton(
+        .shelf,
+        systemImage: "distribute.horizontal.fill",
+        title: "Shelf",
+        shortcutCommandID: AppShortcuts.CommandID.toggleShelf,
+        requiresRepository: true
+      )
+    }
+    .background {
+      // Glass track, brightened by the same fill the terminal tab bar's capsule
+      // uses so the inactive (unselected) segments read at the same level as the
+      // tab bar instead of sitting darker on the bare material.
+      Capsule()
+        .fill(.thinMaterial)
+        .overlay(Capsule().fill(TerminalTabBarColors.barBackground))
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 2)
+  }
+
+  private func topSegmentButton(
+    _ segment: TopSegment,
+    systemImage: String,
+    title: String,
+    shortcutCommandID: String? = nil,
+    requiresRepository: Bool = false
+  ) -> some View {
+    let isSelected = store.topSegment == segment
+    // Canvas and Shelf need at least one repository; with none, only Normal
+    // (Default) is available, so disable them.
+    let isDisabled = requiresRepository && store.repositories.isEmpty
+    let helpText =
+      isDisabled
+      ? "\(title) — add a repository first"
+      : shortcutCommandID.map {
+        AppShortcuts.helpText(title: title, commandID: $0, in: resolvedKeybindings)
+      } ?? title
+    return Button {
+      store.send(.setTopSegment(segment))
+    } label: {
+      Image(systemName: systemImage)
+        .accessibilityHidden(true)
+        .frame(maxWidth: .infinity)
+        .frame(height: 28)
+        .foregroundStyle(isSelected ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
+        .background {
+          if isSelected {
+            Capsule()
+              .fill(Color.accentColor)
+              .matchedGeometryEffect(id: "topSegmentPill", in: topSegmentNamespace)
+          }
+        }
+        .contentShape(.capsule)
+        .opacity(isDisabled ? 0.35 : 1)
+    }
+    .buttonStyle(.plain)
+    .disabled(isDisabled)
+    .help(helpText)
+    .accessibilityLabel(Text(title))
   }
 
   private func focusTerminalAfterSidebarSelection(worktreeID: Worktree.ID?) {
@@ -215,17 +291,6 @@ struct SidebarListView: View {
         .font(.caption)
         .foregroundStyle(.tertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
-      Button {
-        store.send(.setOpenPanelPresented(true))
-      } label: {
-        Label("Add Repository", systemImage: "plus")
-          .labelStyle(.iconOnly)
-          .frame(width: 20, height: 20)
-          .contentShape(.rect)
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(.secondary)
-      .help("Add Repository")
       if !expandableRepositoryIDs.isEmpty {
         Button {
           withAnimation(.easeOut(duration: 0.2)) {
@@ -253,24 +318,6 @@ struct SidebarListView: View {
     .padding(.trailing, 7)
     .padding(.top, 2)
     .padding(.bottom, 4)
-  }
-
-  private func emptyRepositoryHint() -> some View {
-    HStack(spacing: 6) {
-      Spacer(minLength: 0)
-      Text("Add your first repository")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      Image(systemName: "arrow.turn.right.up")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
-        .symbolEffect(.pulse, options: .repeating)
-        .accessibilityHidden(true)
-    }
-    .padding(.leading, 12)
-    .padding(.trailing, 14)
-    .padding(.top, 2)
-    .padding(.bottom, 6)
   }
 
   @ViewBuilder
@@ -430,10 +477,6 @@ struct SidebarListView: View {
       : .expandAll
   }
 
-  static func showsRepositoryListHeader(repositoryCount: Int) -> Bool {
-    SidebarPresentation.showsListHeader(repositoryCount: repositoryCount)
-  }
-
   static func selectedWorktreeIDs(in state: RepositoriesFeature.State) -> Set<Worktree.ID> {
     var selectedWorktreeIDs = state.sidebarSelectedWorktreeIDs
     if let selectedWorktreeID = state.selectedWorktreeID {
@@ -514,7 +557,7 @@ extension SidebarItem {
         terminalManager: terminalManager
       )
       .environment(CommandKeyObserver())
-      .frame(width: 280, height: 500)
+      .frame(width: 320, height: 500)
     }
 
     private static var mockState: RepositoriesFeature.State {

@@ -367,18 +367,19 @@ struct WorktreeRowsView: View {
     .padding(.trailing, 8)
     .background {
       if isSelected {
-        RoundedRectangle(cornerRadius: 5)
+        RoundedRectangle(cornerRadius: 8)
           .fill(Color.accentColor.opacity(0.18))
           .padding(.horizontal, 6)
       }
     }
     .overlay {
       if showsContextMenuHighlight {
-        RoundedRectangle(cornerRadius: 5)
-          .stroke(Color.accentColor, lineWidth: 2)
+        RoundedRectangle(cornerRadius: 8)
+          .stroke(Color.accentColor, lineWidth: 1)
           .padding(.horizontal, 6)
       }
     }
+    .padding(.vertical, 2)
     .transition(.opacity)
     .moveDisabled(config.moveDisabled)
   }

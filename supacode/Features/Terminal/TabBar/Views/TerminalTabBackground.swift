@@ -7,29 +7,23 @@ struct TerminalTabBackground: View {
   var isHovering: Bool
 
   var body: some View {
-    ZStack(alignment: .top) {
+    Group {
       if isActive {
-        TerminalTabBarColors.activeTabBackground
+        // Selected tab floats as a Liquid Glass surface tinted by the
+        // brightness-ladder fill, for the macOS 26 look.
+        Capsule()
+          .fill(TerminalTabBarColors.activeTabBackground)
+          .glassEffect(.regular, in: Capsule())
       } else if isHovering || isPressing || isDragging {
-        TerminalTabBarColors.hoveredTabBackground
+        Capsule().fill(TerminalTabBarColors.hoveredTabBackground)
       } else {
-        TerminalTabBarColors.inactiveTabBackground
-      }
-
-      if isActive {
-        Rectangle()
-          .fill(Color.accentColor)
-          .frame(height: TerminalTabBarMetrics.activeIndicatorHeight)
-      }
-
-      if !isActive {
-        VStack(spacing: 0) {
-          Spacer(minLength: 0)
-          Rectangle()
-            .fill(TerminalTabBarColors.separator)
-            .frame(height: 1)
-        }
+        Capsule().fill(TerminalTabBarColors.inactiveTabBackground)
       }
     }
+    // 1pt inset so the capsule floats with a small gap instead of touching the
+    // bar/neighbor edges. Capsule (not a rounded rect) matches the tab's outer
+    // .clipShape(.capsule); a rounded rect's corners would poke past the
+    // capsule clip and get shaved off.
+    .padding(1)
   }
 }

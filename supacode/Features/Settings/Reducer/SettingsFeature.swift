@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 
 @Reducer
 struct SettingsFeature {
@@ -35,6 +36,11 @@ struct SettingsFeature {
     var defaultViewMode: DefaultViewMode
     var dimUnfocusedSplits: Bool
     var autoShowActiveAgentsPanel: Bool
+    var windowTintMode: WindowTintMode
+    /// Mirrors `GlobalSettings.windowTintCustomColor` as a live `Color` so
+    /// the `ColorPicker` can bind to it directly; converted back to the
+    /// persistable `TintColor` at the `globalSettings` boundary.
+    var windowTintCustomColor: Color
     var cliInstallStatus: CLIInstallStatus = .notInstalled
     var cliInstallShowAlert: Bool = true
     var selection: SettingsSection? = .general
@@ -74,6 +80,8 @@ struct SettingsFeature {
       defaultViewMode = settings.defaultViewMode
       dimUnfocusedSplits = settings.dimUnfocusedSplits
       autoShowActiveAgentsPanel = settings.autoShowActiveAgentsPanel
+      windowTintMode = settings.windowTintMode
+      windowTintCustomColor = settings.windowTintCustomColor.color
     }
 
     var globalSettings: GlobalSettings {
@@ -109,7 +117,9 @@ struct SettingsFeature {
         keybindingUserOverrides: keybindingUserOverrides,
         defaultViewMode: defaultViewMode,
         dimUnfocusedSplits: dimUnfocusedSplits,
-        autoShowActiveAgentsPanel: autoShowActiveAgentsPanel
+        autoShowActiveAgentsPanel: autoShowActiveAgentsPanel,
+        windowTintMode: windowTintMode,
+        windowTintCustomColor: TintColor(windowTintCustomColor)
       )
     }
   }
@@ -212,6 +222,8 @@ struct SettingsFeature {
         state.defaultViewMode = normalizedSettings.defaultViewMode
         state.dimUnfocusedSplits = normalizedSettings.dimUnfocusedSplits
         state.autoShowActiveAgentsPanel = normalizedSettings.autoShowActiveAgentsPanel
+        state.windowTintMode = normalizedSettings.windowTintMode
+        state.windowTintCustomColor = normalizedSettings.windowTintCustomColor.color
         state.syncGlobalDefaults(from: normalizedSettings)
         return .send(.delegate(.settingsChanged(normalizedSettings)))
 

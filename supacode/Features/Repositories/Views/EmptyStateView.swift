@@ -8,7 +8,7 @@ struct EmptyStateView: View {
   var body: some View {
     let shortcutDisplay = AppShortcuts.display(for: AppShortcuts.CommandID.openRepository, in: resolvedKeybindings)
     ContentUnavailableView {
-      Label("Open a repository or folder", systemImage: "tray")
+      Label("Open a repository or folder", systemImage: "folder.badge.plus")
     } description: {
       Text(promptText(shortcutDisplay: shortcutDisplay))
     } actions: {

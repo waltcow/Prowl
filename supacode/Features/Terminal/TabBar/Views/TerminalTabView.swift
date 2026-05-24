@@ -23,11 +23,12 @@ struct TerminalTabView: View {
   @State private var editingTitle = ""
   @State private var initialEditingTitle = ""
   @State private var cancelOnExit = false
+  @State private var tabWidth: CGFloat = 0
   @Environment(CommandKeyObserver.self) private var commandKeyObserver
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
   var body: some View {
-    ZStack(alignment: .trailing) {
+    ZStack(alignment: .leading) {
       Button(action: onSelect) {
         TerminalTabLabelView(
           tab: tab,
@@ -41,7 +42,7 @@ struct TerminalTabView: View {
       .buttonStyle(TerminalTabButtonStyle(isPressing: $isPressing))
       .frame(
         minWidth: TerminalTabBarMetrics.tabMinWidth,
-        maxWidth: TerminalTabBarMetrics.tabMaxWidth,
+        maxWidth: .infinity,
         minHeight: TerminalTabBarMetrics.tabHeight,
         maxHeight: TerminalTabBarMetrics.tabHeight
       )
@@ -67,7 +68,7 @@ struct TerminalTabView: View {
       }
       .animation(.easeInOut(duration: TerminalTabBarMetrics.hoverAnimationDuration), value: isHovering)
       .animation(.easeInOut(duration: 0.2), value: hasNotification)
-      .padding(.trailing, TerminalTabBarMetrics.tabHorizontalPadding)
+      .padding(.leading, TerminalTabBarMetrics.tabHorizontalPadding)
       .opacity(isEditing ? 0 : 1)
       .allowsHitTesting(!isEditing)
     }
@@ -102,8 +103,8 @@ struct TerminalTabView: View {
           )
           .accessibilityLabel("Rename tab")
         }
-        .padding(.leading, TerminalTabBarMetrics.tabHorizontalPadding)
-        .padding(.trailing, TerminalTabBarMetrics.closeButtonSize + TerminalTabBarMetrics.contentSpacing)
+        .padding(.leading, TerminalTabBarMetrics.closeButtonSize + TerminalTabBarMetrics.contentSpacing)
+        .padding(.trailing, TerminalTabBarMetrics.tabHorizontalPadding)
         .padding(.vertical, TerminalTabBarMetrics.renameFieldInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
       }
@@ -117,12 +118,15 @@ struct TerminalTabView: View {
       )
       .animation(.easeInOut(duration: TerminalTabBarMetrics.hoverAnimationDuration), value: isHovering)
     }
-    .padding(.bottom, isActive ? TerminalTabBarMetrics.activeTabBottomPadding : 0)
-    .offset(y: isActive ? TerminalTabBarMetrics.activeTabOffset : 0)
-    .clipShape(.rect(cornerRadius: TerminalTabBarMetrics.tabCornerRadius))
-    .contentShape(.rect)
+    .clipShape(.capsule)
+    .contentShape(.capsule)
     .onHover { hovering in
       isHovering = hovering
+    }
+    .onGeometryChange(for: CGFloat.self) { proxy in
+      proxy.size.width
+    } action: { width in
+      tabWidth = width
     }
     .simultaneousGesture(
       SpatialTapGesture(count: 2, coordinateSpace: .local).onEnded { value in
@@ -162,14 +166,16 @@ struct TerminalTabView: View {
     hasNotification && !isHovering && !isHoveringClose && !isDragging && !showsShortcutHint
   }
 
-  /// Hit zone for the icon in tab-local coordinates. Covers the leading
-  /// padding plus the icon column, so a double-click anywhere on the icon
-  /// (or the empty strip just to its left) opens the icon picker. The rest
-  /// of the tab routes to inline rename.
+  /// Hit zone for the icon-picker double-click, in tab-local coordinates.
+  /// The close button now lives in the leading slot, so this mirrors to the
+  /// trailing placeholder (the opposite slot) to stay clear of it: a
+  /// double-click there opens the icon picker, while the rest of the tab
+  /// routes to inline rename.
   private func isInIconHitArea(_ point: CGPoint) -> Bool {
     guard tab.isDirty || tab.icon != nil else { return false }
-    let maxX = TerminalTabBarMetrics.tabHorizontalPadding + TerminalTabBarMetrics.closeButtonSize
-    return point.x >= 0 && point.x <= maxX
+    guard tabWidth > 0 else { return false }
+    let minX = tabWidth - TerminalTabBarMetrics.tabHorizontalPadding - TerminalTabBarMetrics.closeButtonSize
+    return point.x >= minX
   }
 }
 

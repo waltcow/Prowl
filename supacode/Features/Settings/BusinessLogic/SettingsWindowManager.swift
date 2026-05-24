@@ -61,7 +61,7 @@ final class SettingsWindowManager {
     window.isReleasedWhenClosed = false
     window.isExcludedFromWindowsMenu = true
     window.setContentSize(NSSize(width: 800, height: 600))
-    window.minSize = NSSize(width: 750, height: 500)
+    window.minSize = NSSize(width: 800, height: 500)
 
     willCloseObserver = NotificationCenter.default.addObserver(
       forName: NSWindow.willCloseNotification,

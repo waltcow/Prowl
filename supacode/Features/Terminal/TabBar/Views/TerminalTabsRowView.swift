@@ -78,7 +78,13 @@ struct TerminalTabsRowView: View {
             .id(id)
 
             if index < openedTabs.count - 1 {
+              // Always keep the divider in the layout and only toggle its
+              // opacity, so changing selection never shifts tab positions.
+              // Hidden on both sides of the selected tab so it reads as floating.
+              let selectedId = manager.selectedTabId
+              let touchesSelection = openedTabs[index] == selectedId || openedTabs[index + 1] == selectedId
               TerminalTabDivider()
+                .opacity(touchesSelection ? 0 : 1)
             }
           }
         }

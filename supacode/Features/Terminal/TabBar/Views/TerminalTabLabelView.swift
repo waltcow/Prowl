@@ -9,25 +9,35 @@ struct TerminalTabLabelView: View {
   let showsShortcutHint: Bool
 
   var body: some View {
-    HStack(spacing: TerminalTabBarMetrics.contentSpacing) {
-      if tab.isDirty || tab.icon != nil {
-        TerminalTabIconBadge(tab: tab, isActive: isActive)
-      }
-      Text(tab.displayTitle)
-        .font(.caption)
-        .lineLimit(1)
-        .foregroundStyle(isActive ? TerminalTabBarColors.activeText : TerminalTabBarColors.inactiveText)
-      Spacer(minLength: TerminalTabBarMetrics.contentTrailingSpacing)
-      ZStack {
-        if showsShortcutHint, let shortcutHint {
-          ShortcutHintView(text: shortcutHint, color: TerminalTabBarColors.inactiveText)
+    HStack(spacing: 0) {
+      // Leading placeholder, same width as the trailing close-button slot, so
+      // the title stays truly centered in the full tab.
+      Color.clear
+        .frame(width: TerminalTabBarMetrics.closeButtonSize)
+      HStack(spacing: TerminalTabBarMetrics.contentSpacing) {
+        if tab.isDirty || tab.icon != nil {
+          TerminalTabIconBadge(tab: tab, isActive: isActive)
         }
+        Text(tab.displayTitle)
+          .font(.caption)
+          .lineLimit(1)
+          .foregroundStyle(isActive ? TerminalTabBarColors.activeText : TerminalTabBarColors.inactiveText)
+      }
+      .frame(maxWidth: .infinity)
+      // Trailing slot reserved for the close button (overlaid by TerminalTabView)
+      // or the shortcut hint; the centered title never runs underneath it.
+      Color.clear
+        .frame(width: TerminalTabBarMetrics.closeButtonSize)
+    }
+    .frame(maxHeight: .infinity)
+    // Leading, sharing the close button's slot (they are mutually exclusive).
+    .overlay(alignment: .leading) {
+      if showsShortcutHint, let shortcutHint {
+        ShortcutHintView(text: shortcutHint, color: TerminalTabBarColors.inactiveText)
       }
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     .contentShape(.rect)
     .padding(.horizontal, TerminalTabBarMetrics.tabHorizontalPadding)
-    .padding(.trailing, TerminalTabBarMetrics.closeButtonSize + TerminalTabBarMetrics.contentSpacing)
   }
 }
 

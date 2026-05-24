@@ -19,6 +19,10 @@ struct RepositoryAppearancePickerView: View {
 
   @State private var isSymbolPickerPresented = false
   @State private var isHoveringIconTile = false
+  /// Retains the AppKit controller that drives the shared color panel for the
+  /// custom-color swatch. `NSColorPanel` keeps its target weakly, so this must
+  /// outlive each presentation — `@State` ties it to the view's lifetime.
+  @State private var colorPanel = ColorPanelController()
 
   private let previewSize: CGFloat = 40
   /// Diameter of the colored swatch itself.
@@ -206,10 +210,11 @@ struct RepositoryAppearancePickerView: View {
         Text("Color")
           .font(.headline)
           .frame(width: previewSize, alignment: .center)
-        HStack(spacing: 8) {
-          ForEach(RepositoryColorChoice.allCases, id: \.self) { choice in
+        HStack(spacing: 6) {
+          ForEach(RepositoryColorChoice.presets, id: \.self) { choice in
             colorSwatch(for: choice)
           }
+          customColorSwatch
           noColorSwatch
           Spacer(minLength: 0)
         }
@@ -240,6 +245,67 @@ struct RepositoryAppearancePickerView: View {
       .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
     .buttonStyle(.plain)
+  }
+
+  /// Trailing swatch for a free, user-picked color, styled like iOS's color
+  /// picker: a rainbow ring (the "any color" affordance) around the chosen
+  /// color. macOS has no built-in style for this, so the wheel is hand-drawn;
+  /// tapping opens the system color panel via `ColorPanelController`, which
+  /// streams the picked color back through `setAppearanceColor`.
+  @ViewBuilder
+  private var customColorSwatch: some View {
+    let isSelected = isCustomColorSelected
+    Button {
+      colorPanel.onColorChange = { newColor in
+        store.send(.setAppearanceColor(.custom(TintColor(newColor))))
+      }
+      colorPanel.present(initialColor: currentCustomColor)
+    } label: {
+      swatchSlot(isSelected: isSelected) {
+        customColorWheel
+      }
+      .help("Custom color — pick any color")
+      .accessibilityLabel("Custom color")
+      .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+    .buttonStyle(.plain)
+  }
+
+  /// A solid rainbow dot when no custom color is set (the "pick any color"
+  /// affordance); once a custom color is chosen, that color sits in the middle
+  /// with a small gap to a thin rainbow rim.
+  @ViewBuilder
+  private var customColorWheel: some View {
+    let rainbow = AngularGradient(
+      colors: [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink, .red],
+      center: .center
+    )
+    if case .custom(let tint) = store.appearance.color {
+      ZStack {
+        Circle()
+          .strokeBorder(rainbow, lineWidth: 2)
+          .frame(width: swatchDotSize, height: swatchDotSize)
+        Circle()
+          .fill(tint.color)
+          .frame(width: swatchDotSize - 8, height: swatchDotSize - 8)
+      }
+    } else {
+      Circle()
+        .fill(rainbow)
+        .frame(width: swatchDotSize, height: swatchDotSize)
+    }
+  }
+
+  private var isCustomColorSelected: Bool {
+    if case .custom = store.appearance.color { return true }
+    return false
+  }
+
+  /// Seeds the system color panel: the current custom color, or — for a repo
+  /// that has never used a custom color — the currently selected preset color,
+  /// falling back to the accent tint when no color is set at all.
+  private var currentCustomColor: Color {
+    store.appearance.color?.color ?? .accentColor
   }
 
   @ViewBuilder
@@ -350,5 +416,29 @@ struct RepositoryAppearancePickerView: View {
       guard response == .OK, let url = panel.url else { return }
       store.send(.importUserImage(url))
     }
+  }
+}
+
+/// Thin AppKit controller that opens the shared `NSColorPanel` for the custom
+/// color swatch and forwards live color changes back to SwiftUI. macOS has no
+/// SwiftUI API to present the color panel from an arbitrary control, so this
+/// drives it directly. `NSColorPanel` holds its target weakly, so the owner
+/// must keep this controller alive (see `RepositoryAppearancePickerView`).
+@MainActor
+private final class ColorPanelController: NSObject {
+  /// Invoked continuously while the user adjusts the panel's color.
+  var onColorChange: ((Color) -> Void)?
+
+  func present(initialColor: Color) {
+    let panel = NSColorPanel.shared
+    panel.showsAlpha = false
+    panel.color = NSColor(initialColor)
+    panel.setTarget(self)
+    panel.setAction(#selector(colorDidChange(_:)))
+    panel.makeKeyAndOrderFront(nil)
+  }
+
+  @objc private func colorDidChange(_ sender: NSColorPanel) {
+    onColorChange?(Color(nsColor: sender.color))
   }
 }

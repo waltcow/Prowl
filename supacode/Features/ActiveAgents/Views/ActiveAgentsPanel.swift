@@ -13,6 +13,7 @@ struct ActiveAgentsPanel: View {
   let onHeightChanged: (Double) -> Void
   let onHeightChangeEnded: (Double) -> Void
   @State private var dragStartHeight: Double?
+  @State private var dragIndicatorPillOpacity: CGFloat = 0.4
 
   var body: some View {
     VStack(spacing: 0) {
@@ -32,6 +33,8 @@ struct ActiveAgentsPanel: View {
         Text("New agents will appear here")
           .font(.callout)
           .foregroundStyle(.secondary)
+          // Nudge up slightly off dead-center for better visual balance.
+          .offset(y: -8)
         Spacer(minLength: 0)
       } else {
         ScrollView {
@@ -61,10 +64,6 @@ struct ActiveAgentsPanel: View {
         .fill(.thinMaterial)
     }
     .clipShape(panelBackgroundShape)
-    .overlay {
-      panelBackgroundShape
-        .stroke(.separator.opacity(0.7), lineWidth: 1)
-    }
   }
 
   private var resizeHandle: some View {
@@ -73,10 +72,10 @@ struct ActiveAgentsPanel: View {
       .frame(height: 1)
       .frame(maxWidth: .infinity)
       .overlay(alignment: .top) {
-        Rectangle()
-          .fill(.separator.opacity(0.7))
-          .frame(height: 1)
-          .padding(.horizontal, 8)
+        Capsule()
+          .fill(.separator.opacity(dragIndicatorPillOpacity))
+          .frame(width: 32, height: 4)
+          .padding(.vertical, 4)
       }
       .overlay {
         Rectangle()
@@ -90,12 +89,14 @@ struct ActiveAgentsPanel: View {
             let start = dragStartHeight ?? height
             dragStartHeight = start
             onHeightChanged(clampedHeight(start - value.translation.height))
+            dragIndicatorPillOpacity = 0.8
           }
           .onEnded { value in
             let start = dragStartHeight ?? height
             let height = clampedHeight(start - value.translation.height)
             dragStartHeight = nil
             onHeightChangeEnded(height)
+            dragIndicatorPillOpacity = 0.4
           }
       )
       .onHover { hovering in
@@ -135,15 +136,7 @@ struct ActiveAgentsPanel: View {
     return trimmed.isEmpty ? "Untitled tab" : trimmed
   }
 
-  private var panelBackgroundShape: UnevenRoundedRectangle {
-    UnevenRoundedRectangle(
-      cornerRadii: .init(
-        topLeading: 8,
-        bottomLeading: 0,
-        bottomTrailing: 0,
-        topTrailing: 8
-      ),
-      style: .continuous
-    )
+  private var panelBackgroundShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: 14)
   }
 }

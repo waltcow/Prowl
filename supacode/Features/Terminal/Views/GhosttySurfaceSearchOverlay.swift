@@ -41,7 +41,7 @@ struct GhosttySurfaceSearchOverlay: View {
           .padding(.trailing, 50)
           .padding(.vertical, 6)
           .background(Color.primary.opacity(0.1))
-          .clipShape(.rect(cornerRadius: 6))
+          .clipShape(.capsule)
           .overlay(alignment: .trailing) {
             matchLabel
           }
@@ -81,7 +81,7 @@ struct GhosttySurfaceSearchOverlay: View {
         }
         .padding(8)
         .background(.background)
-        .clipShape(GhosttySearchOverlayShape())
+        .clipShape(.capsule)
         .shadow(radius: 4)
         .background(
           GeometryReader { barGeo in
@@ -249,10 +249,7 @@ private enum GhosttySearchCorner {
 
 private struct GhosttySearchOverlayShape: Shape {
   func path(in rect: CGRect) -> Path {
-    if #available(macOS 26.0, *) {
-      return ConcentricRectangle(corners: .concentric(minimum: 8), isUniform: true).path(in: rect)
-    }
-    return RoundedRectangle(cornerRadius: 8).path(in: rect)
+    ConcentricRectangle(corners: .concentric(minimum: 8), isUniform: true).path(in: rect)
   }
 }
 
@@ -262,16 +259,8 @@ private struct SearchButtonLabel: View {
   let systemImage: String
 
   var body: some View {
-    Label {
-      if let shortcut {
-        Text("\(title) \(Text("(\(shortcut))").foregroundColor(.secondary.opacity(0.7)))")
-      } else {
-        Text(title)
-      }
-    } icon: {
-      Image(systemName: systemImage)
-        .accessibilityHidden(true)
-    }
+    Image(systemName: systemImage)
+      .accessibilityHidden(true)
   }
 }
 
@@ -352,10 +341,10 @@ private struct GhosttySearchButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .foregroundStyle(isHovered || configuration.isPressed ? .primary : .secondary)
-      .padding(.horizontal, 2)
+      .padding(.horizontal, 6)
       .frame(height: 26)
       .background(
-        RoundedRectangle(cornerRadius: 6)
+        Capsule()
           .fill(backgroundColor(isPressed: configuration.isPressed))
       )
       .onHover { hovering in

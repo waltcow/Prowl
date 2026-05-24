@@ -128,7 +128,7 @@ struct SettingsView: View {
     }
     .navigationSplitViewStyle(.balanced)
     .alert(store: settingsStore.scope(state: \.$alert, action: \.alert))
-    .frame(minWidth: 750, minHeight: 500)
+    .frame(minWidth: 800, minHeight: 500)
     .background {
       WindowAppearanceSetter(colorScheme: settingsStore.appearanceMode.colorScheme)
       WindowLevelSetter(level: .normal)

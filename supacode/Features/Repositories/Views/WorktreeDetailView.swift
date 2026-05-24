@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import Sharing
 import SwiftUI
 
 struct WorktreeDetailView: View {
@@ -20,6 +21,9 @@ struct WorktreeDetailView: View {
   @Bindable var store: StoreOf<AppFeature>
   let terminalManager: WorktreeTerminalManager
   @Environment(CommandKeyObserver.self) private var commandKeyObserver
+  /// Drive the chrome (nav + toolbar) tint for Normal and Canvas modes.
+  @Shared(.repositoryAppearances) private var repositoryAppearances
+  @Shared(.settingsFile) private var settingsFile
 
   var body: some View {
     detailBody(state: store.state)
@@ -64,6 +68,7 @@ struct WorktreeDetailView: View {
     )
     .navigationTitle(WindowTitle.compute(repositories: repositories, terminalManager: terminalManager))
     .toolbar(removing: repositories.isShowingCanvas ? nil : .title)
+    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .toolbar {
       if repositories.isShowingCanvas {
         canvasToolbarContent(
@@ -251,15 +256,47 @@ struct WorktreeDetailView: View {
         repositoryCustomTitles: repositories.repositoryCustomTitles,
         onExitToTab: {
           store.send(.repositories(.toggleCanvas))
-        })
+        }
+      )
+      // Canvas tints the nav (leading) only; the toolbar is left untinted so
+      // floating cards don't read against a colored band. The card title
+      // bars still carry their own per-repo color.
+      .windowChromeTint(chromeFill(repositories: repositories, context: .canvas), edges: [.leading])
     } else if repositories.isShowingShelf {
+      // Shelf manages its own chrome bands (and its always-repo-colored
+      // spine) inside `ShelfView`, so no tint modifier is applied here.
       ShelfView(
         store: store.scope(state: \.repositories, action: \.repositories),
         terminalManager: terminalManager,
         createTab: { store.send(.newTerminal) }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-    } else if repositories.isShowingArchivedWorktrees {
+    } else {
+      // Normal view mode (terminal, archived list, multi-selection, loading,
+      // repository detail, empty): tint the toolbar (top) and nav (leading)
+      // chrome, and pass the same fill into the terminal tab bar so its
+      // background reads as part of the same tinted chrome.
+      let normalFill = chromeFill(repositories: repositories, context: .normal)
+      normalModeContent(
+        repositories: repositories,
+        loadingInfo: loadingInfo,
+        selectedTerminalWorktree: selectedTerminalWorktree,
+        selectedWorktreeSummaries: selectedWorktreeSummaries,
+        barTint: normalFill
+      )
+      .windowChromeTint(normalFill, edges: [.top, .leading])
+    }
+  }
+
+  @ViewBuilder
+  private func normalModeContent(
+    repositories: RepositoriesFeature.State,
+    loadingInfo: WorktreeLoadingInfo?,
+    selectedTerminalWorktree: Worktree?,
+    selectedWorktreeSummaries: [MultiSelectedWorktreeSummary],
+    barTint: WindowChromeTint.Fill?
+  ) -> some View {
+    if repositories.isShowingArchivedWorktrees {
       ArchivedWorktreesDetailView(
         store: store.scope(state: \.repositories, action: \.repositories)
       )
@@ -278,7 +315,8 @@ struct WorktreeDetailView: View {
         manager: terminalManager,
         shouldRunSetupScript: shouldRunSetupScript,
         forceAutoFocus: shouldFocusTerminal,
-        createTab: { store.send(.newTerminal) }
+        createTab: { store.send(.newTerminal) },
+        barTint: barTint
       )
       .id(selectedTerminalWorktree.id)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -295,6 +333,36 @@ struct WorktreeDetailView: View {
     } else {
       EmptyStateView(store: store.scope(state: \.repositories, action: \.repositories))
     }
+  }
+
+  /// The chrome region a tint is being resolved for.
+  private enum ChromeContext {
+    case normal
+    case canvas
+  }
+
+  /// Resolves the chrome band fill for the current view mode, honoring the
+  /// user's window tint setting. In `.repositoryColor` mode the band tracks
+  /// the active repository — the selected worktree's repo in Normal, the
+  /// focused card's repo in Canvas — falling back to a neutral surface when
+  /// none is colored.
+  private func chromeFill(
+    repositories: RepositoriesFeature.State,
+    context: ChromeContext
+  ) -> WindowChromeTint.Fill? {
+    let repositoryID: Repository.ID? =
+      switch context {
+      case .normal:
+        repositories.repositoryID(for: repositories.selectedWorktreeID) ?? repositories.selectedRepositoryID
+      case .canvas:
+        repositories.repositoryID(for: terminalManager.canvasFocusedWorktreeID)
+      }
+    let repositoryColor = repositoryID.flatMap { repositoryAppearances[$0]?.color }
+    return WindowChromeTint.fill(
+      mode: settingsFile.global.windowTintMode,
+      customColor: settingsFile.global.windowTintCustomColor.color,
+      repositoryColor: repositoryColor
+    )
   }
 
   private func applyFocusedActions<Content: View>(

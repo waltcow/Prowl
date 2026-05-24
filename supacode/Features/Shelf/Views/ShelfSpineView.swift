@@ -67,7 +67,15 @@ struct ShelfSpineView: View {
       // swapping one view for another (which the previous `@ViewBuilder`
       // if/else did). Fill is derived from a stepped accent-alpha ladder
       // so the open book glows strongest and neighbors fade outward.
+      //
+      // Only extends `.bottom`: the spine stops at the toolbar's lower edge
+      // (the uniform toolbar tint up there is owned by
+      // `ShelfView.topTintBand`) and no longer bleeds sideways under the
+      // floating sidebar. The nav panel's color is now driven explicitly by
+      // `SidebarView`'s tint, so a leftward bleed would only muddy it (the
+      // glass would blur several spines together into an off-hue mix).
       Rectangle().fill(spineBackgroundColor)
+        .ignoresSafeArea(edges: .bottom)
     )
     // Whole-spine tap target. Inner Buttons (header, tab slots, controls)
     // absorb their own clicks; clicks that fall on empty areas (scroll
@@ -113,21 +121,28 @@ struct ShelfSpineView: View {
   /// "this is interactable" affordance that sits just below the open
   /// book and animates in/out smoothly.
   ///
-  /// When the book's repository has a user-pinned color, that color
-  /// replaces `Color.accentColor` as the proximity-tint base so the
-  /// shelf reads as "books on shelves" instead of one continuous
-  /// accent ribbon. The proximity ladder is unchanged — we only swap
-  /// the hue.
+  /// The surface hue/alpha come from `WindowChromeTint`'s repository-color
+  /// surface: a repo with a user-pinned color tints its spine with that
+  /// color, while an uncolored repo uses a neutral surface (near-black in
+  /// dark mode, near-white in light) so the shelf stays calm and the open
+  /// book's spine reads as one continuous "L" with the toolbar tint band
+  /// above it. The spine always uses the repo color and ignores the global
+  /// `WindowTintMode` — only the chrome bands honor that setting. The
+  /// proximity ladder is unchanged — we only swap the base.
   private var spineBackgroundColor: Color {
     guard distanceFromOpen != nil else {
       return Color.primary.opacity(0.06)
     }
     let multiplier = isHovering && !isOpen ? 0.8 : accentProximityMultiplier
-    return effectiveTintColor.opacity(0.20 * multiplier)
+    return WindowChromeTint.repositoryBase(for: appearance.color)
+      .opacity(WindowChromeTint.repositoryPeakAlpha(for: appearance.color) * multiplier)
   }
 
-  /// Repo's pinned color, or `.accentColor` when none — used as the
-  /// proximity-tint base and as the icon tint in the header.
+  /// Repo's pinned color, or `.accentColor` when none — used as the header
+  /// icon tint and the active-tab highlight. The spine *surface* fill
+  /// instead routes through `WindowChromeTint` (neutral when uncolored), so
+  /// an uncolored repo keeps an accent icon / tab marker on an otherwise
+  /// neutral spine.
   private var effectiveTintColor: Color {
     appearance.color?.color ?? .accentColor
   }

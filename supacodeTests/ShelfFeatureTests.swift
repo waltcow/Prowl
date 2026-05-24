@@ -929,4 +929,32 @@ struct ShelfFeatureTests {
     // No `.toggleShelf` here — the Layout Restore path is responsible.
     await store.finish()
   }
+
+  @Test func isShowingShelfRequiresAtLeastOneRepository() {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo")
+    let repository = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: "repo",
+      worktrees: []
+    )
+
+    // Active shelf with zero repositories falls back to Normal — covers the
+    // zero-repo launch race where `isShelfActive` is flipped on (from the
+    // repository snapshot) before the empty entries file reconciles repos
+    // back to empty.
+    var empty = RepositoriesFeature.State()
+    empty.isShelfActive = true
+    #expect(empty.repositories.isEmpty)
+    #expect(empty.isShowingShelf == false)
+
+    // With a repository present, the active shelf renders.
+    var withRepo = RepositoriesFeature.State(repositories: [repository])
+    withRepo.isShelfActive = true
+    #expect(withRepo.isShowingShelf == true)
+
+    // Inactive shelf is never showing.
+    withRepo.isShelfActive = false
+    #expect(withRepo.isShowingShelf == false)
+  }
 }

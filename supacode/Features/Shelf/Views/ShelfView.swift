@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Sharing
 import SwiftUI
 
 private let shelfLogger = SupaLogger("Shelf")
@@ -22,6 +23,11 @@ struct ShelfView: View {
   /// stamping an opaque layer behind every child — including the
   /// terminal surface and empty-state area.
   @Environment(\.surfaceBackgroundOpacity) private var surfaceBackgroundOpacity
+  @Shared(.repositoryAppearances) private var repositoryAppearances
+  /// Drives the chrome tint mode / custom color. The Shelf *spine* always
+  /// uses the open repo's color regardless of this setting; only the
+  /// toolbar / nav bands below honor it.
+  @Shared(.settingsFile) private var settingsFile
 
   var body: some View {
     // Body-invocation counter. The @ViewBuilder getter rules out a
@@ -37,6 +43,20 @@ struct ShelfView: View {
     let openIndex = openBook.flatMap { book in
       books.firstIndex(where: { $0.id == book.id })
     }
+    // Color identity of the open book's repo (nil ⇒ neutral surface). Shared
+    // by the spine fill and the toolbar band so they read as one "L".
+    let openColor = openBook.flatMap { repositoryAppearances[$0.repositoryID]?.color }
+    // Chrome band fill for the toolbar (top) and nav (leading), honoring the
+    // user's window tint mode. Only shown when a book is open; an empty
+    // shelf keeps its bare chrome. The spine itself is unaffected.
+    let chromeFill =
+      openBook == nil
+      ? nil
+      : WindowChromeTint.fill(
+        mode: settingsFile.global.windowTintMode,
+        customColor: settingsFile.global.windowTintCustomColor.color,
+        repositoryColor: openColor
+      )
 
     HStack(spacing: 0) {
       ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
@@ -51,6 +71,11 @@ struct ShelfView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(nsColor: .windowBackgroundColor).opacity(surfaceBackgroundOpacity))
+    // Tint the toolbar (top) and nav (leading) chrome. The bands bleed up
+    // under the titlebar and left under the floating glass sidebar, so once
+    // the glass blends the leading band in, the nav panel, the open spine,
+    // and the toolbar all read as one continuous color.
+    .windowChromeTint(chromeFill, edges: [.top, .leading])
     // Animate on every openBookID change — covers both Shelf-originated
     // book switches (which also set their own TCA animation) and
     // left-nav-originated switches, so the spine flow is consistent

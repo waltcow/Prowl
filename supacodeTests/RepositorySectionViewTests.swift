@@ -63,12 +63,6 @@ struct RepositorySectionViewTests {
     )
   }
 
-  @Test func sidebarHeaderAlwaysShows() {
-    #expect(SidebarListView.showsRepositoryListHeader(repositoryCount: 0))
-    #expect(SidebarListView.showsRepositoryListHeader(repositoryCount: 1))
-    #expect(SidebarListView.showsRepositoryListHeader(repositoryCount: 11))
-  }
-
   @Test func explicitSelectionIncludesPrimarySelectedWorktree() {
     let worktree = Worktree(
       id: "/tmp/repo/wt",

@@ -304,6 +304,9 @@ struct RepositoriesFeature {
     case codeHostsDetected([Repository.ID: CodeHost])
     case selectArchivedWorktrees
     case selectCanvas
+    case selectShelf
+    case selectTabbed
+    case setTopSegment(TopSegment)
     case toggleCanvas
     case toggleShelf
     case selectNextShelfBook
@@ -744,6 +747,29 @@ struct RepositoriesFeature {
           state.sidebarSelectedWorktreeIDs = []
           return .run { _ in
             await terminalClient.send(.setCanvasMode(true))
+          }
+
+        case .selectShelf:
+          guard !state.isShelfActive else { return .none }
+          return .send(.toggleShelf)
+
+        case .selectTabbed:
+          if state.isShowingCanvas {
+            return .send(.toggleCanvas)
+          }
+          if state.isShowingShelf {
+            return .send(.toggleShelf)
+          }
+          return .none
+
+        case .setTopSegment(let segment):
+          switch segment {
+          case .tabbed:
+            return .send(.selectTabbed)
+          case .canvas:
+            return .send(.selectCanvas)
+          case .shelf:
+            return .send(.selectShelf)
           }
 
         case .toggleCanvas:
@@ -1680,7 +1706,19 @@ extension RepositoriesFeature.State {
   }
 
   var isShowingShelf: Bool {
-    isShelfActive
+    // Shelf needs at least one repository to render. Guarding here (not just
+    // on entry) also covers the launch race where the repository snapshot
+    // briefly repopulates books and flips `isShelfActive` on before the empty
+    // entries file reconciles repos back to zero — without this a zero-repo
+    // launch with "Default View = Shelf" would stick on an empty Shelf instead
+    // of falling back to Normal.
+    isShelfActive && !repositories.isEmpty
+  }
+
+  var topSegment: TopSegment {
+    if isShowingCanvas { return .canvas }
+    if isShowingShelf { return .shelf }
+    return .tabbed
   }
 
   private var canUseWorktreeHistory: Bool {

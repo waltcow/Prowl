@@ -77,6 +77,13 @@ struct ActiveAgentRow: View {
   }
 }
 
+/// Bagua trigram spinner: ping-pongs through the eight trigram glyphs as a
+/// single `Text`. Deliberately driven by a coarse `.periodic` timeline
+/// (~8 fps) that swaps one glyph per tick — far cheaper than redrawing a
+/// per-dot grid on the display-linked `.animation` schedule, which rebuilt
+/// nine shapes every refresh (60/120 fps) and ran continuously per working
+/// agent. With several agents working at once the periodic glyph swap keeps
+/// the panel idle between ticks.
 struct BaguaWorkingIndicator: View {
   static let frames = ["☰", "☱", "☲", "☳", "☴", "☵", "☶", "☷"]
   static let frameDuration = 0.12
@@ -133,4 +140,10 @@ extension AgentDisplayState {
       return .secondary
     }
   }
+}
+
+#Preview {
+  BaguaWorkingIndicator()
+    .foregroundStyle(.orange)
+    .frame(width: 100, height: 100)
 }
