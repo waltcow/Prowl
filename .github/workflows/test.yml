@@ -37,12 +37,12 @@ jobs:
             shift
             local log="build/ci-logs/${name}.log"
             echo "::group::${name}"
-            if "$@" >"$log" 2>&1; then
-              cat "$log"
-              echo "::endgroup::"
-              return 0
-            fi
-            local status=$?
+            # Capture the command's own exit code. Reading $? after an
+            # `if cmd; then ...; fi` block yields the `if` status (0 when the
+            # condition is false and there is no else), which silently masked
+            # failures and let the step pass on a failing build.
+            local status=0
+            "$@" >"$log" 2>&1 || status=$?
             cat "$log"
             echo "::endgroup::"
             return "$status"
