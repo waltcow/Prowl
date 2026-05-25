@@ -90,11 +90,14 @@ enum WindowChromeTint {
     }
   }
 
-  /// Resolves the toolbar background to an opaque sRGB color under the
-  /// requested app appearance. `toolbarBackground` sits on the real AppKit
-  /// toolbar surface, so a translucent semantic color can otherwise be
-  /// resolved against the system appearance captured when the app launched.
-  static func toolbarBackgroundComponents(
+  /// Resolves a chrome surface background to an opaque sRGB color under
+  /// the requested app appearance. `toolbarBackground` sits on the real
+  /// AppKit toolbar surface, so a translucent semantic color can otherwise
+  /// be resolved against the system appearance captured when the app
+  /// launched. Shelf spines use this same precomposed color so the open
+  /// spine and toolbar read as one continuous surface in light and dark
+  /// appearances.
+  static func surfaceBackgroundComponents(
     fill: Fill?,
     colorScheme: ColorScheme
   ) -> RGBComponents {
@@ -227,7 +230,7 @@ private struct WindowToolbarChromeBackgroundModifier: ViewModifier {
 
   @ViewBuilder
   func body(content: Content) -> some View {
-    let background = WindowChromeTint.toolbarBackgroundComponents(
+    let background = WindowChromeTint.surfaceBackgroundComponents(
       fill: fill,
       colorScheme: colorScheme
     ).color

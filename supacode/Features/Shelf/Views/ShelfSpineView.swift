@@ -42,6 +42,7 @@ struct ShelfSpineView: View {
   @State private var isHovering = false
   @Shared(.repositoryAppearances) private var repositoryAppearances
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     // Body-invocation counter signpost. With ~10 spines visible during
@@ -134,8 +135,11 @@ struct ShelfSpineView: View {
       return Color.primary.opacity(0.06)
     }
     let multiplier = isHovering && !isOpen ? 0.8 : accentProximityMultiplier
-    return WindowChromeTint.repositoryBase(for: appearance.color)
-      .opacity(WindowChromeTint.repositoryPeakAlpha(for: appearance.color) * multiplier)
+    let fill = WindowChromeTint.Fill(
+      color: WindowChromeTint.repositoryBase(for: appearance.color),
+      alpha: WindowChromeTint.repositoryPeakAlpha(for: appearance.color) * multiplier
+    )
+    return WindowChromeTint.surfaceBackgroundComponents(fill: fill, colorScheme: colorScheme).color
   }
 
   /// Repo's pinned color, or `.accentColor` when none — used as the header
