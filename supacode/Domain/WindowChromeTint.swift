@@ -311,21 +311,37 @@ private final class WindowFullScreenReaderView: NSView {
       return
     }
 
-    let notificationCenter = NotificationCenter.default
-    for name in Self.observedWindowNotifications {
-      let observer = notificationCenter.addObserver(
-        forName: name,
-        object: window,
-        queue: .main
-      ) { [weak self] _ in
-        MainActor.assumeIsolated {
-          self?.schedulePublishFullScreenState()
-        }
-      }
-      observers.append(observer)
+    observe(window, name: NSWindow.willEnterFullScreenNotification) { [weak self] in
+      self?.publishFullScreenState(true)
+    }
+    observe(window, name: NSWindow.didEnterFullScreenNotification) { [weak self] in
+      self?.publishFullScreenState(true)
+    }
+    observe(window, name: NSWindow.willExitFullScreenNotification) { [weak self] in
+      self?.publishFullScreenState(true)
+    }
+    observe(window, name: NSWindow.didExitFullScreenNotification) { [weak self] in
+      self?.publishFullScreenState(false)
     }
 
     publishFullScreenState()
+  }
+
+  private func observe(
+    _ window: NSWindow,
+    name: NSNotification.Name,
+    handler: @escaping @MainActor () -> Void
+  ) {
+    let observer = NotificationCenter.default.addObserver(
+      forName: name,
+      object: window,
+      queue: .main
+    ) { _ in
+      MainActor.assumeIsolated {
+        handler()
+      }
+    }
+    observers.append(observer)
   }
 
   private func removeObservers() {
@@ -336,20 +352,12 @@ private final class WindowFullScreenReaderView: NSView {
     observers.removeAll()
   }
 
-  private func schedulePublishFullScreenState() {
-    publishFullScreenState()
-    DispatchQueue.main.async { [weak self] in
-      self?.publishFullScreenState()
-    }
-  }
-
   private func publishFullScreenState() {
     guard let window else { return }
-    onFullScreenChange?(window.styleMask.contains(.fullScreen))
+    publishFullScreenState(window.styleMask.contains(.fullScreen))
   }
 
-  private static let observedWindowNotifications: [NSNotification.Name] = [
-    NSWindow.didEnterFullScreenNotification,
-    NSWindow.didExitFullScreenNotification,
-  ]
+  private func publishFullScreenState(_ isFullScreen: Bool) {
+    onFullScreenChange?(isFullScreen)
+  }
 }
