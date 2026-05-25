@@ -90,7 +90,7 @@ struct GithubCLIClientTests {
     )
     let client = GithubCLIClient.live(shell: shell)
 
-    let remoteInfo = try await client.resolveRemoteInfo(repoRoot)
+    let remoteInfo = await client.resolveRemoteInfo(repoRoot)
 
     #expect(remoteInfo == GithubRemoteInfo(host: "github.com", owner: "supabitapp", repo: "supacode"))
     let calls = await probe.snapshot()
