@@ -223,6 +223,19 @@ if [[ "$SENTRY_ENABLED" -eq 1 ]]; then
     log "WARNING: $DSYM_DIR not found, skipping dSYM upload"
   fi
 
+  # Sparkle ships as a prebuilt binaryTarget (Sparkle.xcframework), so Xcode never emits a
+  # dSYM for it into the archive — the archive-dSYM upload above therefore never covers
+  # Sparkle. Upload the dSYMs bundled inside the xcframework directly so each new Sparkle
+  # version is symbolicated automatically, instead of relying on a one-off manual bulk upload.
+  SPARKLE_XCFRAMEWORK="$HOME/Library/Caches/supacode-spm-cache/SourcePackages/artifacts/sparkle/Sparkle/Sparkle.xcframework"
+  if [[ -d "$SPARKLE_XCFRAMEWORK" ]]; then
+    log "uploading Sparkle xcframework dSYMs to Sentry..."
+    sentry-cli debug-files upload --wait "$SPARKLE_XCFRAMEWORK" \
+      || log "WARNING: Sparkle dSYM upload failed (release will continue)"
+  else
+    log "WARNING: $SPARKLE_XCFRAMEWORK not found, skipping Sparkle dSYM upload"
+  fi
+
   log "associating commits with Sentry release..."
   sentry-cli releases set-commits "$SENTRY_RELEASE_NAME" --auto \
     || log "WARNING: failed to associate commits (continuing)"

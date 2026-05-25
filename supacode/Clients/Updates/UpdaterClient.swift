@@ -43,135 +43,105 @@ final class SilentUpdateDriver: NSObject, SPUUserDriver {
     self.continuation = continuation
   }
 
-  nonisolated func show(
+  // `SPUUserDriver` is declared `NS_SWIFT_UI_ACTOR` (main-actor isolated) as of Sparkle 2.9,
+  // so these callbacks are guaranteed to arrive on the main thread. Implement them as plain
+  // `@MainActor` methods and let the compiler enforce isolation, rather than reaching for
+  // `MainActor.assumeIsolated`, which would crash on any future off-main delivery.
+  func show(
     _ request: SPUUpdatePermissionRequest,
     reply: @escaping @Sendable (SUUpdatePermissionResponse) -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.show(request, reply: reply)
-    }
+    standard.show(request, reply: reply)
   }
 
-  nonisolated func showUserInitiatedUpdateCheck(cancellation: @escaping @Sendable () -> Void) {
-    MainActor.assumeIsolated {
-      standard.showUserInitiatedUpdateCheck(cancellation: cancellation)
-    }
+  func showUserInitiatedUpdateCheck(cancellation: @escaping @Sendable () -> Void) {
+    standard.showUserInitiatedUpdateCheck(cancellation: cancellation)
   }
 
-  nonisolated func showUpdateFound(
+  func showUpdateFound(
     with appcastItem: SUAppcastItem,
     state: SPUUserUpdateState,
     reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void
   ) {
-    MainActor.assumeIsolated {
-      if state.userInitiated {
-        standard.showUpdateFound(with: appcastItem, state: state, reply: reply)
-        return
-      }
-      // Background check: surface the availability silently, then defer so Sparkle
-      // will re-offer the same update on the next (user-initiated) check.
-      continuation?.yield(.silentUpdateFound(version: appcastItem.displayVersionString))
-      reply(.dismiss)
+    if state.userInitiated {
+      standard.showUpdateFound(with: appcastItem, state: state, reply: reply)
+      return
     }
+    // Background check: surface the availability silently, then defer so Sparkle
+    // will re-offer the same update on the next (user-initiated) check.
+    continuation?.yield(.silentUpdateFound(version: appcastItem.displayVersionString))
+    reply(.dismiss)
   }
 
-  nonisolated func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
-    MainActor.assumeIsolated {
-      standard.showUpdateReleaseNotes(with: downloadData)
-    }
+  func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
+    standard.showUpdateReleaseNotes(with: downloadData)
   }
 
-  nonisolated func showUpdateReleaseNotesFailedToDownloadWithError(_ error: any Error) {
-    MainActor.assumeIsolated {
-      standard.showUpdateReleaseNotesFailedToDownloadWithError(error)
-    }
+  func showUpdateReleaseNotesFailedToDownloadWithError(_ error: any Error) {
+    standard.showUpdateReleaseNotesFailedToDownloadWithError(error)
   }
 
-  nonisolated func showUpdateNotFoundWithError(
+  func showUpdateNotFoundWithError(
     _ error: any Error,
     acknowledgement: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
-    }
+    standard.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
   }
 
-  nonisolated func showUpdaterError(
+  func showUpdaterError(
     _ error: any Error,
     acknowledgement: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showUpdaterError(error, acknowledgement: acknowledgement)
-    }
+    standard.showUpdaterError(error, acknowledgement: acknowledgement)
   }
 
-  nonisolated func showDownloadInitiated(cancellation: @escaping @Sendable () -> Void) {
-    MainActor.assumeIsolated {
-      standard.showDownloadInitiated(cancellation: cancellation)
-    }
+  func showDownloadInitiated(cancellation: @escaping @Sendable () -> Void) {
+    standard.showDownloadInitiated(cancellation: cancellation)
   }
 
-  nonisolated func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
-    MainActor.assumeIsolated {
-      standard.showDownloadDidReceiveExpectedContentLength(expectedContentLength)
-    }
+  func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+    standard.showDownloadDidReceiveExpectedContentLength(expectedContentLength)
   }
 
-  nonisolated func showDownloadDidReceiveData(ofLength length: UInt64) {
-    MainActor.assumeIsolated {
-      standard.showDownloadDidReceiveData(ofLength: length)
-    }
+  func showDownloadDidReceiveData(ofLength length: UInt64) {
+    standard.showDownloadDidReceiveData(ofLength: length)
   }
 
-  nonisolated func showDownloadDidStartExtractingUpdate() {
-    MainActor.assumeIsolated {
-      standard.showDownloadDidStartExtractingUpdate()
-    }
+  func showDownloadDidStartExtractingUpdate() {
+    standard.showDownloadDidStartExtractingUpdate()
   }
 
-  nonisolated func showExtractionReceivedProgress(_ progress: Double) {
-    MainActor.assumeIsolated {
-      standard.showExtractionReceivedProgress(progress)
-    }
+  func showExtractionReceivedProgress(_ progress: Double) {
+    standard.showExtractionReceivedProgress(progress)
   }
 
-  nonisolated func showReady(toInstallAndRelaunch reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void) {
-    MainActor.assumeIsolated {
-      standard.showReady(toInstallAndRelaunch: reply)
-    }
+  func showReady(toInstallAndRelaunch reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void) {
+    standard.showReady(toInstallAndRelaunch: reply)
   }
 
-  nonisolated func showInstallingUpdate(
+  func showInstallingUpdate(
     withApplicationTerminated applicationTerminated: Bool,
     retryTerminatingApplication: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showInstallingUpdate(
-        withApplicationTerminated: applicationTerminated,
-        retryTerminatingApplication: retryTerminatingApplication
-      )
-    }
+    standard.showInstallingUpdate(
+      withApplicationTerminated: applicationTerminated,
+      retryTerminatingApplication: retryTerminatingApplication
+    )
   }
 
-  nonisolated func showUpdateInstalledAndRelaunched(
+  func showUpdateInstalledAndRelaunched(
     _ relaunched: Bool,
     acknowledgement: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)
-    }
+    standard.showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)
   }
 
-  nonisolated func showUpdateInFocus() {
-    MainActor.assumeIsolated {
-      standard.showUpdateInFocus()
-    }
+  func showUpdateInFocus() {
+    standard.showUpdateInFocus()
   }
 
-  nonisolated func dismissUpdateInstallation() {
-    MainActor.assumeIsolated {
-      standard.dismissUpdateInstallation()
-    }
+  func dismissUpdateInstallation() {
+    standard.dismissUpdateInstallation()
   }
 }
 
