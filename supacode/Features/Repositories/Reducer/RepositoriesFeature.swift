@@ -418,14 +418,23 @@ struct RepositoriesFeature {
 
         case .activeAgents(.entryTapped(let id)):
           guard let entry = state.activeAgents.entries[id: id] else { return .none }
+          let isPlainFolder =
+            state.repositories[id: entry.worktreeID]?.kind == .plain
+          if isPlainFolder {
+            state.pendingTerminalFocusWorktreeIDs.insert(entry.worktreeID)
+          }
           return .run { send in
             // Focus the target surface (which selects its tab) before making the
-            // worktree visible, so it shows the right tab immediately instead of
-            // flashing its previously-focused tab. Then select the worktree with
-            // `focusTerminal` so the terminal view focuses the now-correct selected
-            // tab once it appears, regardless of where first responder currently is.
+            // terminal target visible, so it shows the right tab immediately instead
+            // of flashing its previously-focused tab. Plain folders are represented
+            // by their repository id, not a real worktree row, so they must select the
+            // repository rather than attempting a worktree selection.
             _ = await terminalClient.focusSurface(entry.worktreeID, entry.surfaceID)
-            await send(.selectWorktree(entry.worktreeID, focusTerminal: true))
+            if isPlainFolder {
+              await send(.selectRepository(entry.worktreeID))
+            } else {
+              await send(.selectWorktree(entry.worktreeID, focusTerminal: true))
+            }
           }
 
         case .activeAgents:

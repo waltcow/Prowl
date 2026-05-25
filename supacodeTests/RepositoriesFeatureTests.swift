@@ -977,6 +977,55 @@ struct RepositoriesFeatureTests {
     #expect(focusedSurface.value?.1 == surfaceID)
   }
 
+  @Test func activeAgentEntryTappedSelectsPlainRepository() async {
+    let repository = makeRepository(
+      id: "/tmp/folder",
+      name: "folder",
+      kind: .plain,
+      worktrees: []
+    )
+    var state = makeState(repositories: [repository])
+    let surfaceID = UUID()
+    let entry = ActiveAgentEntry(
+      id: surfaceID,
+      worktreeID: repository.id,
+      worktreeName: repository.name,
+      tabID: TerminalTabID(rawValue: UUID()),
+      tabTitle: "agent",
+      surfaceID: surfaceID,
+      paneIndex: 0,
+      agent: .codex,
+      rawState: .working,
+      displayState: .working,
+      lastChangedAt: Date(timeIntervalSince1970: 0)
+    )
+    state.activeAgents.entries = [entry]
+
+    let focusedSurface = LockIsolated<(Worktree.ID, UUID)?>(nil)
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.terminalClient.focusSurface = { worktreeID, surface in
+        focusedSurface.setValue((worktreeID, surface))
+        return true
+      }
+    }
+
+    await store.send(.activeAgents(.entryTapped(entry.id))) {
+      $0.pendingTerminalFocusWorktreeIDs = [repository.id]
+      $0.activeAgents.focusedSurfaceID = surfaceID
+    }
+    await store.receive(\.selectRepository) {
+      $0.selection = .repository(repository.id)
+      $0.sidebarSelectedWorktreeIDs = []
+      $0.openedWorktreeIDs = [repository.id]
+    }
+    await store.receive(\.delegate.selectedWorktreeChanged)
+
+    #expect(focusedSurface.value?.0 == repository.id)
+    #expect(focusedSurface.value?.1 == surfaceID)
+  }
+
   @Test func selectWorktreeCollapsesSidebarSelectedWorktreeIDs() async {
     let wt1 = makeWorktree(id: "/tmp/repo/wt1", name: "wt1", repoRoot: "/tmp/repo")
     let wt2 = makeWorktree(id: "/tmp/repo/wt2", name: "wt2", repoRoot: "/tmp/repo")
