@@ -499,6 +499,7 @@ struct AppFeature {
           settings: state.settings,
           customCommands: state.selectedCustomCommands
         )
+        let showDot = settings.showNotificationDotOnDock && state.notificationIndicatorCount > 0
         return .merge(
           .send(.repositories(.githubIntegration(.setGithubIntegrationEnabled(settings.githubIntegrationEnabled)))),
           .send(
@@ -569,6 +570,11 @@ struct AppFeature {
               }
             case .denied:
               await send(.systemNotificationsPermissionFailed(errorMessage: "Authorization status is denied."))
+            }
+          },
+          .run { _ in
+            await MainActor.run {
+              NSApplication.shared.dockTile.badgeLabel = showDot ? "●" : nil
             }
           }
         )
@@ -1194,13 +1200,34 @@ struct AppFeature {
             }
           )
         }
+        switch state.settings.dockBounceMode {
+        case .off:
+          break
+        case .once:
+          effects.append(
+            .run { _ in
+              await MainActor.run {
+                _ = NSApp.requestUserAttention(.informationalRequest)
+              }
+            }
+          )
+        case .continuous:
+          effects.append(
+            .run { _ in
+              await MainActor.run {
+                _ = NSApp.requestUserAttention(.criticalRequest)
+              }
+            }
+          )
+        }
         return .merge(effects)
 
       case .terminalEvent(.notificationIndicatorChanged(let count)):
         state.notificationIndicatorCount = count
+        let showDot = state.settings.showNotificationDotOnDock && count > 0
         return .run { _ in
           await MainActor.run {
-            NSApplication.shared.dockTile.badgeLabel = nil
+            NSApplication.shared.dockTile.badgeLabel = showDot ? "●" : nil
           }
         }
 

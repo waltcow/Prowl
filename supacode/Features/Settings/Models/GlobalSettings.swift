@@ -33,6 +33,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var windowTintCustomColor: TintColor
   var showRunButtonInToolbar: Bool
   var showDefaultEditorInToolbar: Bool
+  var dockBounceMode: DockBounceMode
+  var showNotificationDotOnDock: Bool
 
   static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -68,7 +70,9 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     windowTintMode: .repositoryColor,
     windowTintCustomColor: .default,
     showRunButtonInToolbar: true,
-    showDefaultEditorInToolbar: true
+    showDefaultEditorInToolbar: true,
+    dockBounceMode: .off,
+    showNotificationDotOnDock: false
   )
 
   init(
@@ -105,7 +109,9 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     windowTintMode: WindowTintMode = .repositoryColor,
     windowTintCustomColor: TintColor = .default,
     showRunButtonInToolbar: Bool = true,
-    showDefaultEditorInToolbar: Bool = true
+    showDefaultEditorInToolbar: Bool = true,
+    dockBounceMode: DockBounceMode = .off,
+    showNotificationDotOnDock: Bool = false
   ) {
     self.appearanceMode = appearanceMode
     self.defaultEditorID = defaultEditorID
@@ -141,6 +147,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.windowTintCustomColor = windowTintCustomColor
     self.showRunButtonInToolbar = showRunButtonInToolbar
     self.showDefaultEditorInToolbar = showDefaultEditorInToolbar
+    self.dockBounceMode = dockBounceMode
+    self.showNotificationDotOnDock = showNotificationDotOnDock
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -179,6 +187,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encode(windowTintCustomColor, forKey: .windowTintCustomColor)
     try container.encode(showRunButtonInToolbar, forKey: .showRunButtonInToolbar)
     try container.encode(showDefaultEditorInToolbar, forKey: .showDefaultEditorInToolbar)
+    try container.encode(dockBounceMode, forKey: .dockBounceMode)
+    try container.encode(showNotificationDotOnDock, forKey: .showNotificationDotOnDock)
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -216,6 +226,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case windowTintCustomColor
     case showRunButtonInToolbar
     case showDefaultEditorInToolbar
+    case dockBounceMode
+    case showNotificationDotOnDock
     // Legacy key for migration
     case automaticallyArchiveMergedWorktrees
   }
@@ -326,5 +338,11 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     showDefaultEditorInToolbar =
       try container.decodeIfPresent(Bool.self, forKey: .showDefaultEditorInToolbar)
       ?? Self.default.showDefaultEditorInToolbar
+    dockBounceMode =
+      try container.decodeIfPresent(DockBounceMode.self, forKey: .dockBounceMode)
+      ?? Self.default.dockBounceMode
+    showNotificationDotOnDock =
+      try container.decodeIfPresent(Bool.self, forKey: .showNotificationDotOnDock)
+      ?? Self.default.showNotificationDotOnDock
   }
 }

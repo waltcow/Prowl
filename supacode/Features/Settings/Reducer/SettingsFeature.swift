@@ -43,6 +43,8 @@ struct SettingsFeature {
     var windowTintCustomColor: Color
     var showRunButtonInToolbar: Bool
     var showDefaultEditorInToolbar: Bool
+    var dockBounceMode: DockBounceMode
+    var showNotificationDotOnDock: Bool
     var cliInstallStatus: CLIInstallStatus = .notInstalled
     var cliInstallShowAlert: Bool = true
     var selection: SettingsSection? = .general
@@ -86,6 +88,8 @@ struct SettingsFeature {
       windowTintCustomColor = settings.windowTintCustomColor.color
       showRunButtonInToolbar = settings.showRunButtonInToolbar
       showDefaultEditorInToolbar = settings.showDefaultEditorInToolbar
+      dockBounceMode = settings.dockBounceMode
+      showNotificationDotOnDock = settings.showNotificationDotOnDock
     }
 
     var globalSettings: GlobalSettings {
@@ -125,7 +129,9 @@ struct SettingsFeature {
         windowTintMode: windowTintMode,
         windowTintCustomColor: TintColor(windowTintCustomColor),
         showRunButtonInToolbar: showRunButtonInToolbar,
-        showDefaultEditorInToolbar: showDefaultEditorInToolbar
+        showDefaultEditorInToolbar: showDefaultEditorInToolbar,
+        dockBounceMode: dockBounceMode,
+        showNotificationDotOnDock: showNotificationDotOnDock
       )
     }
   }
@@ -232,6 +238,8 @@ struct SettingsFeature {
         state.windowTintCustomColor = normalizedSettings.windowTintCustomColor.color
         state.showRunButtonInToolbar = normalizedSettings.showRunButtonInToolbar
         state.showDefaultEditorInToolbar = normalizedSettings.showDefaultEditorInToolbar
+        state.dockBounceMode = normalizedSettings.dockBounceMode
+        state.showNotificationDotOnDock = normalizedSettings.showNotificationDotOnDock
         state.syncGlobalDefaults(from: normalizedSettings)
         return .send(.delegate(.settingsChanged(normalizedSettings)))
 

@@ -29,6 +29,20 @@ struct NotificationsSettingsView: View {
             isOn: $store.moveNotifiedWorktreeToTop
           )
           .help("Bring the worktree to the top when the terminal receives a notification")
+          Picker(
+            "Bounce dock icon",
+            selection: $store.dockBounceMode
+          ) {
+            ForEach(DockBounceMode.allCases) { mode in
+              Text(mode.title).tag(mode)
+            }
+          }
+          .help("Bounce the Prowl app icon in the Dock when a notification is received.")
+          Toggle(
+            "Show notification dot on dock icon",
+            isOn: $store.showNotificationDotOnDock
+          )
+          .help("Show a badge on the Prowl dock icon while notifications are pending.")
         }
         Section("Command Finished") {
           Toggle(
