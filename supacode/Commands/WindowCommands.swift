@@ -8,6 +8,7 @@ struct WindowCommands: Commands {
   let resolvedKeybindings: ResolvedKeybindingMap
   @Bindable var settingsWindowManager: SettingsWindowManager
   @Dependency(SettingsWindowClient.self) private var settingsWindowClient
+  @Environment(\.openWindow) private var openWindow
   @FocusedValue(\.closeTabAction) private var closeTabAction
   @FocusedValue(\.closeSurfaceAction) private var closeSurfaceAction
   @FocusedValue(\.selectPreviousTerminalTabAction) private var selectPreviousTerminalTabAction
@@ -20,6 +21,7 @@ struct WindowCommands: Commands {
   @FocusedValue(\.selectTerminalPaneRightAction) private var selectTerminalPaneRightAction
 
   var body: some Commands {
+    let mainWindowOpenerRegistered = MainWindowOpener.shared.register(openWindow: openWindow)
     let closeSurfaceHotkey = ghosttyShortcuts.keyboardShortcut(for: "close_surface")
     let closeTabHotkey = ghosttyShortcuts.keyboardShortcut(for: "close_tab")
     let shelfHasOpenBooks =
@@ -136,6 +138,7 @@ struct WindowCommands: Commands {
       Divider()
 
       Button(mainWindowTitle) {
+        guard mainWindowOpenerRegistered else { return }
         NSApp.surfaceMainWindow()
       }
       .help("Show main window")

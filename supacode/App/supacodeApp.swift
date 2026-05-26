@@ -41,6 +41,10 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
   var cliSocketServer: CLISocketServer?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    WindowLifecycleDiagnostics.startMainThreadHeartbeat()
+    WindowLifecycleDiagnostics.logWithWindows("applicationDidFinishLaunching")
+    WindowLifecycleDiagnostics.noteWindowlessIfNoMainWindow("launch")
+    WindowLifecycleDiagnostics.applyLaunchStallIfConfigured()
     // Disable press-and-hold accent menu so that key repeat works in the terminal.
     UserDefaults.standard.register(defaults: [
       "ApplePressAndHoldEnabled": false
@@ -53,16 +57,24 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
     let hasVisibleMainWindow = app.windows.contains { window in
       window.isVisible && !(window is NSPanel)
     }
+    WindowLifecycleDiagnostics.logWithWindows(
+      "applicationDidBecomeActive hasVisibleMainWindow=\(hasVisibleMainWindow)"
+    )
     guard !hasVisibleMainWindow else { return }
+    WindowLifecycleDiagnostics.log("applicationDidBecomeActive -> surfaceMainWindow()")
     app.surfaceMainWindow()
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    WindowLifecycleDiagnostics.logWithWindows("applicationShouldHandleReopen hasVisibleWindows=\(flag)")
     if flag { return true }
-    return !sender.surfaceMainWindow()
+    let surfaced = sender.surfaceMainWindow()
+    WindowLifecycleDiagnostics.log("applicationShouldHandleReopen surfaced=\(surfaced) -> handled=\(!surfaced)")
+    return !surfaced
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    WindowLifecycleDiagnostics.logWithWindows("applicationWillTerminate")
     defer { cliSocketServer?.stop() }
     guard appStore?.state.settings.restoreTerminalLayoutOnLaunch == true else { return }
     guard appStore?.state.suppressLayoutSaveUntilRelaunch != true else { return }
@@ -619,8 +631,14 @@ struct SupacodeApp: App {
           .environment(commandKeyObserver)
           .environment(\.resolvedKeybindings, store.resolvedKeybindings)
       }
+      .registersMainWindowOpener()
       .onAppear {
+        WindowLifecycleDiagnostics.logWithWindows("mainWindow content onAppear")
+        WindowLifecycleDiagnostics.noteMainWindowAppeared()
         syncGhosttyManagedShortcuts(with: store.resolvedKeybindings)
+      }
+      .onDisappear {
+        WindowLifecycleDiagnostics.logWithWindows("mainWindow content onDisappear")
       }
       .onChange(of: store.resolvedKeybindings) { _, newValue in
         syncGhosttyManagedShortcuts(with: newValue)
