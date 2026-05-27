@@ -43,7 +43,7 @@ struct AppFeatureSystemNotificationTests {
       $0.settings.systemNotificationsEnabled = false
     }
     let expectedAlert = AlertState<SettingsFeature.Alert> {
-      TextState("Enable Notifications in System Settings")
+      TextState("Prowl cannot send system notifications")
     } actions: {
       ButtonState(action: .openSystemNotificationSettings) {
         TextState("Open System Settings")
@@ -52,7 +52,7 @@ struct AppFeatureSystemNotificationTests {
         TextState("Cancel")
       }
     } message: {
-      TextState("Prowl cannot send system notifications.\n\nError: Mock request error")
+      TextState("Notification permission is turned off. Open System Settings to allow Prowl to send notifications.")
     }
     await store.receive(\.settings.showNotificationPermissionAlert) {
       $0.settings.alert = expectedAlert
@@ -96,7 +96,7 @@ struct AppFeatureSystemNotificationTests {
       $0.settings.systemNotificationsEnabled = false
     }
     let expectedAlert = AlertState<SettingsFeature.Alert> {
-      TextState("Enable Notifications in System Settings")
+      TextState("Prowl cannot send system notifications")
     } actions: {
       ButtonState(action: .openSystemNotificationSettings) {
         TextState("Open System Settings")
@@ -105,7 +105,7 @@ struct AppFeatureSystemNotificationTests {
         TextState("Cancel")
       }
     } message: {
-      TextState("Prowl cannot send system notifications.\n\nError: Authorization status is denied.")
+      TextState("Notification permission is turned off. Open System Settings to allow Prowl to send notifications.")
     }
     await store.receive(\.settings.showNotificationPermissionAlert) {
       $0.settings.alert = expectedAlert

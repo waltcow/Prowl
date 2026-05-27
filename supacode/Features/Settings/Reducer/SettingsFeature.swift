@@ -359,17 +359,9 @@ struct SettingsFeature {
         state.dockBadgeAuthorization = authorization
         return .none
 
-      case .showNotificationPermissionAlert(let errorMessage):
-        let message: String
-        if let errorMessage, !errorMessage.isEmpty {
-          message =
-            "Prowl cannot send system notifications.\n\n"
-            + "Error: \(errorMessage)"
-        } else {
-          message = "Prowl cannot send system notifications while permission is denied."
-        }
+      case .showNotificationPermissionAlert:
         state.alert = AlertState {
-          TextState("Enable Notifications in System Settings")
+          TextState("Prowl cannot send system notifications")
         } actions: {
           ButtonState(action: .openSystemNotificationSettings) {
             TextState("Open System Settings")
@@ -378,7 +370,9 @@ struct SettingsFeature {
             TextState("Cancel")
           }
         } message: {
-          TextState(message)
+          TextState(
+            "Notification permission is turned off. Open System Settings to allow Prowl to send notifications."
+          )
         }
         return .none
 
