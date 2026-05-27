@@ -89,6 +89,7 @@ struct AppFeature {
     case setLeftSidebarVisibility(NavigationSplitViewVisibility)
     case runScript
     case runCustomCommand(Int)
+    case canvasFocusedWorktreeChanged(Worktree.ID?)
     case runScriptDraftChanged(String)
     case runScriptPromptPresented(Bool)
     case saveRunScriptAndRun
@@ -154,11 +155,29 @@ struct AppFeature {
     if let worktree = repositories.selectedTerminalWorktree {
       return worktree
     }
+    return canvasFocusedTerminalWorktree(repositories: repositories)
+  }
+
+  private func actionTargetWorktree(repositories: RepositoriesFeature.State) -> Worktree? {
+    if let worktree = repositories.selectedTerminalWorktree {
+      return worktree
+    }
+    return canvasFocusedTerminalWorktree(repositories: repositories)
+  }
+
+  private func canvasFocusedTerminalWorktree(repositories: RepositoriesFeature.State) -> Worktree? {
     guard repositories.isShowingCanvas,
       let worktreeID = terminalClient.canvasFocusedWorktreeID()
     else {
       return nil
     }
+    return terminalWorktree(for: worktreeID, repositories: repositories)
+  }
+
+  private func terminalWorktree(
+    for worktreeID: Worktree.ID,
+    repositories: RepositoriesFeature.State
+  ) -> Worktree? {
     if let worktree = repositories.worktree(for: worktreeID) {
       return worktree
     }
@@ -714,7 +733,7 @@ struct AppFeature {
         return .none
 
       case .runScript:
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
         let trimmed = state.selectedRunScript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -733,7 +752,7 @@ struct AppFeature {
         }
 
       case .runCustomCommand(let index):
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
         guard state.selectedCustomCommands.indices.contains(index) else {
@@ -789,6 +808,32 @@ struct AppFeature {
           }
         }
 
+      case .canvasFocusedWorktreeChanged(let worktreeID):
+        guard state.repositories.isShowingCanvas,
+          let worktreeID,
+          let worktree = terminalWorktree(for: worktreeID, repositories: state.repositories)
+        else {
+          state.openActionSelection = .finder
+          state.selectedRunScript = ""
+          state.selectedCustomCommands = []
+          state.resolvedKeybindings = resolvedKeybindings(
+            settings: state.settings,
+            customCommands: state.selectedCustomCommands
+          )
+          state.runScriptDraft = ""
+          state.isRunScriptPromptPresented = false
+          return .run { _ in
+            await customShortcutRegistryClient.setShortcuts([])
+          }
+        }
+        let rootURL = worktree.repositoryRootURL
+        @Shared(.repositorySettings(rootURL)) var repositorySettings
+        @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
+        return .concatenate(
+          .send(.worktreeSettingsLoaded(repositorySettings, worktreeID: worktreeID)),
+          .send(.worktreeUserSettingsLoaded(userRepositorySettings, worktreeID: worktreeID))
+        )
+
       case .runScriptDraftChanged(let script):
         state.runScriptDraft = script
         return .none
@@ -801,7 +846,7 @@ struct AppFeature {
         return .none
 
       case .saveRunScriptAndRun:
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           state.isRunScriptPromptPresented = false
           state.runScriptDraft = ""
           return .none
@@ -823,7 +868,7 @@ struct AppFeature {
         return .send(.runScript)
 
       case .stopRunScript:
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
         return .run { _ in
@@ -908,7 +953,7 @@ struct AppFeature {
         )
 
       case .worktreeSettingsLoaded(let settings, let worktreeID):
-        guard state.repositories.selectedTerminalWorktree?.id == worktreeID else {
+        guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
           return .none
         }
         @Shared(.settingsFile) var settingsFile
@@ -923,7 +968,7 @@ struct AppFeature {
         return .none
 
       case .worktreeUserSettingsLoaded(let settings, let worktreeID):
-        guard state.repositories.selectedTerminalWorktree?.id == worktreeID else {
+        guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
           return .none
         }
         state.selectedCustomCommands = UserRepositorySettings.normalizedCommands(settings.customCommands)

@@ -13,6 +13,7 @@ struct CanvasView: View {
   /// per-frame canvas hot path.
   var repositoryCustomTitles: [Repository.ID: String] = [:]
   var onExitToTab: () -> Void = {}
+  var onFocusedWorktreeChanged: (Worktree.ID?) -> Void = { _ in }
   @State private var layoutStore = CanvasLayoutStore()
   @Shared(.repositoryAppearances) private var repositoryAppearances
 
@@ -712,12 +713,14 @@ struct CanvasView: View {
       let surfaceView = ownerState.surfaceView(for: newTabID)
     else {
       terminalManager.canvasFocusedWorktreeID = nil
+      onFocusedWorktreeChanged(nil)
       return
     }
 
     layoutStore.moveToFront(newTabID.rawValue.uuidString)
     ownerState.tabManager.selectTab(newTabID)
     terminalManager.canvasFocusedWorktreeID = ownerState.worktreeID
+    onFocusedWorktreeChanged(ownerState.worktreeID)
     surfaceView.focusDidChange(true)
     surfaceView.requestFocus()
   }

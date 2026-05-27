@@ -85,6 +85,23 @@ struct CommandPaletteFeatureTests {
     #expect(!ids.contains("global.stop-run-script"))
   }
 
+  @Test func commandPaletteItems_includesRunScriptForCanvasActionTarget() {
+    let rootPath = "/tmp/repo-canvas-run"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .canvas
+
+    let items = CommandPaletteFeature.commandPaletteItems(
+      from: state,
+      actionTargetWorktreeID: worktree.id
+    )
+    let ids = Set(items.map(\.id))
+    #expect(ids.contains("global.run-script"))
+    #expect(!ids.contains("global.rename-branch"))
+    #expect(!ids.contains("global.toggle-pin-worktree"))
+  }
+
   @Test func commandPaletteItems_includesStopScriptWhenRunning() {
     let rootPath = "/tmp/repo-run"
     let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)

@@ -89,6 +89,9 @@ struct ContentView: View {
           from: store.repositories,
           customCommands: store.selectedCustomCommands,
           runScriptStatusByWorktreeID: store.runScriptStatusByWorktreeID,
+          actionTargetWorktreeID: store.repositories.isShowingCanvas
+            ? terminalManager.canvasFocusedWorktreeID
+            : nil,
           ghosttyCommands: ghosttyShortcuts.commandPaletteEntries
         ),
         resolvedKeybindings: store.resolvedKeybindings

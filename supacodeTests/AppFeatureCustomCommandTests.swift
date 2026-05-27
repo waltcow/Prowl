@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import DependenciesTestSupport
 import Foundation
+import Sharing
 import Testing
 
 @testable import supacode
@@ -415,6 +416,97 @@ struct AppFeatureCustomCommandTests {
     }
 
     await store.send(.worktreeUserSettingsLoaded(settings, worktreeID: worktree.id)) {
+      $0.selectedCustomCommands = settings.customCommands
+      $0.resolvedKeybindings = KeybindingResolver.resolve(
+        schema: .appResolverSchema(customCommands: settings.customCommands),
+        migratedOverrides:
+          LegacyCustomCommandShortcutMigration
+          .migrate(commands: settings.customCommands)
+          .overrides
+      )
+    }
+  }
+
+  @Test(.dependencies) func customCommandUsesCanvasFocusedWorktree() async {
+    let worktree = makeWorktree()
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+    var repositories = makeRepositoriesState(worktree: worktree)
+    repositories.selection = .canvas
+    var state = AppFeature.State(
+      repositories: repositories,
+      settings: SettingsFeature.State()
+    )
+    state.selectedCustomCommands = [
+      UserCustomCommand(
+        title: "Canvas Build",
+        systemImage: "hammer",
+        command: "make build",
+        execution: .shellScript,
+        shortcut: nil
+      )
+    ]
+
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.canvasFocusedWorktreeID = { worktree.id }
+      $0.terminalClient.send = { command in
+        sent.withValue { $0.append(command) }
+      }
+    }
+
+    await store.send(.runCustomCommand(0))
+    await store.finish()
+
+    #expect(
+      sent.value == [
+        .createTabWithInput(
+          worktree,
+          input: "make build",
+          runSetupScriptIfNew: false,
+          autoCloseOnSuccess: false,
+          customCommandName: "Canvas Build",
+          customCommandIcon: "hammer"
+        )
+      ]
+    )
+  }
+
+  @Test(.dependencies) func canvasFocusLoadsFocusedWorktreeCustomCommands() async {
+    let worktree = makeWorktree()
+    var repositories = makeRepositoriesState(worktree: worktree)
+    repositories.selection = .canvas
+    let settings = UserRepositorySettings(
+      customCommands: [
+        UserCustomCommand(
+          title: "Canvas Test",
+          systemImage: "checkmark.circle",
+          command: "swift test",
+          execution: .terminalInput,
+          shortcut: nil
+        )
+      ]
+    )
+    let store = withDependencies {
+      $0.defaultFileStorage = .inMemory
+    } operation: {
+      @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var userRepositorySettings
+      $userRepositorySettings.withLock { $0 = settings }
+      return TestStore(
+        initialState: AppFeature.State(
+          repositories: repositories,
+          settings: SettingsFeature.State()
+        )
+      ) {
+        AppFeature()
+      } withDependencies: {
+        $0.terminalClient.canvasFocusedWorktreeID = { worktree.id }
+      }
+    }
+
+    await store.send(.canvasFocusedWorktreeChanged(worktree.id))
+    await store.receive(\.worktreeSettingsLoaded)
+    await store.receive(\.worktreeUserSettingsLoaded) {
       $0.selectedCustomCommands = settings.customCommands
       $0.resolvedKeybindings = KeybindingResolver.resolve(
         schema: .appResolverSchema(customCommands: settings.customCommands),

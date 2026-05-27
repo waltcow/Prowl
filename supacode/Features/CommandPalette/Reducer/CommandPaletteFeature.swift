@@ -216,12 +216,14 @@ struct CommandPaletteFeature {
     from repositories: RepositoriesFeature.State,
     customCommands: [UserCustomCommand] = [],
     runScriptStatusByWorktreeID: [Worktree.ID: Bool] = [:],
+    actionTargetWorktreeID: Worktree.ID? = nil,
     ghosttyCommands: [GhosttyCommand] = []
   ) -> [CommandPaletteItem] {
     let showsNewWorktreeAction =
       repositories.repositories.isEmpty
       || repositories.repositories.contains { $0.capabilities.supportsWorktrees }
     var items = globalCommandItems(showsNewWorktreeAction: showsNewWorktreeAction)
+    let worktreeActionTargetID = actionTargetWorktreeID ?? repositories.selectedWorktreeID
     if repositories.selectedWorktreeID != nil {
       items.append(
         .appShortcut(
@@ -236,7 +238,17 @@ struct CommandPaletteFeature {
       items.append(
         contentsOf: worktreeActionCommandItems(
           repositories: repositories,
+          worktreeID: worktreeActionTargetID,
           runScriptStatusByWorktreeID: runScriptStatusByWorktreeID
+        )
+      )
+    } else if worktreeActionTargetID != nil {
+      items.append(
+        contentsOf: worktreeActionCommandItems(
+          repositories: repositories,
+          worktreeID: worktreeActionTargetID,
+          runScriptStatusByWorktreeID: runScriptStatusByWorktreeID,
+          includeSelectionScopedItems: false
         )
       )
     }
@@ -384,9 +396,11 @@ private func globalCommandItems(showsNewWorktreeAction: Bool) -> [CommandPalette
 
 private func worktreeActionCommandItems(
   repositories: RepositoriesFeature.State,
-  runScriptStatusByWorktreeID: [Worktree.ID: Bool]
+  worktreeID: Worktree.ID?,
+  runScriptStatusByWorktreeID: [Worktree.ID: Bool],
+  includeSelectionScopedItems: Bool = true
 ) -> [CommandPaletteItem] {
-  guard let worktreeID = repositories.selectedWorktreeID else { return [] }
+  guard let worktreeID else { return [] }
   var items: [CommandPaletteItem] = []
   let isRunScriptRunning = runScriptStatusByWorktreeID[worktreeID] ?? false
   if isRunScriptRunning {
@@ -410,6 +424,7 @@ private func worktreeActionCommandItems(
       )
     )
   }
+  guard includeSelectionScopedItems else { return items }
   guard let row = repositories.selectedRow(for: worktreeID) else { return items }
   // Rename Branch works on any worktree (main included).
   items.append(

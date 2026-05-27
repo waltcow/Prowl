@@ -18,7 +18,9 @@ struct WorktreeCommands: Commands {
 
   var body: some Commands {
     let repositories = store.repositories
-    let hasActiveWorktree = repositories.worktree(for: repositories.selectedWorktreeID) != nil
+    let hasActiveWorktree =
+      repositories.selectedTerminalWorktree != nil
+      || (repositories.isShowingCanvas && !store.selectedCustomCommands.isEmpty)
     let orderedRows = visibleHotkeyWorktreeRows ?? repositories.orderedWorktreeRows()
     let codeHostWorktreeID = selectedCodeHostWorktreeID
     let codeHostLabel = "Open on \(repositories.codeHost(forWorktreeID: codeHostWorktreeID).displayName)"
