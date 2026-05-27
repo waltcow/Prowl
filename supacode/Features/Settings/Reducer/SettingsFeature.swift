@@ -37,6 +37,8 @@ struct SettingsFeature {
     var dimUnfocusedSplits: Bool
     var autoShowActiveAgentsPanel: Bool
     var windowTintMode: WindowTintMode
+    var shelfSpineTintFallback: ShelfSpineTintFallback
+    var shelfSpineTintFollowsRepositoryColor: Bool
     /// Mirrors `GlobalSettings.windowTintCustomColor` as a live `Color` so
     /// the `ColorPicker` can bind to it directly; converted back to the
     /// persistable `TintColor` at the `globalSettings` boundary.
@@ -81,6 +83,8 @@ struct SettingsFeature {
       dimUnfocusedSplits = settings.dimUnfocusedSplits
       autoShowActiveAgentsPanel = settings.autoShowActiveAgentsPanel
       windowTintMode = settings.windowTintMode
+      shelfSpineTintFallback = settings.shelfSpineTintFallback
+      shelfSpineTintFollowsRepositoryColor = settings.shelfSpineTintFollowsRepositoryColor
       windowTintCustomColor = settings.windowTintCustomColor.color
     }
 
@@ -119,7 +123,9 @@ struct SettingsFeature {
         dimUnfocusedSplits: dimUnfocusedSplits,
         autoShowActiveAgentsPanel: autoShowActiveAgentsPanel,
         windowTintMode: windowTintMode,
-        windowTintCustomColor: TintColor(windowTintCustomColor)
+        windowTintCustomColor: TintColor(windowTintCustomColor),
+        shelfSpineTintFallback: shelfSpineTintFallback,
+        shelfSpineTintFollowsRepositoryColor: shelfSpineTintFollowsRepositoryColor
       )
     }
   }
@@ -223,6 +229,8 @@ struct SettingsFeature {
         state.dimUnfocusedSplits = normalizedSettings.dimUnfocusedSplits
         state.autoShowActiveAgentsPanel = normalizedSettings.autoShowActiveAgentsPanel
         state.windowTintMode = normalizedSettings.windowTintMode
+        state.shelfSpineTintFallback = normalizedSettings.shelfSpineTintFallback
+        state.shelfSpineTintFollowsRepositoryColor = normalizedSettings.shelfSpineTintFollowsRepositoryColor
         state.windowTintCustomColor = normalizedSettings.windowTintCustomColor.color
         state.syncGlobalDefaults(from: normalizedSettings)
         return .send(.delegate(.settingsChanged(normalizedSettings)))

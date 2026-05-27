@@ -52,9 +52,7 @@ struct AppearanceSettingsView: View {
               Text(mode.title).tag(mode)
             }
           }
-          .help(
-            "Color the navigation panel and toolbar. The Shelf spine always uses its repository color."
-          )
+          .help("Color the navigation panel and toolbar.")
           if store.windowTintMode == .custom {
             ColorPicker(
               "Custom tint color",
@@ -64,6 +62,23 @@ struct AppearanceSettingsView: View {
             .help("Tint the nav and toolbar with this color in every view, ignoring repository colors.")
           }
           Text(tintFootnote)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+
+          Divider()
+
+          Picker("Tint spines in Shelf View", selection: $store.shelfSpineTintFallback) {
+            ForEach(ShelfSpineTintFallback.allCases) { fallback in
+              Text(fallback.title).tag(fallback)
+            }
+          }
+          .help("Choose how Shelf spines are tinted when no repository color is available.")
+          Toggle(
+            "Follow Repo Color Setting",
+            isOn: $store.shelfSpineTintFollowsRepositoryColor
+          )
+          .help("When disabled, all Shelf spines use the selected Neutral or System Tint style.")
+          Text(shelfSpineTintFootnote)
             .font(.callout)
             .foregroundStyle(.secondary)
         }
@@ -127,6 +142,22 @@ struct AppearanceSettingsView: View {
       return "Uses the active repository's color. Uncolored repositories get a neutral surface."
     case .custom:
       return "Uses your chosen color everywhere, regardless of per-repository colors."
+    }
+  }
+
+  private var shelfSpineTintFootnote: String {
+    let fallback =
+      switch store.shelfSpineTintFallback {
+      case .neutral:
+        "Uncolored repositories use a neutral spine."
+      case .systemTint:
+        "Uncolored repositories use the system tint color."
+      }
+
+    if store.shelfSpineTintFollowsRepositoryColor {
+      return fallback + " Repositories with a custom color still use that color."
+    } else {
+      return fallback + " Repository colors are ignored for Shelf spines."
     }
   }
 }

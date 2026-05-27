@@ -24,9 +24,8 @@ struct ShelfView: View {
   /// terminal surface and empty-state area.
   @Environment(\.surfaceBackgroundOpacity) private var surfaceBackgroundOpacity
   @Shared(.repositoryAppearances) private var repositoryAppearances
-  /// Drives the chrome tint mode / custom color. The Shelf *spine* always
-  /// uses the open repo's color regardless of this setting; only the
-  /// toolbar / nav bands below honor it.
+  /// Drives the chrome tint mode / custom color and the Shelf spine tint
+  /// preferences.
   @Shared(.settingsFile) private var settingsFile
 
   var body: some View {
@@ -48,7 +47,7 @@ struct ShelfView: View {
     let openColor = openBook.flatMap { repositoryAppearances[$0.repositoryID]?.color }
     // Chrome band fill for the toolbar (top) and nav (leading), honoring the
     // user's window tint mode. Only shown when a book is open; an empty
-    // shelf keeps its bare chrome. The spine itself is unaffected.
+    // shelf keeps its bare chrome.
     let chromeFill =
       openBook == nil
       ? nil
@@ -92,6 +91,8 @@ struct ShelfView: View {
       isOpen: open,
       distanceFromOpen: distance,
       terminalState: terminalManager.stateIfExists(for: book.id),
+      tintFallback: settingsFile.global.shelfSpineTintFallback,
+      followsRepositoryColor: settingsFile.global.shelfSpineTintFollowsRepositoryColor,
       onOpenBook: { openBook(book, selectingTab: nil) },
       onSelectTab: { tabID in openBook(book, selectingTab: tabID) },
       onNewTab: {

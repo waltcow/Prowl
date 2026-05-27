@@ -31,6 +31,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var autoShowActiveAgentsPanel: Bool
   var windowTintMode: WindowTintMode
   var windowTintCustomColor: TintColor
+  var shelfSpineTintFallback: ShelfSpineTintFallback
+  var shelfSpineTintFollowsRepositoryColor: Bool
 
   static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -64,7 +66,9 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     dimUnfocusedSplits: true,
     autoShowActiveAgentsPanel: false,
     windowTintMode: .repositoryColor,
-    windowTintCustomColor: .default
+    windowTintCustomColor: .default,
+    shelfSpineTintFallback: .neutral,
+    shelfSpineTintFollowsRepositoryColor: true
   )
 
   init(
@@ -99,7 +103,9 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     dimUnfocusedSplits: Bool = true,
     autoShowActiveAgentsPanel: Bool = false,
     windowTintMode: WindowTintMode = .repositoryColor,
-    windowTintCustomColor: TintColor = .default
+    windowTintCustomColor: TintColor = .default,
+    shelfSpineTintFallback: ShelfSpineTintFallback = .neutral,
+    shelfSpineTintFollowsRepositoryColor: Bool = true
   ) {
     self.appearanceMode = appearanceMode
     self.defaultEditorID = defaultEditorID
@@ -133,6 +139,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.autoShowActiveAgentsPanel = autoShowActiveAgentsPanel
     self.windowTintMode = windowTintMode
     self.windowTintCustomColor = windowTintCustomColor
+    self.shelfSpineTintFallback = shelfSpineTintFallback
+    self.shelfSpineTintFollowsRepositoryColor = shelfSpineTintFollowsRepositoryColor
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -169,6 +177,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encode(autoShowActiveAgentsPanel, forKey: .autoShowActiveAgentsPanel)
     try container.encode(windowTintMode, forKey: .windowTintMode)
     try container.encode(windowTintCustomColor, forKey: .windowTintCustomColor)
+    try container.encode(shelfSpineTintFallback, forKey: .shelfSpineTintFallback)
+    try container.encode(shelfSpineTintFollowsRepositoryColor, forKey: .shelfSpineTintFollowsRepositoryColor)
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -204,6 +214,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case autoShowActiveAgentsPanel
     case windowTintMode
     case windowTintCustomColor
+    case shelfSpineTintFallback
+    case shelfSpineTintFollowsRepositoryColor
     // Legacy key for migration
     case automaticallyArchiveMergedWorktrees
   }
@@ -305,8 +317,27 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     windowTintMode =
       try container.decodeIfPresent(WindowTintMode.self, forKey: .windowTintMode)
       ?? Self.default.windowTintMode
-    windowTintCustomColor =
-      try container.decodeIfPresent(TintColor.self, forKey: .windowTintCustomColor)
+    windowTintCustomColor = try Self.decodeWindowTintCustomColor(from: container)
+    (shelfSpineTintFallback, shelfSpineTintFollowsRepositoryColor) =
+      try Self.decodeShelfSpineTint(from: container)
+  }
+
+  private static func decodeWindowTintCustomColor(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> TintColor {
+    try container.decodeIfPresent(TintColor.self, forKey: .windowTintCustomColor)
       ?? Self.default.windowTintCustomColor
+  }
+
+  private static func decodeShelfSpineTint(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> (ShelfSpineTintFallback, Bool) {
+    let fallback =
+      try container.decodeIfPresent(ShelfSpineTintFallback.self, forKey: .shelfSpineTintFallback)
+      ?? Self.default.shelfSpineTintFallback
+    let followsRepositoryColor =
+      try container.decodeIfPresent(Bool.self, forKey: .shelfSpineTintFollowsRepositoryColor)
+      ?? Self.default.shelfSpineTintFollowsRepositoryColor
+    return (fallback, followsRepositoryColor)
   }
 }

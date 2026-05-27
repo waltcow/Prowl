@@ -20,6 +20,8 @@ struct ShelfSpineView: View {
   /// glance instead of every non-open spine looking identical.
   let distanceFromOpen: Int?
   let terminalState: WorktreeTerminalState?
+  let tintFallback: ShelfSpineTintFallback
+  let followsRepositoryColor: Bool
   let onOpenBook: () -> Void
   let onSelectTab: (TerminalTabID) -> Void
   /// Bottom controls — provided only for the open book's spine. `nil`
@@ -121,30 +123,41 @@ struct ShelfSpineView: View {
   /// "this is interactable" affordance that sits just below the open
   /// book and animates in/out smoothly.
   ///
-  /// The surface hue/alpha come from `WindowChromeTint`'s repository-color
-  /// surface: a repo with a user-pinned color tints its spine with that
+  /// The surface hue/alpha come from the Shelf spine tint settings. By
+  /// default, a repo with a user-pinned color tints its spine with that
   /// color, while an uncolored repo uses a neutral surface (near-black in
-  /// dark mode, near-white in light) so the shelf stays calm and the open
-  /// book's spine reads as one continuous "L" with the toolbar tint band
-  /// above it. The spine always uses the repo color and ignores the global
-  /// `WindowTintMode` — only the chrome bands honor that setting. The
-  /// proximity ladder is unchanged — we only swap the base.
+  /// dark mode, near-white in light). Users can switch uncolored spines to
+  /// the system tint, or disable repository-color following so every spine
+  /// uses the selected fallback style. The proximity ladder is unchanged —
+  /// we only swap the base.
   private var spineBackgroundColor: Color {
     guard distanceFromOpen != nil else {
       return Color.primary.opacity(0.06)
     }
     let multiplier = isHovering && !isOpen ? 0.8 : accentProximityMultiplier
-    return WindowChromeTint.repositoryBase(for: appearance.color)
-      .opacity(WindowChromeTint.repositoryPeakAlpha(for: appearance.color) * multiplier)
+    return WindowChromeTint.shelfSpineBase(
+      for: appearance.color,
+      fallback: tintFallback,
+      followsRepositoryColor: followsRepositoryColor
+    )
+    .opacity(
+      WindowChromeTint.shelfSpinePeakAlpha(
+        for: appearance.color,
+        fallback: tintFallback,
+        followsRepositoryColor: followsRepositoryColor
+      ) * multiplier
+    )
   }
 
-  /// Repo's pinned color, or `.accentColor` when none — used as the header
-  /// icon tint and the active-tab highlight. The spine *surface* fill
-  /// instead routes through `WindowChromeTint` (neutral when uncolored), so
-  /// an uncolored repo keeps an accent icon / tab marker on an otherwise
-  /// neutral spine.
+  /// Tint used as the header icon color and the active-tab highlight. It
+  /// follows the same repo-color override as the spine surface, but falls
+  /// back to system tint so the neutral default preserves the previous
+  /// accent icon / tab marker on an otherwise neutral spine.
   private var effectiveTintColor: Color {
-    appearance.color?.color ?? .accentColor
+    if followsRepositoryColor, let color = appearance.color {
+      return color.color
+    }
+    return .accentColor
   }
 
   private var appearance: RepositoryAppearance {

@@ -2,8 +2,8 @@
 /// floating sidebar and the toolbar band behind the titlebar — across
 /// every view mode (Normal, Shelf, Canvas).
 ///
-/// The Shelf spine is *not* governed by this setting: it always tints with
-/// the open repo's pinned color (see `WindowChromeTint.repositoryBase`).
+/// Shelf spine tinting has its own adjacent settings: the fallback style for
+/// uncolored repositories and whether spines follow per-repository colors.
 ///
 /// Persistence: encoded as the raw `String` (case name). Cases must never
 /// be renamed once shipped because user JSON references them by name.
@@ -11,8 +11,8 @@ enum WindowTintMode: String, CaseIterable, Identifiable, Codable, Sendable {
   /// No chrome tint. The nav and toolbar fall back to the neutral system
   /// chrome (the default, untinted look).
   case none
-  /// Tint the chrome with the active repository's pinned color, matching
-  /// the Shelf spine. An uncolored repo falls back to a neutral surface
+  /// Tint the chrome with the active repository's pinned color. An
+  /// uncolored repo falls back to a neutral surface
   /// (near-black in dark mode / near-white in light).
   case repositoryColor
   /// Tint the chrome with a single user-chosen color, unconditionally —

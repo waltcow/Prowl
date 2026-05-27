@@ -44,6 +44,60 @@ struct WindowChromeTintTests {
     #expect(WindowChromeTint.repositoryPeakAlpha(for: .blue) == WindowChromeTint.saturatedPeakAlpha)
   }
 
+  @Test
+  func shelfSpineUsesNeutralFallbackByDefaultForUncoloredRepositories() {
+    #expect(
+      WindowChromeTint.shelfSpineBase(
+        for: nil,
+        fallback: .neutral,
+        followsRepositoryColor: true
+      ) == .primary
+    )
+    #expect(
+      WindowChromeTint.shelfSpinePeakAlpha(
+        for: nil,
+        fallback: .neutral,
+        followsRepositoryColor: true
+      ) == WindowChromeTint.neutralPeakAlpha
+    )
+  }
+
+  @Test
+  func shelfSpineCanUseSystemTintFallbackForUncoloredRepositories() {
+    #expect(
+      WindowChromeTint.shelfSpineBase(
+        for: nil,
+        fallback: .systemTint,
+        followsRepositoryColor: true
+      ) == .accentColor
+    )
+    #expect(
+      WindowChromeTint.shelfSpinePeakAlpha(
+        for: nil,
+        fallback: .systemTint,
+        followsRepositoryColor: true
+      ) == WindowChromeTint.saturatedPeakAlpha
+    )
+  }
+
+  @Test
+  func shelfSpineCanIgnoreRepositoryColors() {
+    #expect(
+      WindowChromeTint.shelfSpineBase(
+        for: .green,
+        fallback: .neutral,
+        followsRepositoryColor: false
+      ) == .primary
+    )
+    #expect(
+      WindowChromeTint.shelfSpineBase(
+        for: .green,
+        fallback: .systemTint,
+        followsRepositoryColor: false
+      ) == .accentColor
+    )
+  }
+
   // MARK: - Toolbar background resolution
 
   @Test

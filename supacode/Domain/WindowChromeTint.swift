@@ -14,8 +14,8 @@ import SwiftUI
 /// `WindowTintMode` selects the source:
 /// - `.none` ⇒ no band (neutral system chrome).
 /// - `.repositoryColor` ⇒ the active repo's pinned color, or a neutral
-///   surface when uncolored — the same `repositoryBase`/`repositoryPeakAlpha`
-///   pair the Shelf spine uses, so the chrome and the open spine match.
+///   surface when uncolored. Shelf spines can use the same repo-color pair,
+///   or their own user-selected fallback behavior.
 /// - `.custom` ⇒ a single user-chosen color, ignoring per-repo colors.
 enum WindowChromeTint {
   enum ToolbarFallbackEvent {
@@ -58,8 +58,8 @@ enum WindowChromeTint {
   static let neutralPeakAlpha: Double = 0.10
 
   /// Base hue for a repository-color surface: the pinned color, or
-  /// `Color.primary` for the neutral fallback. Used by the Shelf spine
-  /// (always) and by `.repositoryColor` chrome bands.
+  /// `Color.primary` for the neutral fallback. Used by `.repositoryColor`
+  /// chrome bands.
   static func repositoryBase(for color: RepositoryColorChoice?) -> Color {
     color?.color ?? .primary
   }
@@ -68,6 +68,42 @@ enum WindowChromeTint {
   /// pinned color, the neutral peak when uncolored.
   static func repositoryPeakAlpha(for color: RepositoryColorChoice?) -> Double {
     color == nil ? neutralPeakAlpha : saturatedPeakAlpha
+  }
+
+  /// Base hue for a Shelf spine surface. When `followsRepositoryColor` is
+  /// true, a pinned repo color wins; otherwise every spine uses the user's
+  /// fallback style.
+  static func shelfSpineBase(
+    for color: RepositoryColorChoice?,
+    fallback: ShelfSpineTintFallback,
+    followsRepositoryColor: Bool
+  ) -> Color {
+    if followsRepositoryColor, let color {
+      return color.color
+    }
+    return shelfSpineFallbackBase(fallback)
+  }
+
+  /// Peak alpha for a Shelf spine surface. Neutral fallbacks stay gentler;
+  /// pinned repo colors and system tint use the saturated shelf/chrome peak.
+  static func shelfSpinePeakAlpha(
+    for color: RepositoryColorChoice?,
+    fallback: ShelfSpineTintFallback,
+    followsRepositoryColor: Bool
+  ) -> Double {
+    if followsRepositoryColor, color != nil {
+      return saturatedPeakAlpha
+    }
+    return fallback == .neutral ? neutralPeakAlpha : saturatedPeakAlpha
+  }
+
+  private static func shelfSpineFallbackBase(_ fallback: ShelfSpineTintFallback) -> Color {
+    switch fallback {
+    case .neutral:
+      return .primary
+    case .systemTint:
+      return .accentColor
+    }
   }
 
   /// Resolves the chrome band for the given tint mode. Returns `nil` when
