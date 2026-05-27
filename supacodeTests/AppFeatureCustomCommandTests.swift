@@ -506,7 +506,9 @@ struct AppFeatureCustomCommandTests {
     }
 
     await store.send(.canvasFocusedWorktreeChanged(worktree.id))
-    await store.receive(\.worktreeSettingsLoaded)
+    await store.receive(\.worktreeSettingsLoaded) {
+      $0.openActionSelection = expectedDefaultOpenAction()
+    }
     await store.receive(\.worktreeUserSettingsLoaded) {
       $0.selectedCustomCommands = settings.customCommands
       $0.resolvedKeybindings = KeybindingResolver.resolve(
@@ -570,6 +572,7 @@ struct AppFeatureCustomCommandTests {
 
     await store.send(.canvasFocusedWorktreeChanged(worktreeB.id))
     await store.receive(\.worktreeSettingsLoaded) {
+      $0.openActionSelection = expectedDefaultOpenAction()
       $0.selectedRunScript = "npm run repo-b"
     }
     await store.receive(\.worktreeUserSettingsLoaded) {
@@ -641,5 +644,14 @@ struct AppFeatureCustomCommandTests {
     repositoriesState.repositories = IdentifiedArray(uniqueElements: repositories)
     repositoriesState.selection = worktrees.first.map { .worktree($0.id) }
     return repositoriesState
+  }
+
+  private func expectedDefaultOpenAction() -> OpenWorktreeAction {
+    OpenWorktreeAction.fromSettingsID(
+      RepositorySettings.default.openActionID,
+      defaultEditorID: OpenWorktreeAction.normalizedDefaultEditorID(
+        SettingsFile.default.global.defaultEditorID
+      )
+    )
   }
 }
