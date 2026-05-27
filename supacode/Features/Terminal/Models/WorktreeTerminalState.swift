@@ -1964,16 +1964,39 @@ final class WorktreeTerminalState {
     return remainingMinutes > 0 ? "\(hours)h \(remainingMinutes)m" : "\(hours)h"
   }
 
+  /// Drops all per-surface bookkeeping for a surface that has been torn down,
+  /// including any notifications it produced. A notification is keyed by its
+  /// originating surface and is only cleared when that surface is focused or
+  /// typed into; once the surface is gone there is no way to mark it read, so
+  /// without dropping them here the worktree's unseen indicator (bell + Dock
+  /// badge) would stay lit until the user manually dismisses everything.
+  private func forgetSurface(_ surfaceID: UUID) {
+    surfaces.removeValue(forKey: surfaceID)
+    surfaceRunningStartedAtById.removeValue(forKey: surfaceID)
+    autoCloseSurfaceIds.remove(surfaceID)
+    pendingCustomCommands.removeValue(forKey: surfaceID)
+    cleanupCommandDetectorState(forSurfaceId: surfaceID)
+    cleanupAgentDetectionState(forSurfaceId: surfaceID)
+    let previousHasUnseen = hasUnseenNotification
+    notifications = Self.prunedNotifications(from: notifications, removingSurfaceID: surfaceID)
+    emitNotificationIndicatorIfNeeded(previousHasUnseen: previousHasUnseen)
+  }
+
+  /// Removes every notification that originated from `surfaceID`, regardless of
+  /// read state. Pure so the teardown behavior can be unit-tested without a
+  /// live Ghostty surface.
+  static func prunedNotifications(
+    from notifications: [WorktreeTerminalNotification],
+    removingSurfaceID surfaceID: UUID
+  ) -> [WorktreeTerminalNotification] {
+    notifications.filter { $0.surfaceId != surfaceID }
+  }
+
   private func removeTree(for tabId: TerminalTabID) {
     guard let tree = trees.removeValue(forKey: tabId) else { return }
     for surface in tree.leaves() {
       surface.closeSurface()
-      surfaces.removeValue(forKey: surface.id)
-      surfaceRunningStartedAtById.removeValue(forKey: surface.id)
-      autoCloseSurfaceIds.remove(surface.id)
-      pendingCustomCommands.removeValue(forKey: surface.id)
-      cleanupCommandDetectorState(forSurfaceId: surface.id)
-      cleanupAgentDetectionState(forSurfaceId: surface.id)
+      forgetSurface(surface.id)
     }
     focusedSurfaceIdByTab.removeValue(forKey: tabId)
     tabIsRunningById.removeValue(forKey: tabId)
@@ -2130,22 +2153,12 @@ final class WorktreeTerminalState {
     }
     guard let tabId = tabId(containing: view.id), let tree = trees[tabId] else {
       view.closeSurface()
-      surfaces.removeValue(forKey: view.id)
-      surfaceRunningStartedAtById.removeValue(forKey: view.id)
-      autoCloseSurfaceIds.remove(view.id)
-      pendingCustomCommands.removeValue(forKey: view.id)
-      cleanupCommandDetectorState(forSurfaceId: view.id)
-      cleanupAgentDetectionState(forSurfaceId: view.id)
+      forgetSurface(view.id)
       return
     }
     guard let node = tree.find(id: view.id) else {
       view.closeSurface()
-      surfaces.removeValue(forKey: view.id)
-      surfaceRunningStartedAtById.removeValue(forKey: view.id)
-      autoCloseSurfaceIds.remove(view.id)
-      pendingCustomCommands.removeValue(forKey: view.id)
-      cleanupCommandDetectorState(forSurfaceId: view.id)
-      cleanupAgentDetectionState(forSurfaceId: view.id)
+      forgetSurface(view.id)
       return
     }
     let nextSurface =
@@ -2154,12 +2167,7 @@ final class WorktreeTerminalState {
       : nil
     let newTree = tree.removing(node)
     view.closeSurface()
-    surfaces.removeValue(forKey: view.id)
-    surfaceRunningStartedAtById.removeValue(forKey: view.id)
-    autoCloseSurfaceIds.remove(view.id)
-    pendingCustomCommands.removeValue(forKey: view.id)
-    cleanupCommandDetectorState(forSurfaceId: view.id)
-    cleanupAgentDetectionState(forSurfaceId: view.id)
+    forgetSurface(view.id)
     if newTree.isEmpty {
       trees.removeValue(forKey: tabId)
       focusedSurfaceIdByTab.removeValue(forKey: tabId)
