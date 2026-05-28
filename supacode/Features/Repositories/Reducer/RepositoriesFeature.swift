@@ -169,6 +169,8 @@ struct RepositoriesFeature {
     case setGithubIntegrationEnabled(Bool)
     case setMergedWorktreeAction(MergedWorktreeAction?)
     case pullRequestAction(Worktree.ID, PullRequestAction)
+    case cacheRemoteInfo(repositoryID: Repository.ID, remoteInfo: GithubRemoteInfo)
+    case pullRequestRefreshBatchOutcome(PullRequestRefreshCoordinator.Outcome)
   }
 
   @CasePathable
@@ -239,6 +241,8 @@ struct RepositoriesFeature {
     var pendingPullRequestRefreshByRepositoryID: [Repository.ID: PendingPullRequestRefresh] = [:]
     var inFlightPullRequestRefreshRepositoryIDs: Set<Repository.ID> = []
     var queuedPullRequestRefreshByRepositoryID: [Repository.ID: PendingPullRequestRefresh] = [:]
+    var remoteInfoByRepositoryID: [Repository.ID: GithubRemoteInfo] = [:]
+    @Shared(.appStorage("githubBatchedPullRequestRefreshEnabled")) var batchedPullRequestRefreshEnabled = false
     var codeHostByRepositoryID: [Repository.ID: CodeHost] = [:]
     var sidebarSelectedWorktreeIDs: Set<Worktree.ID> = []
     var nextPendingSidebarRevealID = 0
@@ -402,6 +406,7 @@ struct RepositoriesFeature {
   @Dependency(AnalyticsClient.self) var analyticsClient
   @Dependency(GitClientDependency.self) var gitClient
   @Dependency(GithubCLIClient.self) var githubCLI
+  @Dependency(PullRequestRefreshCoordinatorClient.self) var pullRequestRefreshCoordinator
   @Dependency(GithubIntegrationClient.self) var githubIntegration
   @Dependency(OpenURLClient.self) var openURLClient
   @Dependency(RepositoryPersistenceClient.self) var repositoryPersistence
