@@ -25,7 +25,7 @@ struct WorktreeInfoWatcherManagerTests {
     try FileManager.default.removeItem(at: tempWorktree.tempRoot)
   }
 
-  @Test func defersLineChangesForWorktreesAddedAfterInitialLoad() async throws {
+  @Test func worktreesAddedAfterInitialLoadRefreshLineChangesOnce() async throws {
     let clock = TestClock()
     let tempRepository = try makeTempRepository(worktreeNames: ["sparrow", "swift"])
     let firstWorktree = try #require(tempRepository.worktrees.first)
@@ -53,6 +53,10 @@ struct WorktreeInfoWatcherManagerTests {
     #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 0)
 
     await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 1)
+
+    await clock.advance(by: .milliseconds(80))
     await drainAsyncEvents(120)
     #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 1)
 
@@ -112,6 +116,91 @@ struct WorktreeInfoWatcherManagerTests {
     await clock.advance(by: .milliseconds(1))
     await drainAsyncEvents(120)
     #expect(await collector.filesChangedCount(worktreeID: thirdWorktree.id) == 1)
+
+    await clock.advance(by: .milliseconds(120))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 1)
+    #expect(await collector.filesChangedCount(worktreeID: thirdWorktree.id) == 1)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
+  @Test func activeWorktreeRefreshesLineChangesAfterFileEventDebounce() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow", "swift"])
+    let activeWorktree = try #require(tempRepository.worktrees.first)
+    let inactiveWorktree = try #require(tempRepository.worktrees.dropFirst().first)
+    let monitorStore = TestWorktreeFileEventMonitorStore()
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      lineChangesEventDebounceInterval: .milliseconds(80),
+      lineChangesSafetyRefreshInterval: .seconds(3_600),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      worktreeFileEventMonitorFactory: monitorStore.makeMonitor,
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    manager.handleCommand(.setWorktrees([activeWorktree, inactiveWorktree]))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: activeWorktree.id) == 1)
+    #expect(await collector.filesChangedCount(worktreeID: inactiveWorktree.id) == 1)
+    #expect(monitorStore.monitor(for: activeWorktree.id) == nil)
+    #expect(monitorStore.monitor(for: inactiveWorktree.id) == nil)
+
+    manager.handleCommand(.setOpenedWorktreeIDs([activeWorktree.id]))
+    let monitor = try #require(monitorStore.monitor(for: activeWorktree.id))
+    #expect(monitorStore.monitor(for: inactiveWorktree.id) == nil)
+
+    monitor.emit()
+    await clock.advance(by: .milliseconds(79))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: activeWorktree.id) == 1)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: activeWorktree.id) == 2)
+    #expect(await collector.filesChangedCount(worktreeID: inactiveWorktree.id) == 1)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
+  @Test func activeWorktreeUsesSlowSafetyLineChangesRefresh() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow"])
+    let worktree = try #require(tempRepository.worktrees.first)
+    let monitorStore = TestWorktreeFileEventMonitorStore()
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      lineChangesSafetyRefreshInterval: .milliseconds(80),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      worktreeFileEventMonitorFactory: monitorStore.makeMonitor,
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    manager.handleCommand(.setWorktrees([worktree]))
+    manager.handleCommand(.setOpenedWorktreeIDs([worktree.id]))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 1)
+
+    await clock.advance(by: .milliseconds(79))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 1)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 2)
 
     manager.handleCommand(.stop)
     await task.value
@@ -353,5 +442,41 @@ private func startCollecting(
 private func drainAsyncEvents(_ iterations: Int = 20) async {
   for _ in 0..<iterations {
     await Task.yield()
+  }
+}
+
+@MainActor
+private final class TestWorktreeFileEventMonitorStore {
+  private var monitors: [Worktree.ID: TestWorktreeFileEventMonitor] = [:]
+
+  func makeMonitor(
+    worktree: Worktree,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> WorktreeFileEventMonitoring? {
+    let monitor = TestWorktreeFileEventMonitor(onEvent: onEvent)
+    monitors[worktree.id] = monitor
+    return monitor
+  }
+
+  func monitor(for worktreeID: Worktree.ID) -> TestWorktreeFileEventMonitor? {
+    monitors[worktreeID]
+  }
+}
+
+@MainActor
+private final class TestWorktreeFileEventMonitor: WorktreeFileEventMonitoring {
+  private let onEvent: @MainActor @Sendable () -> Void
+  private(set) var isCanceled = false
+
+  init(onEvent: @escaping @MainActor @Sendable () -> Void) {
+    self.onEvent = onEvent
+  }
+
+  func emit() {
+    onEvent()
+  }
+
+  func cancel() {
+    isCanceled = true
   }
 }
