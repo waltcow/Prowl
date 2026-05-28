@@ -34,6 +34,13 @@ private func makeTerminalRestorableWorktrees(from repositories: [Repository]) ->
   return worktrees
 }
 
+private func openedWorktreeIDsForInfoWatcher(
+  from repositories: RepositoriesFeature.State
+) -> Set<Worktree.ID> {
+  let watchedIDs = Set(repositories.worktreesForInfoWatcher().map(\.id))
+  return repositories.openedWorktreeIDs.intersection(watchedIDs)
+}
+
 @Reducer
 struct AppFeature {
   @ObservableState
@@ -320,6 +327,9 @@ struct AppFeature {
         case .active:
           return .merge(
             .send(.repositories(.refreshWorktrees)),
+            .run { _ in
+              await worktreeInfoWatcher.send(.refreshLineChanges)
+            },
             .run { send in
               while !Task.isCancelled {
                 try? await ContinuousClock().sleep(for: .seconds(30))
@@ -444,6 +454,7 @@ struct AppFeature {
           customCommands: state.selectedCustomCommands
         )
         let worktrees = state.repositories.worktreesForInfoWatcher()
+        let openedWorktreeIDs = openedWorktreeIDsForInfoWatcher(from: state.repositories)
         let shouldRestoreLayout =
           state.launchRestoreMode == .restoreLayout
           && state.repositories.snapshotPersistencePhase == .active
@@ -472,6 +483,9 @@ struct AppFeature {
             .run { _ in
               await worktreeInfoWatcher.send(.setWorktrees(worktrees))
             },
+            .run { _ in
+              await worktreeInfoWatcher.send(.setOpenedWorktreeIDs(openedWorktreeIDs))
+            },
           ]
           if shouldRestoreLayout {
             effects.append(
@@ -490,6 +504,9 @@ struct AppFeature {
           },
           .run { _ in
             await worktreeInfoWatcher.send(.setWorktrees(worktrees))
+          },
+          .run { _ in
+            await worktreeInfoWatcher.send(.setOpenedWorktreeIDs(openedWorktreeIDs))
           },
         ]
         if shouldRestoreLayout {
@@ -1371,13 +1388,31 @@ struct AppFeature {
         // marks its worktree as Shelf-visible. Layout restore in
         // particular only calls `selectWorktree` for the one active
         // worktree; other restored worktrees only surface here.
-        return .send(.repositories(.markWorktreeOpened(worktreeID)))
+        var openedWorktreeIDs = openedWorktreeIDsForInfoWatcher(from: state.repositories)
+        if state.repositories.worktree(for: worktreeID) != nil {
+          openedWorktreeIDs.insert(worktreeID)
+        }
+        let syncedOpenedWorktreeIDs = openedWorktreeIDs
+        return .merge(
+          .send(.repositories(.markWorktreeOpened(worktreeID))),
+          .run { _ in
+            await worktreeInfoWatcher.send(.setOpenedWorktreeIDs(syncedOpenedWorktreeIDs))
+          }
+        )
 
       case .terminalEvent(.tabClosed(let worktreeID, let remainingTabs)):
         // Closing the last tab retires the book from the Shelf. Other
         // closes are routine and need no Reducer-side bookkeeping.
         guard remainingTabs == 0 else { return .none }
-        return .send(.repositories(.markWorktreeClosed(worktreeID)))
+        var openedWorktreeIDs = openedWorktreeIDsForInfoWatcher(from: state.repositories)
+        openedWorktreeIDs.remove(worktreeID)
+        let syncedOpenedWorktreeIDs = openedWorktreeIDs
+        return .merge(
+          .send(.repositories(.markWorktreeClosed(worktreeID))),
+          .run { _ in
+            await worktreeInfoWatcher.send(.setOpenedWorktreeIDs(syncedOpenedWorktreeIDs))
+          }
+        )
 
       case .terminalEvent(.focusChanged(_, let surfaceID)):
         // Keep the Active Agents panel's keyboard-navigation anchor in sync with

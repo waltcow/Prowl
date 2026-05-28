@@ -7,7 +7,9 @@ struct WorktreeInfoWatcherClient {
 
   enum Command: Equatable {
     case setWorktrees([Worktree])
+    case setOpenedWorktreeIDs(Set<Worktree.ID>)
     case setSelectedWorktreeID(Worktree.ID?)
+    case refreshLineChanges
     case setPullRequestTrackingEnabled(Bool)
     case stop
   }

@@ -1,11 +1,22 @@
+import CoreServices
 import Darwin
 import Dispatch
 import Foundation
 
 @MainActor
+protocol WorktreeFileEventMonitoring: AnyObject {
+  func cancel()
+}
+
+@MainActor
 final class WorktreeInfoWatcherManager {
   typealias WorktreePhaseOffset = @Sendable (Worktree.ID, Duration) -> Duration
   typealias RepositoryPhaseOffset = @Sendable (URL, Duration) -> Duration
+  typealias WorktreeFileEventMonitorFactory =
+    @MainActor @Sendable (
+      _ worktree: Worktree,
+      _ onEvent: @escaping @MainActor @Sendable () -> Void
+    ) -> WorktreeFileEventMonitoring?
 
   private struct HeadWatcher {
     let headURL: URL
@@ -28,7 +39,7 @@ final class WorktreeInfoWatcherManager {
     let initialDelay: Duration
     let immediate: Bool
     let forceReschedule: Bool
-    let makeEvent: (Worktree.ID) -> WorktreeInfoWatcherClient.Event
+    let makeEvent: (Worktree.ID) -> WorktreeInfoWatcherClient.Event?
   }
 
   private struct RefreshTiming: Equatable {
@@ -37,19 +48,25 @@ final class WorktreeInfoWatcherManager {
   }
 
   private let filesChangedDebounceInterval: Duration
+  private let lineChangesEventDebounceInterval: Duration
+  private let lineChangesSafetyRefreshInterval: Duration
   private let pullRequestSelectionRefreshCooldown: Duration
   private let refreshTiming: RefreshTiming
   private let lineChangePhaseOffset: WorktreePhaseOffset
   private let pullRequestPhaseOffset: RepositoryPhaseOffset
+  private let worktreeFileEventMonitorFactory: WorktreeFileEventMonitorFactory
   private let sleep: @Sendable (Duration) async throws -> Void
   private var worktrees: [Worktree.ID: Worktree] = [:]
   private var headWatchers: [Worktree.ID: HeadWatcher] = [:]
+  private var worktreeFileEventMonitors: [Worktree.ID: WorktreeFileEventMonitoring] = [:]
   private var branchDebounceTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var filesDebounceTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var restartTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var pullRequestTasks: [URL: RefreshTask] = [:]
-  private var lineChangeTasks: [Worktree.ID: RefreshTask] = [:]
+  private var lineChangeSafetyTasks: [Worktree.ID: RefreshTask] = [:]
+  private var lineChangeRefreshTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var deferredLineChangeIDs: Set<Worktree.ID> = []
+  private var openedWorktreeIDs: Set<Worktree.ID> = []
   private var hasCompletedInitialWorktreeLoad = false
   private var selectedWorktreeID: Worktree.ID?
   private var pullRequestTrackingEnabled = true
@@ -60,16 +77,23 @@ final class WorktreeInfoWatcherManager {
     focusedInterval: Duration = .seconds(30),
     unfocusedInterval: Duration = .seconds(60),
     filesChangedDebounceInterval: Duration = .seconds(5),
+    lineChangesEventDebounceInterval: Duration = .seconds(30),
+    lineChangesSafetyRefreshInterval: Duration = .seconds(300),
     pullRequestSelectionRefreshCooldown: Duration = .seconds(5),
     lineChangePhaseOffset: @escaping WorktreePhaseOffset = WorktreeInfoWatcherManager.defaultLineChangePhaseOffset,
     pullRequestPhaseOffset: @escaping RepositoryPhaseOffset = WorktreeInfoWatcherManager.defaultPullRequestPhaseOffset,
+    worktreeFileEventMonitorFactory: @escaping WorktreeFileEventMonitorFactory =
+      WorktreeInfoWatcherManager.defaultWorktreeFileEventMonitorFactory,
     clock: C = ContinuousClock()
   ) {
     refreshTiming = RefreshTiming(focused: focusedInterval, unfocused: unfocusedInterval)
     self.filesChangedDebounceInterval = filesChangedDebounceInterval
+    self.lineChangesEventDebounceInterval = lineChangesEventDebounceInterval
+    self.lineChangesSafetyRefreshInterval = lineChangesSafetyRefreshInterval
     self.pullRequestSelectionRefreshCooldown = pullRequestSelectionRefreshCooldown
     self.lineChangePhaseOffset = lineChangePhaseOffset
     self.pullRequestPhaseOffset = pullRequestPhaseOffset
+    self.worktreeFileEventMonitorFactory = worktreeFileEventMonitorFactory
     self.sleep = { duration in
       try await clock.sleep(for: duration)
     }
@@ -79,8 +103,12 @@ final class WorktreeInfoWatcherManager {
     switch command {
     case .setWorktrees(let worktrees):
       setWorktrees(worktrees)
+    case .setOpenedWorktreeIDs(let worktreeIDs):
+      setOpenedWorktreeIDs(worktreeIDs)
     case .setSelectedWorktreeID(let worktreeID):
       setSelectedWorktreeID(worktreeID)
+    case .refreshLineChanges:
+      scheduleLineChangesRefreshForAllWorktrees()
     case .setPullRequestTrackingEnabled(let isEnabled):
       setPullRequestTrackingEnabled(isEnabled)
     case .stop:
@@ -106,6 +134,7 @@ final class WorktreeInfoWatcherManager {
     }
     if !removedIDs.isEmpty {
       deferredLineChangeIDs.subtract(removedIDs)
+      openedWorktreeIDs.subtract(removedIDs)
     }
     let newIDs = desiredIDs.subtracting(currentIDs)
     if !newIDs.isEmpty && !isInitialWorktreeLoad {
@@ -114,10 +143,12 @@ final class WorktreeInfoWatcherManager {
     self.worktrees = worktreesByID
     for worktree in worktrees {
       configureWatcher(for: worktree)
-      updateLineChangeSchedule(
-        worktreeID: worktree.id,
-        immediate: isInitialWorktreeLoad || !deferredLineChangeIDs.contains(worktree.id)
-      )
+      if isInitialWorktreeLoad || !deferredLineChangeIDs.contains(worktree.id) {
+        emitLineChangesChanged(worktreeID: worktree.id)
+      } else if newIDs.contains(worktree.id) {
+        scheduleLineChangesRefresh(worktreeID: worktree.id, delay: deferredLineChangesRefreshDelay(for: worktree))
+      }
+      syncLineChangesActivity(for: worktree.id)
     }
     if isInitialWorktreeLoad {
       hasCompletedInitialWorktreeLoad = true
@@ -138,6 +169,18 @@ final class WorktreeInfoWatcherManager {
     }
   }
 
+  private func setOpenedWorktreeIDs(_ worktreeIDs: Set<Worktree.ID>) {
+    let validIDs = worktreeIDs.intersection(worktrees.keys)
+    guard validIDs != openedWorktreeIDs else {
+      return
+    }
+    let affectedIDs = openedWorktreeIDs.symmetricDifference(validIDs)
+    openedWorktreeIDs = validIDs
+    for worktreeID in affectedIDs {
+      syncLineChangesActivity(for: worktreeID)
+    }
+  }
+
   private func setSelectedWorktreeID(_ worktreeID: Worktree.ID?) {
     guard selectedWorktreeID != worktreeID else {
       return
@@ -147,10 +190,11 @@ final class WorktreeInfoWatcherManager {
     selectedWorktreeID = worktreeID
     let nextRepository = worktreeID.flatMap { worktrees[$0]?.repositoryRootURL }
     if let previousWorktreeID {
-      updateLineChangeSchedule(worktreeID: previousWorktreeID, immediate: false)
+      syncLineChangesActivity(for: previousWorktreeID)
     }
     if let worktreeID {
-      updateLineChangeSchedule(worktreeID: worktreeID, immediate: true)
+      emitLineChangesChanged(worktreeID: worktreeID)
+      syncLineChangesActivity(for: worktreeID)
     }
     if let previousRepository, previousRepository == nextRepository {
       updatePullRequestSchedule(
@@ -248,13 +292,6 @@ final class WorktreeInfoWatcherManager {
       await MainActor.run {
         guard let self else { return }
         self.emit(.filesChanged(worktreeID: worktreeID))
-        if !self.deferredLineChangeIDs.contains(worktreeID) {
-          self.updateLineChangeSchedule(
-            worktreeID: worktreeID,
-            immediate: false,
-            forceReschedule: true
-          )
-        }
       }
     }
     filesDebounceTasks[worktreeID] = task
@@ -291,10 +328,12 @@ final class WorktreeInfoWatcherManager {
 
   private func stopWatcher(for worktreeID: Worktree.ID) {
     stopHeadWatcher(for: worktreeID)
+    stopWorktreeFileEventMonitor(for: worktreeID)
     branchDebounceTasks.removeValue(forKey: worktreeID)?.cancel()
     filesDebounceTasks.removeValue(forKey: worktreeID)?.cancel()
     restartTasks.removeValue(forKey: worktreeID)?.cancel()
-    lineChangeTasks.removeValue(forKey: worktreeID)?.task.cancel()
+    lineChangeSafetyTasks.removeValue(forKey: worktreeID)?.task.cancel()
+    lineChangeRefreshTasks.removeValue(forKey: worktreeID)?.cancel()
   }
 
   private func stopAll() {
@@ -313,16 +352,25 @@ final class WorktreeInfoWatcherManager {
     for task in pullRequestTasks.values {
       task.task.cancel()
     }
-    for task in lineChangeTasks.values {
+    for task in lineChangeSafetyTasks.values {
       task.task.cancel()
     }
+    for task in lineChangeRefreshTasks.values {
+      task.cancel()
+    }
+    for monitor in worktreeFileEventMonitors.values {
+      monitor.cancel()
+    }
     headWatchers.removeAll()
+    worktreeFileEventMonitors.removeAll()
     branchDebounceTasks.removeAll()
     filesDebounceTasks.removeAll()
     restartTasks.removeAll()
     pullRequestTasks.removeAll()
-    lineChangeTasks.removeAll()
+    lineChangeSafetyTasks.removeAll()
+    lineChangeRefreshTasks.removeAll()
     deferredLineChangeIDs.removeAll()
+    openedWorktreeIDs.removeAll()
     hasCompletedInitialWorktreeLoad = false
     cancelAllPullRequestSelectionCooldownTasks()
     worktrees.removeAll()
@@ -410,28 +458,107 @@ final class WorktreeInfoWatcherManager {
     emit(.repositoryPullRequestRefresh(repositoryRootURL: repositoryRootURL, worktreeIDs: worktreeIDs))
   }
 
-  private func updateLineChangeSchedule(
+  private func scheduleLineChangesRefreshForAllWorktrees() {
+    for worktree in worktrees.values {
+      scheduleLineChangesRefresh(worktreeID: worktree.id, delay: lineChangesRefreshDelay(for: worktree))
+    }
+  }
+
+  private func scheduleLineChangesRefresh(
     worktreeID: Worktree.ID,
-    immediate: Bool,
-    forceReschedule: Bool = false
+    delay: Duration
   ) {
     guard worktrees[worktreeID] != nil else {
       return
     }
-    let interval = worktreeID == selectedWorktreeID ? refreshTiming.focused : refreshTiming.unfocused
-    let shouldEmit = immediate && !deferredLineChangeIDs.contains(worktreeID)
+    lineChangeRefreshTasks[worktreeID]?.cancel()
+    let sleep = self.sleep
+    let task = Task { [weak self, sleep] in
+      do {
+        try await sleep(delay)
+      } catch {
+        return
+      }
+      await MainActor.run {
+        self?.lineChangeRefreshTasks.removeValue(forKey: worktreeID)
+        self?.emitLineChangesChanged(worktreeID: worktreeID)
+      }
+    }
+    lineChangeRefreshTasks[worktreeID] = task
+  }
+
+  private func scheduleLineChangesDebouncedRefresh(worktreeID: Worktree.ID) {
+    scheduleLineChangesRefresh(worktreeID: worktreeID, delay: lineChangesEventDebounceInterval)
+  }
+
+  private func updateLineChangesSafetySchedule(worktreeID: Worktree.ID) {
+    guard isLineChangesActive(worktreeID), worktrees[worktreeID] != nil else {
+      lineChangeSafetyTasks.removeValue(forKey: worktreeID)?.task.cancel()
+      return
+    }
     let request = RepeatingTaskRequest(
       worktreeID: worktreeID,
-      interval: interval,
-      initialDelay: interval + lineChangePhaseOffset(worktreeID, interval),
-      immediate: shouldEmit,
-      forceReschedule: forceReschedule,
+      interval: lineChangesSafetyRefreshInterval,
+      initialDelay: lineChangesSafetyRefreshInterval,
+      immediate: false,
+      forceReschedule: false,
       makeEvent: { [weak self] worktreeID in
-        self?.deferredLineChangeIDs.remove(worktreeID)
-        return .filesChanged(worktreeID: worktreeID)
+        self?.makeLineChangesChangedEvent(worktreeID: worktreeID)
       }
     )
-    updateRepeatingTask(request, tasks: &lineChangeTasks)
+    updateRepeatingTask(request, tasks: &lineChangeSafetyTasks)
+  }
+
+  private func lineChangesRefreshDelay(for worktree: Worktree) -> Duration {
+    let interval = worktree.id == selectedWorktreeID ? refreshTiming.focused : refreshTiming.unfocused
+    return lineChangePhaseOffset(worktree.id, interval)
+  }
+
+  private func deferredLineChangesRefreshDelay(for worktree: Worktree) -> Duration {
+    let interval = worktree.id == selectedWorktreeID ? refreshTiming.focused : refreshTiming.unfocused
+    return interval + lineChangePhaseOffset(worktree.id, interval)
+  }
+
+  private func emitLineChangesChanged(worktreeID: Worktree.ID) {
+    guard let event = makeLineChangesChangedEvent(worktreeID: worktreeID) else {
+      return
+    }
+    emit(event)
+  }
+
+  private func makeLineChangesChangedEvent(worktreeID: Worktree.ID) -> WorktreeInfoWatcherClient.Event? {
+    guard worktrees[worktreeID] != nil else {
+      return nil
+    }
+    deferredLineChangeIDs.remove(worktreeID)
+    return .filesChanged(worktreeID: worktreeID)
+  }
+
+  private func syncLineChangesActivity(for worktreeID: Worktree.ID) {
+    guard let worktree = worktrees[worktreeID], isLineChangesActive(worktreeID) else {
+      stopWorktreeFileEventMonitor(for: worktreeID)
+      lineChangeSafetyTasks.removeValue(forKey: worktreeID)?.task.cancel()
+      return
+    }
+    startWorktreeFileEventMonitorIfNeeded(for: worktree)
+    updateLineChangesSafetySchedule(worktreeID: worktreeID)
+  }
+
+  private func isLineChangesActive(_ worktreeID: Worktree.ID) -> Bool {
+    selectedWorktreeID == worktreeID || openedWorktreeIDs.contains(worktreeID)
+  }
+
+  private func startWorktreeFileEventMonitorIfNeeded(for worktree: Worktree) {
+    guard worktreeFileEventMonitors[worktree.id] == nil else {
+      return
+    }
+    worktreeFileEventMonitors[worktree.id] = worktreeFileEventMonitorFactory(worktree) { [weak self] in
+      self?.scheduleLineChangesDebouncedRefresh(worktreeID: worktree.id)
+    }
+  }
+
+  private func stopWorktreeFileEventMonitor(for worktreeID: Worktree.ID) {
+    worktreeFileEventMonitors.removeValue(forKey: worktreeID)?.cancel()
   }
 
   private func updateRepeatingTask(
@@ -441,13 +568,17 @@ final class WorktreeInfoWatcherManager {
     let worktreeID = request.worktreeID
     if let existing = tasks[worktreeID], existing.interval == request.interval, !request.forceReschedule {
       if request.immediate {
-        emit(request.makeEvent(worktreeID))
+        if let event = request.makeEvent(worktreeID) {
+          emit(event)
+        }
       }
       return
     }
     tasks[worktreeID]?.task.cancel()
     if request.immediate {
-      emit(request.makeEvent(worktreeID))
+      if let event = request.makeEvent(worktreeID) {
+        emit(event)
+      }
     }
     let sleep = self.sleep
     let task = Task { [weak self, sleep] in
@@ -458,7 +589,10 @@ final class WorktreeInfoWatcherManager {
       }
       while !Task.isCancelled {
         await MainActor.run {
-          self?.emit(request.makeEvent(worktreeID))
+          guard let event = request.makeEvent(worktreeID) else {
+            return
+          }
+          self?.emit(event)
         }
         do {
           try await sleep(request.interval)
@@ -482,6 +616,13 @@ final class WorktreeInfoWatcherManager {
     interval: Duration
   ) -> Duration {
     stablePhaseOffset(seed: repositoryRootURL.path(percentEncoded: false), interval: interval)
+  }
+
+  private static func defaultWorktreeFileEventMonitorFactory(
+    worktree: Worktree,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> WorktreeFileEventMonitoring? {
+    FSEventsWorktreeFileEventMonitor(rootURL: worktree.workingDirectory, onEvent: onEvent)
   }
 
   nonisolated private static func stablePhaseOffset(seed: String, interval: Duration) -> Duration {
@@ -557,5 +698,72 @@ final class WorktreeInfoWatcherManager {
       task: task
     )
     return true
+  }
+}
+
+private final class FSEventsWorktreeFileEventMonitor: WorktreeFileEventMonitoring {
+  private let onEvent: @MainActor @Sendable () -> Void
+  private var stream: FSEventStreamRef?
+
+  init?(
+    rootURL: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) {
+    self.onEvent = onEvent
+    let path = rootURL.path(percentEncoded: false)
+    var context = FSEventStreamContext(
+      version: 0,
+      info: nil,
+      retain: nil,
+      release: nil,
+      copyDescription: nil
+    )
+    context.info = Unmanaged.passUnretained(self).toOpaque()
+    let callback: FSEventStreamCallback = { _, callbackInfo, _, _, _, _ in
+      guard let callbackInfo else { return }
+      let monitor = Unmanaged<FSEventsWorktreeFileEventMonitor>
+        .fromOpaque(callbackInfo)
+        .takeUnretainedValue()
+      Task { @MainActor in
+        monitor.onEvent()
+      }
+    }
+    stream = FSEventStreamCreate(
+      nil,
+      callback,
+      &context,
+      [path] as CFArray,
+      FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+      1.0,
+      FSEventStreamCreateFlags(
+        kFSEventStreamCreateFlagFileEvents
+          | kFSEventStreamCreateFlagNoDefer
+          | kFSEventStreamCreateFlagWatchRoot
+      )
+    )
+    guard let stream else {
+      return nil
+    }
+    FSEventStreamScheduleWithRunLoop(
+      stream,
+      CFRunLoopGetMain(),
+      CFRunLoopMode.defaultMode.rawValue
+    )
+    guard FSEventStreamStart(stream) else {
+      FSEventStreamInvalidate(stream)
+      FSEventStreamRelease(stream)
+      self.stream = nil
+      return nil
+    }
+  }
+
+  func cancel() {
+    guard let stream else {
+      return
+    }
+    FSEventStreamStop(stream)
+    FSEventStreamInvalidate(stream)
+    FSEventStreamRelease(stream)
+    self.stream = nil
   }
 }
