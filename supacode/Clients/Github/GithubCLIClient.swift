@@ -40,11 +40,41 @@ extension GithubAuthStatusResponse.GithubAuthAccount: Decodable {
   }
 }
 
+nonisolated struct RepoKey: Hashable, Sendable {
+  let owner: String
+  let repo: String
+}
+
+nonisolated struct CrossRepoPullRequestRequest: Sendable, Hashable {
+  let owner: String
+  let repo: String
+  let branches: [String]
+
+  var key: RepoKey {
+    RepoKey(owner: owner, repo: repo)
+  }
+}
+
+nonisolated struct CrossRepoPullRequestResult: Sendable {
+  let successByRepo: [RepoKey: [String: GithubPullRequest]]
+  let failedRepos: [RepoKey: GithubCLIError]
+
+  init(
+    successByRepo: [RepoKey: [String: GithubPullRequest]] = [:],
+    failedRepos: [RepoKey: GithubCLIError] = [:]
+  ) {
+    self.successByRepo = successByRepo
+    self.failedRepos = failedRepos
+  }
+}
+
 struct GithubCLIClient: Sendable {
   var defaultBranch: @Sendable (URL) async throws -> String
   var resolveRemoteInfo: @Sendable (URL) async -> GithubRemoteInfo?
   var latestRun: @Sendable (URL, String) async throws -> GithubWorkflowRun?
   var batchPullRequests: @Sendable (String, String, String, [String]) async throws -> [String: GithubPullRequest]
+  var batchPullRequestsAcrossRepositories:
+    @Sendable (String, [CrossRepoPullRequestRequest]) async throws -> CrossRepoPullRequestResult
   var mergePullRequest: @Sendable (URL, GithubRemoteInfo, Int, PullRequestMergeStrategy) async throws -> Void
   var closePullRequest: @Sendable (URL, GithubRemoteInfo, Int) async throws -> Void
   var markPullRequestReady: @Sendable (URL, GithubRemoteInfo, Int) async throws -> Void
@@ -65,6 +95,7 @@ extension GithubCLIClient: DependencyKey {
       resolveRemoteInfo: resolveRemoteInfoFetcher(shell: shell, resolver: resolver),
       latestRun: latestRunFetcher(shell: shell, resolver: resolver),
       batchPullRequests: batchPullRequestsFetcher(shell: shell, resolver: resolver),
+      batchPullRequestsAcrossRepositories: batchPullRequestsAcrossRepositoriesFetcher(shell: shell, resolver: resolver),
       mergePullRequest: mergePullRequestFetcher(shell: shell, resolver: resolver),
       closePullRequest: closePullRequestFetcher(shell: shell, resolver: resolver),
       markPullRequestReady: markPullRequestReadyFetcher(shell: shell, resolver: resolver),
@@ -81,6 +112,7 @@ extension GithubCLIClient: DependencyKey {
     resolveRemoteInfo: { _ in nil },
     latestRun: { _, _ in nil },
     batchPullRequests: { _, _, _, _ in [:] },
+    batchPullRequestsAcrossRepositories: { _, _ in CrossRepoPullRequestResult() },
     mergePullRequest: { _, _, _, _ in },
     closePullRequest: { _, _, _ in },
     markPullRequestReady: { _, _, _ in },
@@ -294,6 +326,354 @@ nonisolated private func batchPullRequestsFetcher(
       chunkCount: chunks.count
     )
   }
+}
+
+nonisolated private let crossRepoBatchAliasLimit = 15
+nonisolated private let crossRepoBatchMaxConcurrentRequests = 3
+nonisolated private let crossRepoBatchLogger = SupaLogger("BPR")
+
+nonisolated private struct CrossRepoChunkOutcome: Sendable {
+  let successByRepo: [RepoKey: [String: GithubPullRequest]]
+  let failedRepos: [RepoKey: GithubCLIError]
+}
+
+nonisolated private func batchPullRequestsAcrossRepositoriesFetcher(
+  shell: ShellClient,
+  resolver: GithubCLIExecutableResolver
+) -> @Sendable (String, [CrossRepoPullRequestRequest]) async throws -> CrossRepoPullRequestResult {
+  { host, requests in
+    let cleaned = sanitizeCrossRepoRequests(requests)
+    guard !cleaned.isEmpty else {
+      return CrossRepoPullRequestResult()
+    }
+    let chunks = makeCrossRepoChunks(cleaned, chunkSize: crossRepoBatchAliasLimit)
+    // [BPR] remove after manual verification
+    crossRepoBatchLogger.debug(
+      "batch start host=\(host) repos=\(cleaned.count) chunks=\(chunks.count)"
+    )
+    let outcomes = try await loadCrossRepoChunks(
+      shell: shell,
+      resolver: resolver,
+      host: host,
+      chunks: chunks
+    )
+    return mergeCrossRepoChunkResults(outcomes)
+  }
+}
+
+nonisolated private func sanitizeCrossRepoRequests(
+  _ requests: [CrossRepoPullRequestRequest]
+) -> [CrossRepoPullRequestRequest] {
+  var sanitized: [CrossRepoPullRequestRequest] = []
+  for request in requests {
+    var seen = Set<String>()
+    let branches = request.branches.filter { value in
+      let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      return !trimmed.isEmpty && seen.insert(value).inserted
+    }
+    guard !branches.isEmpty else {
+      continue
+    }
+    sanitized.append(
+      CrossRepoPullRequestRequest(owner: request.owner, repo: request.repo, branches: branches)
+    )
+  }
+  return sanitized
+}
+
+nonisolated private func makeCrossRepoChunks(
+  _ requests: [CrossRepoPullRequestRequest],
+  chunkSize: Int
+) -> [[CrossRepoPullRequestRequest]] {
+  guard !requests.isEmpty else {
+    return []
+  }
+  var chunks: [[CrossRepoPullRequestRequest]] = []
+  var index = 0
+  while index < requests.count {
+    let end = min(index + chunkSize, requests.count)
+    chunks.append(Array(requests[index..<end]))
+    index = end
+  }
+  return chunks
+}
+
+nonisolated private func loadCrossRepoChunks(
+  shell: ShellClient,
+  resolver: GithubCLIExecutableResolver,
+  host: String,
+  chunks: [[CrossRepoPullRequestRequest]]
+) async throws -> [CrossRepoChunkOutcome] {
+  try await withThrowingTaskGroup(of: (Int, CrossRepoChunkOutcome).self) { group in
+    var nextChunkIndex = 0
+    let initialCount = min(crossRepoBatchMaxConcurrentRequests, chunks.count)
+    while nextChunkIndex < initialCount {
+      let chunkIndex = nextChunkIndex
+      let chunk = chunks[chunkIndex]
+      group.addTask {
+        let outcome = try await fetchCrossRepoChunk(
+          shell: shell,
+          resolver: resolver,
+          host: host,
+          chunk: chunk,
+          chunkIndex: chunkIndex
+        )
+        return (chunkIndex, outcome)
+      }
+      nextChunkIndex += 1
+    }
+    var resultsByIndex: [Int: CrossRepoChunkOutcome] = [:]
+    while let (chunkIndex, outcome) = try await group.next() {
+      resultsByIndex[chunkIndex] = outcome
+      if nextChunkIndex < chunks.count {
+        let candidateIndex = nextChunkIndex
+        let candidateChunk = chunks[candidateIndex]
+        group.addTask {
+          let outcome = try await fetchCrossRepoChunk(
+            shell: shell,
+            resolver: resolver,
+            host: host,
+            chunk: candidateChunk,
+            chunkIndex: candidateIndex
+          )
+          return (candidateIndex, outcome)
+        }
+        nextChunkIndex += 1
+      }
+    }
+    return (0..<chunks.count).compactMap { resultsByIndex[$0] }
+  }
+}
+
+nonisolated private func mergeCrossRepoChunkResults(
+  _ outcomes: [CrossRepoChunkOutcome]
+) -> CrossRepoPullRequestResult {
+  var success: [RepoKey: [String: GithubPullRequest]] = [:]
+  var failed: [RepoKey: GithubCLIError] = [:]
+  for outcome in outcomes {
+    for (key, prs) in outcome.successByRepo {
+      success[key] = prs
+    }
+    for (key, error) in outcome.failedRepos {
+      failed[key] = error
+    }
+  }
+  return CrossRepoPullRequestResult(successByRepo: success, failedRepos: failed)
+}
+
+nonisolated private func fetchCrossRepoChunk(
+  shell: ShellClient,
+  resolver: GithubCLIExecutableResolver,
+  host: String,
+  chunk: [CrossRepoPullRequestRequest],
+  chunkIndex: Int
+) async throws -> CrossRepoChunkOutcome {
+  let plan = makeCrossRepoBatchQuery(requests: chunk)
+  // [BPR] remove after manual verification
+  crossRepoBatchLogger.debug(
+    "chunk[\(chunkIndex)] dispatch repos=\(plan.repoAliases.count) host=\(host)"
+  )
+  let output = try await runGh(
+    shell: shell,
+    resolver: resolver,
+    arguments: [
+      "api",
+      "graphql",
+      "--hostname",
+      host,
+      "-f",
+      "query=\(plan.query)",
+    ],
+    repoRoot: nil
+  )
+  guard !output.isEmpty else {
+    var failed: [RepoKey: GithubCLIError] = [:]
+    for key in plan.repoAliases.values {
+      failed[key] = .commandFailed("Empty response from gh api graphql")
+    }
+    return CrossRepoChunkOutcome(successByRepo: [:], failedRepos: failed)
+  }
+  let data = Data(output.utf8)
+  let decoder = JSONDecoder()
+  decoder.dateDecodingStrategy = .iso8601
+  let response = try decoder.decode(CrossRepoPullRequestResponse.self, from: data)
+
+  let failedAliases = response.failedAliases()
+  var success: [RepoKey: [String: GithubPullRequest]] = [:]
+  var failed: [RepoKey: GithubCLIError] = [:]
+  for (alias, key) in plan.repoAliases {
+    if failedAliases.contains(alias) {
+      // [BPR] remove after manual verification
+      crossRepoBatchLogger.debug("chunk[\(chunkIndex)] partial-error alias=\(alias) repo=\(key.owner)/\(key.repo)")
+      failed[key] = .commandFailed("Partial GraphQL error for \(key.owner)/\(key.repo)")
+      continue
+    }
+    guard let payload = response.repositories[alias] else {
+      failed[key] = .commandFailed("Missing response payload for \(key.owner)/\(key.repo)")
+      continue
+    }
+    let branchAliasMap = plan.branchAliasesByRepo[alias] ?? [:]
+    let prs = rankCrossRepoPullRequests(
+      pullRequestsByAlias: payload.pullRequestsByAlias,
+      aliasMap: branchAliasMap,
+      owner: key.owner,
+      repo: key.repo
+    )
+    success[key] = prs
+  }
+  // [BPR] remove after manual verification
+  crossRepoBatchLogger.debug(
+    "chunk[\(chunkIndex)] done success=\(success.count) failed=\(failed.count)"
+  )
+  return CrossRepoChunkOutcome(successByRepo: success, failedRepos: failed)
+}
+
+nonisolated private struct CrossRepoBatchQueryPlan: Sendable {
+  let query: String
+  let repoAliases: [String: RepoKey]
+  let branchAliasesByRepo: [String: [String: String]]
+}
+
+nonisolated private func makeCrossRepoBatchQuery(
+  requests: [CrossRepoPullRequestRequest]
+) -> CrossRepoBatchQueryPlan {
+  var repoAliases: [String: RepoKey] = [:]
+  var branchAliasesByRepo: [String: [String: String]] = [:]
+  var repoBlocks: [String] = []
+  let orderBy = "orderBy: {field: UPDATED_AT, direction: DESC}"
+  for (repoIndex, request) in requests.enumerated() {
+    let repoAlias = "r\(repoIndex)"
+    repoAliases[repoAlias] = RepoKey(owner: request.owner, repo: request.repo)
+    var branchAliasMap: [String: String] = [:]
+    var selections: [String] = []
+    for (branchIndex, branch) in request.branches.enumerated() {
+      let branchAlias = "\(repoAlias)_b\(branchIndex)"
+      branchAliasMap[branchAlias] = branch
+      let escapedBranch = escapeGraphQLString(branch)
+      let pullRequestsArgs =
+        "first: 5, states: [OPEN, MERGED], headRefName: \"\(escapedBranch)\", \(orderBy)"
+      let selection = """
+          \(branchAlias): pullRequests(\(pullRequestsArgs)) {
+            nodes {
+              number
+              title
+              state
+              additions
+              deletions
+              isDraft
+              reviewDecision
+              mergeable
+              mergeStateStatus
+              url
+              updatedAt
+              headRefName
+              baseRefName
+              commits {
+                totalCount
+              }
+              author {
+                login
+              }
+              headRepository {
+                name
+                owner { login }
+              }
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    ... on CheckRun {
+                      name
+                      status
+                      conclusion
+                      startedAt
+                      completedAt
+                      detailsUrl
+                    }
+                    ... on StatusContext {
+                      context
+                      state
+                      targetUrl
+                      createdAt
+                    }
+                  }
+                }
+              }
+            }
+          }
+        """
+      selections.append(selection)
+    }
+    branchAliasesByRepo[repoAlias] = branchAliasMap
+    let escapedOwner = escapeGraphQLString(request.owner)
+    let escapedRepo = escapeGraphQLString(request.repo)
+    let block = """
+        \(repoAlias): repository(owner: \"\(escapedOwner)\", name: \"\(escapedRepo)\") {
+      \(selections.joined(separator: "\n"))
+        }
+      """
+    repoBlocks.append(block)
+  }
+  let query = """
+    query {
+    \(repoBlocks.joined(separator: "\n"))
+    }
+    """
+  return CrossRepoBatchQueryPlan(
+    query: query,
+    repoAliases: repoAliases,
+    branchAliasesByRepo: branchAliasesByRepo
+  )
+}
+
+nonisolated private func rankCrossRepoPullRequests(
+  pullRequestsByAlias: [String: GithubGraphQLPullRequestResponse.PullRequestConnection],
+  aliasMap: [String: String],
+  owner: String,
+  repo: String
+) -> [String: GithubPullRequest] {
+  let normalizedOwner = owner.lowercased()
+  let normalizedRepo = repo.lowercased()
+  var results: [String: GithubPullRequest] = [:]
+  for (alias, connection) in pullRequestsByAlias {
+    guard let branch = aliasMap[alias] else {
+      continue
+    }
+    let upstreamCandidates = connection.nodes.filter {
+      $0.matches(owner: normalizedOwner, repo: normalizedRepo)
+    }
+    let candidates: [GithubGraphQLPullRequestResponse.PullRequestNode]
+    if !upstreamCandidates.isEmpty {
+      candidates = upstreamCandidates
+    } else {
+      let forkCandidates = connection.nodes.filter {
+        $0.headRepository != nil && $0.doesNotTargetSameBranch(branch)
+      }
+      candidates =
+        if !forkCandidates.isEmpty {
+          forkCandidates
+        } else {
+          connection.nodes.filter {
+            $0.headRepository == nil && $0.doesNotTargetSameBranch(branch)
+          }
+        }
+    }
+    if let node = candidates.max(by: { left, right in
+      let leftRank = left.stateRank
+      let rightRank = right.stateRank
+      if leftRank != rightRank {
+        return leftRank < rightRank
+      }
+      let leftDate = left.updatedAt ?? .distantPast
+      let rightDate = right.updatedAt ?? .distantPast
+      if leftDate != rightDate {
+        return leftDate < rightDate
+      }
+      return left.number < right.number
+    }) {
+      results[branch] = node.pullRequest
+    }
+  }
+  return results
 }
 
 nonisolated private func mergePullRequestFetcher(
