@@ -1,6 +1,7 @@
 import ConcurrencyExtras
 import DependenciesTestSupport
 import Foundation
+import GhosttyKit
 import Testing
 
 @testable import supacode
@@ -86,6 +87,52 @@ struct WorktreeTerminalManagerTests {
 
     #expect(state.canCloseFocusedTab == false)
     #expect(state.canCloseFocusedSurface == false)
+  }
+
+  @Test func firstTabUsesTabSurfaceContext() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+    let surface = try #require(state.surfaceView(for: surfaceId))
+
+    #expect(surface.surfaceContextForTesting == GHOSTTY_SURFACE_CONTEXT_TAB)
+  }
+
+  @Test func splitTreeDoesNotRecreateSurfaceForClosedTab() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    state.closeTab(tabId)
+    let staleTree = state.splitTree(for: tabId)
+
+    #expect(staleTree.isEmpty)
+    #expect(state.surfaceView(for: surfaceId) == nil)
+    #expect(state.surfaceView(for: tabId) == nil)
+  }
+
+  @Test func ghosttyCloseRequestDoesNotRecreateSurfaceForClosedTab() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+    let surface = try #require(state.surfaceView(for: surfaceId))
+
+    surface.bridge.closeSurface(processAlive: false)
+    let staleTree = state.splitTree(for: tabId)
+
+    #expect(staleTree.isEmpty)
+    #expect(state.tabManager.tabs.isEmpty)
+    #expect(state.surfaceView(for: surfaceId) == nil)
+    #expect(state.surfaceView(for: tabId) == nil)
   }
 
   @Test func notificationIndicatorUsesCurrentCountOnStreamStart() async {

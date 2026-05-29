@@ -112,6 +112,9 @@ final class GhosttySurfaceView: NSView, Identifiable {
   private let envVarCount: Int
   private let fontSize: Float32
   private let context: ghostty_surface_context_e
+  var surfaceContextForTesting: ghostty_surface_context_e {
+    context
+  }
   private let skipsSurfaceCreationForTesting: Bool
   private var trackingArea: NSTrackingArea?
   private var lastBackingSize: CGSize = .zero

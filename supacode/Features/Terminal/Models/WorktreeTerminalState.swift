@@ -286,10 +286,7 @@ final class WorktreeTerminalState {
     inheritingFromSurfaceId: UUID? = nil,
     workingDirectoryOverride: URL? = nil
   ) -> TerminalTabID? {
-    let context: ghostty_surface_context_e =
-      tabManager.tabs.isEmpty
-      ? GHOSTTY_SURFACE_CONTEXT_WINDOW
-      : GHOSTTY_SURFACE_CONTEXT_TAB
+    let context = GHOSTTY_SURFACE_CONTEXT_TAB
     let resolvedInheritanceSurfaceId = inheritingFromSurfaceId ?? currentFocusedSurfaceId()
     let title = "\(worktree.name) \(nextTabIndex())"
     let setupInput = setupScriptInput(setupScript: setupScript)
@@ -661,6 +658,9 @@ final class WorktreeTerminalState {
     workingDirectoryOverride: URL? = nil,
     context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_TAB
   ) -> SplitTree<GhosttySurfaceView> {
+    guard tabManager.tabs.contains(where: { $0.id == tabId }) else {
+      return SplitTree()
+    }
     if let existing = trees[tabId] {
       return existing
     }
