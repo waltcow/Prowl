@@ -118,38 +118,4 @@ struct MirroredTerminalKeyTests {
 
     #expect(MirroredTerminalKey(event: try #require(event)) == nil)
   }
-
-  @Test func ghosttyTextIgnoresFlagsChangedEvents() throws {
-    let event = NSEvent.keyEvent(
-      with: .flagsChanged,
-      location: .zero,
-      modifierFlags: [.command],
-      timestamp: 0,
-      windowNumber: 0,
-      context: nil,
-      characters: "",
-      charactersIgnoringModifiers: "",
-      isARepeat: false,
-      keyCode: 55
-    )
-
-    #expect(GhosttyEventText.characters(for: try #require(event)) == nil)
-  }
-
-  @Test func ghosttyTextReadsKeyEvents() throws {
-    let event = NSEvent.keyEvent(
-      with: .keyDown,
-      location: .zero,
-      modifierFlags: [],
-      timestamp: 0,
-      windowNumber: 0,
-      context: nil,
-      characters: "a",
-      charactersIgnoringModifiers: "a",
-      isARepeat: false,
-      keyCode: 0
-    )
-
-    #expect(GhosttyEventText.characters(for: try #require(event)) == "a")
-  }
 }

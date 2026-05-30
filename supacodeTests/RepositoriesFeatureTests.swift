@@ -283,6 +283,7 @@ struct RepositoriesFeatureTests {
       $0.isInitialLoadComplete = true
       $0.snapshotPersistencePhase = .active
     }
+    await store.receive(\.delegate.repositoriesChanged)
   }
 
   @Test func repositoriesLoadedEmitsChangedDelegateWhenTransitioningFromRestoring() async {
