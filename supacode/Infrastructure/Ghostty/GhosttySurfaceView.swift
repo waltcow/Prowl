@@ -7,6 +7,26 @@ import SwiftUI
 
 private let surfaceLogger = SupaLogger("Surface")
 
+enum GhosttyEventText {
+  static func characters(for event: NSEvent) -> String? {
+    guard event.type == .keyDown || event.type == .keyUp else {
+      return nil
+    }
+    guard let characters = event.characters else { return nil }
+    if characters.count == 1,
+      let scalar = characters.unicodeScalars.first
+    {
+      if scalar.value < 0x20 {
+        return event.characters(byApplyingModifiers: event.modifierFlags.subtracting(.control))
+      }
+      if scalar.value >= 0xF700 && scalar.value <= 0xF8FF {
+        return nil
+      }
+    }
+    return characters
+  }
+}
+
 final class GhosttySurfaceView: NSView, Identifiable {
   struct OcclusionState {
     private(set) var desired: Bool?
@@ -1694,18 +1714,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
   }
 
   private func ghosttyCharacters(_ event: NSEvent) -> String? {
-    guard let characters = event.characters else { return nil }
-    if characters.count == 1,
-      let scalar = characters.unicodeScalars.first
-    {
-      if scalar.value < 0x20 {
-        return event.characters(byApplyingModifiers: event.modifierFlags.subtracting(.control))
-      }
-      if scalar.value >= 0xF700 && scalar.value <= 0xF8FF {
-        return nil
-      }
-    }
-    return characters
+    GhosttyEventText.characters(for: event)
   }
 
   private func syncPreedit(clearIfNeeded: Bool = true) {
