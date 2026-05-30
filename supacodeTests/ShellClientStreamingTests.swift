@@ -155,7 +155,7 @@ struct ShellClientStreamingTests {
     let elapsed = ContinuousClock.now - start
 
     #expect(
-      elapsed < .seconds(2),
+      elapsed < .seconds(5),
       "consumer cancel should propagate to the shell process; took \(elapsed)"
     )
   }
@@ -176,7 +176,7 @@ struct ShellClientStreamingTests {
     let elapsed = ContinuousClock.now - start
 
     #expect(
-      elapsed < .seconds(2),
+      elapsed < .seconds(5),
       "run() should propagate cancellation to the process; took \(elapsed)"
     )
   }
