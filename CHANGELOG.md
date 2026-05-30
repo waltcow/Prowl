@@ -1,5 +1,27 @@
 # Changelog
 
+## [2026.5.30](https://github.com/onevcat/Prowl/releases/tag/v2026.5.30)
+
+This release adds per-repository background refresh controls, safer worktree branch deletion, and a range of notification and toolbar customization options.
+
+### New
+
+- Each repository now has two toggles in its settings — **Observe line diffs automatically** and **Fetch pull request state** — to opt out of background Git and GitHub refresh work for repositories where you don't need it.
+- The Open-in-Editor and Run buttons can now be hidden individually from Settings. A Dock badge showing the unread worktree count and an optional icon bounce are also configurable for when notifications arrive while Prowl is in the background.
+- Custom commands and run scripts now work in Canvas mode, with the toolbar updating as you switch between cards.
+- Shelf spine tint preferences let you choose a neutral or system-accent fallback color and optionally disable per-repository color overrides.
+
+### Fixed
+
+- Closing a terminal tab no longer leaves a stray shell (e.g. `zsh`) running in the background. A stale view update could recreate a terminal surface for an already-closed tab and spawn an orphaned shell process; closed tabs are now never recreated, and a closing tab also tears down its underlying shell.
+- The notification bell and Dock badge could remain lit after closing a terminal tab with an unread notification; closing a tab now clears its notifications.
+- Active Agents now shows the correct repository and branch based on the agent's actual working directory, not the tab's owning worktree.
+
+### Improved
+
+- Deleting a worktree no longer preselects local branch deletion by default. A confirmation sheet now makes the choice explicit, preselects deletion only for Prowl-created worktrees when that preference is enabled, and always prompts before a force-delete.
+- Background CPU and I/O on large repositories is reduced: line-diff refreshes are now event-driven (file-system changes plus a 5-minute safety fallback) instead of periodic polling, and PR status is fetched in a single batched GraphQL query per GitHub host rather than one request per repository.
+
 ## [2026.5.26](https://github.com/onevcat/Prowl/releases/tag/v2026.5.26)
 
 ### Fixed
