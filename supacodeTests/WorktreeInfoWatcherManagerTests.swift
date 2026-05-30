@@ -207,6 +207,69 @@ struct WorktreeInfoWatcherManagerTests {
     try FileManager.default.removeItem(at: tempRepository.tempRoot)
   }
 
+  @Test func repositoryRegistryEventRefreshesWorktreesAfterDebounce() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow"])
+    let registryMonitorStore = TestWorktreeRegistryMonitorStore()
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      repositoryWorktreesEventDebounceInterval: .milliseconds(80),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      worktreeRegistryMonitorFactory: registryMonitorStore.makeMonitor,
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    manager.handleCommand(.setWorktrees(tempRepository.worktrees))
+    await drainAsyncEvents(120)
+    #expect(await collector.repositoryWorktreesChangedCount(repositoryRootURL: tempRepository.tempRoot) == 0)
+
+    let monitor = try #require(registryMonitorStore.monitor(for: tempRepository.tempRoot))
+    monitor.emit()
+    await clock.advance(by: .milliseconds(79))
+    await drainAsyncEvents(120)
+    #expect(await collector.repositoryWorktreesChangedCount(repositoryRootURL: tempRepository.tempRoot) == 0)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.repositoryWorktreesChangedCount(repositoryRootURL: tempRepository.tempRoot) == 1)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
+  @Test func removedRepositoryCancelsRegistryMonitor() async throws {
+    let firstRepository = try makeTempRepository(worktreeNames: ["sparrow"])
+    let secondRepository = try makeTempRepository(worktreeNames: ["swift"])
+    let registryMonitorStore = TestWorktreeRegistryMonitorStore()
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      worktreeRegistryMonitorFactory: registryMonitorStore.makeMonitor
+    )
+    let (_, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    manager.handleCommand(.setWorktrees(firstRepository.worktrees + secondRepository.worktrees))
+    await drainAsyncEvents(120)
+    let removedMonitor = try #require(registryMonitorStore.monitor(for: firstRepository.tempRoot))
+    #expect(!removedMonitor.isCanceled)
+
+    manager.handleCommand(.setWorktrees(secondRepository.worktrees))
+    await drainAsyncEvents(120)
+    #expect(removedMonitor.isCanceled)
+    #expect(registryMonitorStore.monitor(for: secondRepository.tempRoot)?.isCanceled == false)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: firstRepository.tempRoot)
+    try FileManager.default.removeItem(at: secondRepository.tempRoot)
+  }
+
   @Test func staggersPeriodicPullRequestRefreshAcrossRepositories() async throws {
     let clock = TestClock()
     let firstRepository = try makeTempRepository(worktreeNames: ["sparrow"])
@@ -371,6 +434,17 @@ actor EventCollector {
       }
     }
   }
+
+  func repositoryWorktreesChangedCount(repositoryRootURL: URL) -> Int {
+    let expectedURL = repositoryRootURL.standardizedFileURL
+    return events.reduce(into: 0) { result, event in
+      if case .repositoryWorktreesChanged(let rootURL) = event,
+        rootURL.standardizedFileURL == expectedURL
+      {
+        result += 1
+      }
+    }
+  }
 }
 
 private struct TempWorktree {
@@ -465,6 +539,42 @@ private final class TestWorktreeFileEventMonitorStore {
 
 @MainActor
 private final class TestWorktreeFileEventMonitor: WorktreeFileEventMonitoring {
+  private let onEvent: @MainActor @Sendable () -> Void
+  private(set) var isCanceled = false
+
+  init(onEvent: @escaping @MainActor @Sendable () -> Void) {
+    self.onEvent = onEvent
+  }
+
+  func emit() {
+    onEvent()
+  }
+
+  func cancel() {
+    isCanceled = true
+  }
+}
+
+@MainActor
+private final class TestWorktreeRegistryMonitorStore {
+  private var monitors: [URL: TestWorktreeRegistryMonitor] = [:]
+
+  func makeMonitor(
+    repositoryRootURL: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> WorktreeRegistryMonitoring? {
+    let monitor = TestWorktreeRegistryMonitor(onEvent: onEvent)
+    monitors[repositoryRootURL.standardizedFileURL] = monitor
+    return monitor
+  }
+
+  func monitor(for repositoryRootURL: URL) -> TestWorktreeRegistryMonitor? {
+    monitors[repositoryRootURL.standardizedFileURL]
+  }
+}
+
+@MainActor
+private final class TestWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
   private let onEvent: @MainActor @Sendable () -> Void
   private(set) var isCanceled = false
 

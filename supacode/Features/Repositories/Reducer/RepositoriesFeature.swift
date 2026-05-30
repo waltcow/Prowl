@@ -1180,6 +1180,8 @@ struct RepositoriesFeature {
                 )
               }
             }
+          case .repositoryWorktreesChanged:
+            return .send(.reloadRepositories(animated: true))
           case .repositoryPullRequestRefresh(let repositoryRootURL, let worktreeIDs):
             return .send(
               .githubIntegration(

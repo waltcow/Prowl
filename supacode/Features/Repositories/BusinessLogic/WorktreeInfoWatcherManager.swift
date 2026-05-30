@@ -9,6 +9,11 @@ protocol WorktreeFileEventMonitoring: AnyObject {
 }
 
 @MainActor
+protocol WorktreeRegistryMonitoring: AnyObject {
+  func cancel()
+}
+
+@MainActor
 final class WorktreeInfoWatcherManager {
   typealias WorktreePhaseOffset = @Sendable (Worktree.ID, Duration) -> Duration
   typealias RepositoryPhaseOffset = @Sendable (URL, Duration) -> Duration
@@ -17,6 +22,11 @@ final class WorktreeInfoWatcherManager {
       _ worktree: Worktree,
       _ onEvent: @escaping @MainActor @Sendable () -> Void
     ) -> WorktreeFileEventMonitoring?
+  typealias WorktreeRegistryMonitorFactory =
+    @MainActor @Sendable (
+      _ repositoryRootURL: URL,
+      _ onEvent: @escaping @MainActor @Sendable () -> Void
+    ) -> WorktreeRegistryMonitoring?
 
   private struct HeadWatcher {
     let headURL: URL
@@ -48,6 +58,7 @@ final class WorktreeInfoWatcherManager {
   }
 
   private let filesChangedDebounceInterval: Duration
+  private let repositoryWorktreesEventDebounceInterval: Duration
   private let lineChangesEventDebounceInterval: Duration
   private let lineChangesSafetyRefreshInterval: Duration
   private let pullRequestSelectionRefreshCooldown: Duration
@@ -55,12 +66,15 @@ final class WorktreeInfoWatcherManager {
   private let lineChangePhaseOffset: WorktreePhaseOffset
   private let pullRequestPhaseOffset: RepositoryPhaseOffset
   private let worktreeFileEventMonitorFactory: WorktreeFileEventMonitorFactory
+  private let worktreeRegistryMonitorFactory: WorktreeRegistryMonitorFactory
   private let sleep: @Sendable (Duration) async throws -> Void
   private var worktrees: [Worktree.ID: Worktree] = [:]
   private var headWatchers: [Worktree.ID: HeadWatcher] = [:]
   private var worktreeFileEventMonitors: [Worktree.ID: WorktreeFileEventMonitoring] = [:]
+  private var worktreeRegistryMonitors: [URL: WorktreeRegistryMonitoring] = [:]
   private var branchDebounceTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var filesDebounceTasks: [Worktree.ID: Task<Void, Never>] = [:]
+  private var repositoryWorktreesDebounceTasks: [URL: Task<Void, Never>] = [:]
   private var restartTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var pullRequestTasks: [URL: RefreshTask] = [:]
   private var lineChangeSafetyTasks: [Worktree.ID: RefreshTask] = [:]
@@ -77,6 +91,7 @@ final class WorktreeInfoWatcherManager {
     focusedInterval: Duration = .seconds(30),
     unfocusedInterval: Duration = .seconds(60),
     filesChangedDebounceInterval: Duration = .seconds(5),
+    repositoryWorktreesEventDebounceInterval: Duration = .seconds(2),
     lineChangesEventDebounceInterval: Duration = .seconds(30),
     lineChangesSafetyRefreshInterval: Duration = .seconds(300),
     pullRequestSelectionRefreshCooldown: Duration = .seconds(5),
@@ -84,16 +99,20 @@ final class WorktreeInfoWatcherManager {
     pullRequestPhaseOffset: @escaping RepositoryPhaseOffset = WorktreeInfoWatcherManager.defaultPullRequestPhaseOffset,
     worktreeFileEventMonitorFactory: @escaping WorktreeFileEventMonitorFactory =
       WorktreeInfoWatcherManager.defaultWorktreeFileEventMonitorFactory,
+    worktreeRegistryMonitorFactory: @escaping WorktreeRegistryMonitorFactory =
+      WorktreeInfoWatcherManager.defaultWorktreeRegistryMonitorFactory,
     clock: C = ContinuousClock()
   ) {
     refreshTiming = RefreshTiming(focused: focusedInterval, unfocused: unfocusedInterval)
     self.filesChangedDebounceInterval = filesChangedDebounceInterval
+    self.repositoryWorktreesEventDebounceInterval = repositoryWorktreesEventDebounceInterval
     self.lineChangesEventDebounceInterval = lineChangesEventDebounceInterval
     self.lineChangesSafetyRefreshInterval = lineChangesSafetyRefreshInterval
     self.pullRequestSelectionRefreshCooldown = pullRequestSelectionRefreshCooldown
     self.lineChangePhaseOffset = lineChangePhaseOffset
     self.pullRequestPhaseOffset = pullRequestPhaseOffset
     self.worktreeFileEventMonitorFactory = worktreeFileEventMonitorFactory
+    self.worktreeRegistryMonitorFactory = worktreeRegistryMonitorFactory
     self.sleep = { duration in
       try await clock.sleep(for: duration)
     }
@@ -154,6 +173,7 @@ final class WorktreeInfoWatcherManager {
       hasCompletedInitialWorktreeLoad = true
     }
     let repositoryRoots = Set(worktrees.map(\.repositoryRootURL))
+    syncWorktreeRegistryMonitors(repositoryRoots: repositoryRoots)
     for repositoryRootURL in repositoryRoots {
       updatePullRequestSchedule(repositoryRootURL: repositoryRootURL, immediate: true)
     }
@@ -361,10 +381,18 @@ final class WorktreeInfoWatcherManager {
     for monitor in worktreeFileEventMonitors.values {
       monitor.cancel()
     }
+    for monitor in worktreeRegistryMonitors.values {
+      monitor.cancel()
+    }
+    for task in repositoryWorktreesDebounceTasks.values {
+      task.cancel()
+    }
     headWatchers.removeAll()
     worktreeFileEventMonitors.removeAll()
+    worktreeRegistryMonitors.removeAll()
     branchDebounceTasks.removeAll()
     filesDebounceTasks.removeAll()
+    repositoryWorktreesDebounceTasks.removeAll()
     restartTasks.removeAll()
     pullRequestTasks.removeAll()
     lineChangeSafetyTasks.removeAll()
@@ -561,6 +589,39 @@ final class WorktreeInfoWatcherManager {
     worktreeFileEventMonitors.removeValue(forKey: worktreeID)?.cancel()
   }
 
+  private func syncWorktreeRegistryMonitors(repositoryRoots: Set<URL>) {
+    let normalizedRoots = Set(repositoryRoots.map { $0.standardizedFileURL })
+    let obsoleteRoots = worktreeRegistryMonitors.keys.filter { !normalizedRoots.contains($0) }
+    for repositoryRootURL in obsoleteRoots {
+      worktreeRegistryMonitors.removeValue(forKey: repositoryRootURL)?.cancel()
+      repositoryWorktreesDebounceTasks.removeValue(forKey: repositoryRootURL)?.cancel()
+    }
+    for repositoryRootURL in normalizedRoots where worktreeRegistryMonitors[repositoryRootURL] == nil {
+      worktreeRegistryMonitors[repositoryRootURL] = worktreeRegistryMonitorFactory(repositoryRootURL) { [weak self] in
+        self?.scheduleRepositoryWorktreesChanged(repositoryRootURL: repositoryRootURL)
+      }
+    }
+  }
+
+  private func scheduleRepositoryWorktreesChanged(repositoryRootURL: URL) {
+    let normalizedRootURL = repositoryRootURL.standardizedFileURL
+    repositoryWorktreesDebounceTasks[normalizedRootURL]?.cancel()
+    let debounceInterval = repositoryWorktreesEventDebounceInterval
+    let sleep = self.sleep
+    let task = Task { [weak self, sleep] in
+      do {
+        try await sleep(debounceInterval)
+      } catch {
+        return
+      }
+      await MainActor.run {
+        self?.repositoryWorktreesDebounceTasks.removeValue(forKey: normalizedRootURL)
+        self?.emit(.repositoryWorktreesChanged(repositoryRootURL: normalizedRootURL))
+      }
+    }
+    repositoryWorktreesDebounceTasks[normalizedRootURL] = task
+  }
+
   private func updateRepeatingTask(
     _ request: RepeatingTaskRequest,
     tasks: inout [Worktree.ID: RefreshTask]
@@ -627,6 +688,13 @@ final class WorktreeInfoWatcherManager {
     onEvent: @escaping @MainActor @Sendable () -> Void
   ) -> WorktreeFileEventMonitoring? {
     FSEventsWorktreeFileEventMonitor(rootURL: worktree.workingDirectory, onEvent: onEvent)
+  }
+
+  private static func defaultWorktreeRegistryMonitorFactory(
+    repositoryRootURL: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> WorktreeRegistryMonitoring? {
+    GitWorktreeRegistryMonitor(repositoryRootURL: repositoryRootURL, onEvent: onEvent)
   }
 
   nonisolated private static func stablePhaseOffset(seed: String, interval: Duration) -> Duration {
@@ -765,5 +833,174 @@ private final class FSEventsWorktreeFileEventMonitor: WorktreeFileEventMonitorin
     FSEventStreamInvalidate(stream)
     FSEventStreamRelease(stream)
     self.stream = nil
+  }
+}
+
+@MainActor
+private final class GitWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
+  private let commonGitDirectoryURL: URL
+  private let worktreesDirectoryURL: URL
+  private let onEvent: @MainActor @Sendable () -> Void
+  private var commonDirectorySource: DispatchSourceFileSystemObject?
+  private var worktreesDirectorySource: DispatchSourceFileSystemObject?
+  private var isWorktreesDirectoryPresent: Bool
+
+  init?(
+    repositoryRootURL: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void,
+    fileManager: FileManager = .default
+  ) {
+    guard
+      let commonGitDirectoryURL = Self.commonGitDirectoryURL(
+        for: repositoryRootURL,
+        fileManager: fileManager
+      )
+    else {
+      return nil
+    }
+    self.commonGitDirectoryURL = commonGitDirectoryURL
+    worktreesDirectoryURL = commonGitDirectoryURL.appending(path: "worktrees")
+    self.onEvent = onEvent
+    isWorktreesDirectoryPresent = Self.isDirectory(worktreesDirectoryURL, fileManager: fileManager)
+    commonDirectorySource = Self.makeDirectorySource(url: commonGitDirectoryURL) { [weak self] in
+      self?.handleCommonDirectoryEvent()
+    }
+    if isWorktreesDirectoryPresent {
+      startWorktreesDirectorySourceIfNeeded()
+    }
+    guard commonDirectorySource != nil || worktreesDirectorySource != nil else {
+      return nil
+    }
+  }
+
+  func cancel() {
+    commonDirectorySource?.cancel()
+    worktreesDirectorySource?.cancel()
+    commonDirectorySource = nil
+    worktreesDirectorySource = nil
+  }
+
+  private func handleCommonDirectoryEvent() {
+    let isPresent = Self.isDirectory(worktreesDirectoryURL, fileManager: .default)
+    guard isPresent != isWorktreesDirectoryPresent else {
+      return
+    }
+    isWorktreesDirectoryPresent = isPresent
+    if isPresent {
+      startWorktreesDirectorySourceIfNeeded()
+    } else {
+      worktreesDirectorySource?.cancel()
+      worktreesDirectorySource = nil
+    }
+    onEvent()
+  }
+
+  private func handleWorktreesDirectoryEvent() {
+    guard Self.isDirectory(worktreesDirectoryURL, fileManager: .default) else {
+      if isWorktreesDirectoryPresent {
+        isWorktreesDirectoryPresent = false
+        worktreesDirectorySource?.cancel()
+        worktreesDirectorySource = nil
+        onEvent()
+      }
+      return
+    }
+    onEvent()
+  }
+
+  private func startWorktreesDirectorySourceIfNeeded() {
+    guard worktreesDirectorySource == nil else {
+      return
+    }
+    worktreesDirectorySource = Self.makeDirectorySource(url: worktreesDirectoryURL) { [weak self] in
+      self?.handleWorktreesDirectoryEvent()
+    }
+  }
+
+  private static func makeDirectorySource(
+    url: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> DispatchSourceFileSystemObject? {
+    let fileDescriptor = open(url.path(percentEncoded: false), O_EVTONLY)
+    guard fileDescriptor >= 0 else {
+      return nil
+    }
+    let source = DispatchSource.makeFileSystemObjectSource(
+      fileDescriptor: fileDescriptor,
+      eventMask: [.write, .rename, .delete, .attrib],
+      queue: .main
+    )
+    source.setEventHandler {
+      onEvent()
+    }
+    source.setCancelHandler {
+      close(fileDescriptor)
+    }
+    source.resume()
+    return source
+  }
+
+  private static func commonGitDirectoryURL(
+    for repositoryRootURL: URL,
+    fileManager: FileManager
+  ) -> URL? {
+    let repositoryRootURL = repositoryRootURL.standardizedFileURL
+    let dotGitURL = repositoryRootURL.appending(path: ".git")
+    var isDirectory = ObjCBool(false)
+    if fileManager.fileExists(atPath: dotGitURL.path(percentEncoded: false), isDirectory: &isDirectory) {
+      if isDirectory.boolValue {
+        return dotGitURL.standardizedFileURL
+      }
+      guard let gitdirURL = gitdirURL(from: dotGitURL, relativeTo: repositoryRootURL) else {
+        return nil
+      }
+      return commonDirectoryURL(from: gitdirURL, fileManager: fileManager)
+    }
+    if fileManager.fileExists(atPath: repositoryRootURL.appending(path: "HEAD").path(percentEncoded: false)),
+      fileManager.fileExists(atPath: repositoryRootURL.appending(path: "config").path(percentEncoded: false))
+    {
+      return repositoryRootURL
+    }
+    return nil
+  }
+
+  private static func gitdirURL(from dotGitURL: URL, relativeTo repositoryRootURL: URL) -> URL? {
+    guard let contents = try? String(contentsOf: dotGitURL, encoding: .utf8),
+      let line = contents.split(whereSeparator: \.isNewline).first
+    else {
+      return nil
+    }
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    let prefix = "gitdir:"
+    guard trimmed.hasPrefix(prefix) else {
+      return nil
+    }
+    let pathPart = trimmed.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !pathPart.isEmpty else {
+      return nil
+    }
+    return URL(fileURLWithPath: String(pathPart), relativeTo: repositoryRootURL)
+      .standardizedFileURL
+  }
+
+  private static func commonDirectoryURL(from gitdirURL: URL, fileManager: FileManager) -> URL {
+    let commondirURL = gitdirURL.appending(path: "commondir")
+    guard let contents = try? String(contentsOf: commondirURL, encoding: .utf8),
+      let line = contents.split(whereSeparator: \.isNewline).first
+    else {
+      return gitdirURL.standardizedFileURL
+    }
+    let pathPart = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !pathPart.isEmpty else {
+      return gitdirURL.standardizedFileURL
+    }
+    return URL(fileURLWithPath: pathPart, relativeTo: gitdirURL)
+      .standardizedFileURL
+  }
+
+  private static func isDirectory(_ url: URL, fileManager: FileManager) -> Bool {
+    var isDirectory = ObjCBool(false)
+    return fileManager.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory)
+      && isDirectory.boolValue
   }
 }

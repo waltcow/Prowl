@@ -263,6 +263,29 @@ struct RepositoriesFeatureTests {
     }
   }
 
+  @Test func repositoryWorktreesChangedReloadsRepositories() async {
+    let existingWorktree = makeWorktree(id: "/tmp/repo/main", name: "main")
+    let discoveredWorktree = makeWorktree(id: "/tmp/repo/feature", name: "feature")
+    let repository = makeRepository(id: "/tmp/repo", worktrees: [existingWorktree])
+    let store = TestStore(initialState: makeState(repositories: [repository])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.worktrees = { _ in [existingWorktree, discoveredWorktree] }
+    }
+
+    await store.send(.worktreeInfoEvent(.repositoryWorktreesChanged(repositoryRootURL: repository.rootURL)))
+    await store.receive(\.reloadRepositories)
+    await store.receive(\.repositoriesLoaded) {
+      $0.repositories[id: repository.id] = makeRepository(
+        id: repository.id,
+        worktrees: [existingWorktree, discoveredWorktree]
+      )
+      $0.isInitialLoadComplete = true
+      $0.snapshotPersistencePhase = .active
+    }
+    await store.receive(\.delegate.repositoriesChanged)
+  }
+
   @Test func repositoriesLoadedEmitsChangedDelegateWhenTransitioningFromRestoring() async {
     let worktree = makeWorktree(id: "/tmp/repo/main", name: "main")
     let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
