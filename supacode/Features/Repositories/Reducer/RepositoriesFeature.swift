@@ -55,6 +55,20 @@ struct PendingRenameBranchRequest: Equatable, Sendable {
   let worktreeID: Worktree.ID
 }
 
+struct DeleteWorktreeConfirmation: Equatable, Identifiable {
+  let id: Int
+  let title: String
+  let message: String
+  let targets: [RepositoriesFeature.DeleteWorktreeTarget]
+  var deleteBranch: Bool
+}
+
+struct ForceDeleteBranchRequest: Equatable {
+  let branchName: String
+  let repositoryRootURL: URL
+  let errorMessage: String
+}
+
 @Reducer
 struct RepositoriesFeature {
   enum CancelID {
@@ -133,14 +147,20 @@ struct RepositoriesFeature {
     case unarchiveWorktree(Worktree.ID)
     case requestDeleteWorktree(Worktree.ID, Repository.ID)
     case requestDeleteWorktrees([DeleteWorktreeTarget])
-    case deleteWorktreeConfirmed(Worktree.ID, Repository.ID)
+    case deleteWorktreePromptDeleteBranchChanged(Bool)
+    case deleteWorktreePromptConfirmed
+    case deleteWorktreePromptDismissed
+    case deleteWorktreeConfirmed(Worktree.ID, Repository.ID, deleteBranch: Bool)
     case worktreeDeleted(
       Worktree.ID,
       repositoryID: Repository.ID,
       selectionWasRemoved: Bool,
-      nextSelection: Worktree.ID?
+      nextSelection: Worktree.ID?,
+      forceDeleteBranchRequest: ForceDeleteBranchRequest?
     )
     case deleteWorktreeFailed(String, worktreeID: Worktree.ID)
+    case forceDeleteBranchConfirmed(ForceDeleteBranchRequest)
+    case forceDeleteBranchFailed(String)
   }
 
   @CasePathable
@@ -244,6 +264,10 @@ struct RepositoriesFeature {
     var remoteInfoByRepositoryID: [Repository.ID: GithubRemoteInfo] = [:]
     var codeHostByRepositoryID: [Repository.ID: CodeHost] = [:]
     var sidebarSelectedWorktreeIDs: Set<Worktree.ID> = []
+    @Shared(.appStorage("prowlCreatedWorktreeIDs")) var prowlCreatedWorktreeIDs: [Worktree.ID] = []
+    var nextDeleteWorktreeConfirmationID = 0
+    var deleteWorktreeConfirmation: DeleteWorktreeConfirmation?
+    var pendingForceDeleteBranchRequests: [ForceDeleteBranchRequest] = []
     var nextPendingSidebarRevealID = 0
     var pendingSidebarReveal: PendingSidebarReveal?
     var nextPendingRenameBranchRequestID = 0
@@ -377,8 +401,7 @@ struct RepositoriesFeature {
   enum Alert: Equatable {
     case confirmArchiveWorktree(Worktree.ID, Repository.ID)
     case confirmArchiveWorktrees([ArchiveWorktreeTarget])
-    case confirmDeleteWorktree(Worktree.ID, Repository.ID)
-    case confirmDeleteWorktrees([DeleteWorktreeTarget])
+    case confirmForceDeleteBranch(ForceDeleteBranchRequest)
     case confirmRemoveRepository(Repository.ID)
   }
 
@@ -545,6 +568,7 @@ struct RepositoriesFeature {
           guard !expiredEntries.isEmpty else {
             return .none
           }
+          @Shared(.settingsFile) var settingsFile
           var deleteEffects: [Effect<Action>] = []
           for entry in expiredEntries {
             guard
@@ -557,8 +581,18 @@ struct RepositoriesFeature {
             else {
               continue
             }
+            let shouldDeleteBranch =
+              settingsFile.global.deleteBranchOnDeleteWorktree
+              && state.prowlCreatedWorktreeIDs.contains(worktree.id)
             deleteEffects.append(
-              .send(.worktreeLifecycle(.deleteWorktreeConfirmed(worktree.id, repository.id)))
+              .send(
+                .worktreeLifecycle(
+                  .deleteWorktreeConfirmed(
+                    worktree.id,
+                    repository.id,
+                    deleteBranch: shouldDeleteBranch
+                  ))
+              )
             )
           }
           guard !deleteEffects.isEmpty else {
@@ -1098,15 +1132,8 @@ struct RepositoriesFeature {
             }
           )
 
-        case .alert(.presented(.confirmDeleteWorktree(let worktreeID, let repositoryID))):
-          return .send(.worktreeLifecycle(.deleteWorktreeConfirmed(worktreeID, repositoryID)))
-
-        case .alert(.presented(.confirmDeleteWorktrees(let targets))):
-          return .merge(
-            targets.map { target in
-              .send(.worktreeLifecycle(.deleteWorktreeConfirmed(target.worktreeID, target.repositoryID)))
-            }
-          )
+        case .alert(.presented(.confirmForceDeleteBranch(let request))):
+          return .send(.worktreeLifecycle(.forceDeleteBranchConfirmed(request)))
 
         case .alert(.presented(.confirmRemoveRepository(let repositoryID))):
           guard let repository = state.repositories[id: repositoryID] else {
@@ -1207,7 +1234,7 @@ struct RepositoriesFeature {
           return .none
 
         case .alert(.dismiss):
-          state.alert = nil
+          dismissCurrentForceDeleteBranchRequest(state: &state)
           return .none
 
         case .alert:
@@ -1496,6 +1523,9 @@ struct RepositoriesFeature {
     }
     let filteredWorktreeInfo = state.worktreeInfoByID.filter {
       availableWorktreeIDs.contains($0.key)
+    }
+    state.$prowlCreatedWorktreeIDs.withLock {
+      $0.removeAll { !availableWorktreeIDs.contains($0) }
     }
     let identifiedRepositories = IdentifiedArray(uniqueElements: repositories)
     if animated {
@@ -2015,12 +2045,6 @@ extension RepositoriesFeature.State {
       }
       if case .confirmArchiveWorktrees(let targets)? = button.action.action {
         return .confirmArchiveWorktrees(targets)
-      }
-      if case .confirmDeleteWorktree(let worktreeID, let repositoryID)? = button.action.action {
-        return .confirmDeleteWorktree(worktreeID, repositoryID)
-      }
-      if case .confirmDeleteWorktrees(let targets)? = button.action.action {
-        return .confirmDeleteWorktrees(targets)
       }
     }
     return nil

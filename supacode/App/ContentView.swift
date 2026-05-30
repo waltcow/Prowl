@@ -31,6 +31,14 @@ struct ContentView: View {
       get: { store.runScriptDraft },
       set: { store.send(.runScriptDraftChanged($0)) }
     )
+    let deleteWorktreeConfirmationPresented = Binding(
+      get: { repositoriesStore.deleteWorktreeConfirmation != nil },
+      set: { isPresented in
+        if !isPresented {
+          repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptDismissed))
+        }
+      }
+    )
     Group {
       if store.repositories.isInitialLoadComplete {
         mainSplitView
@@ -71,6 +79,22 @@ struct ContentView: View {
     .sheet(store: repositoriesStore.scope(state: \.$worktreeCreationPrompt, action: \.worktreeCreationPrompt)) {
       promptStore in
       WorktreeCreationPromptView(store: promptStore)
+    }
+    .sheet(isPresented: deleteWorktreeConfirmationPresented) {
+      if let confirmation = repositoriesStore.deleteWorktreeConfirmation {
+        DeleteWorktreeConfirmationView(
+          confirmation: confirmation,
+          onDeleteBranchChanged: {
+            repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptDeleteBranchChanged($0)))
+          },
+          onCancel: {
+            repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptDismissed))
+          },
+          onDelete: {
+            repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptConfirmed))
+          }
+        )
+      }
     }
     .sheet(isPresented: isRunScriptPromptPresented) {
       RunScriptPromptView(

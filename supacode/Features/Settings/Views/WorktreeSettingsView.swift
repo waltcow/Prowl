@@ -50,11 +50,11 @@ struct WorktreeSettingsView: View {
         Section("Cleanup") {
           VStack(alignment: .leading) {
             Toggle(
-              "Also delete local branch when deleting a worktree",
+              "Preselect branch deletion for Prowl-created worktrees",
               isOn: $store.deleteBranchOnDeleteWorktree
             )
-            .help("Delete the local branch when deleting a worktree")
-            Text("Removes the local branch along with the worktree. Remote branches must be deleted on GitHub.")
+            .help("Preselect local branch deletion for worktrees created by Prowl.")
+            Text("External worktrees stay unchecked by default. Remote branches must be deleted on GitHub.")
               .foregroundStyle(.secondary)
             Text("Uncommitted changes will be lost.")
               .foregroundStyle(.red)

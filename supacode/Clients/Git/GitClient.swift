@@ -45,6 +45,13 @@ enum GitWorktreeCreateEvent: Equatable, Sendable {
   case finished(Worktree)
 }
 
+enum LocalBranchDeletionOutcome: Equatable, Sendable {
+  case deleted
+  case notFound
+  case protected
+  case notRequested
+}
+
 nonisolated enum GitRemoteMatcher {
   static func matchingRemote(for ref: String, from remotes: [String]) -> String? {
     remotes
@@ -590,14 +597,12 @@ struct GitClient {
       } catch {
         await runGitWorktreeRemove(rootPath: rootPath, worktreePath: worktreePath)
       }
-      if deleteBranch, !worktree.name.isEmpty {
-        let names = try await localBranchNames(for: worktree.repositoryRootURL)
-        if names.contains(worktree.name.lowercased()) {
-          _ = try? await runGit(
-            operation: .branchDelete,
-            arguments: ["-C", rootPath, "branch", "-D", worktree.name]
-          )
-        }
+      if deleteBranch {
+        _ = try? await deleteLocalBranch(
+          named: worktree.name,
+          for: worktree.repositoryRootURL,
+          force: false
+        )
       }
       Task.detached {
         try? FileManager.default.removeItem(at: relocatedURL)
@@ -605,16 +610,53 @@ struct GitClient {
       return worktree.workingDirectory
     }
     await runGitWorktreeRemove(rootPath: rootPath, worktreePath: worktreePath)
-    if deleteBranch, !worktree.name.isEmpty {
-      let names = try await localBranchNames(for: worktree.repositoryRootURL)
-      if names.contains(worktree.name.lowercased()) {
-        _ = try? await runGit(
-          operation: .branchDelete,
-          arguments: ["-C", rootPath, "branch", "-D", worktree.name]
-        )
-      }
+    if deleteBranch {
+      _ = try? await deleteLocalBranch(
+        named: worktree.name,
+        for: worktree.repositoryRootURL,
+        force: false
+      )
     }
     return worktree.workingDirectory
+  }
+
+  nonisolated func deleteLocalBranch(
+    named branchName: String,
+    for repoRoot: URL,
+    force: Bool
+  ) async throws -> LocalBranchDeletionOutcome {
+    guard !branchName.isEmpty else { return .notRequested }
+    let rootPath = repoRoot.path(percentEncoded: false)
+    let normalizedName = branchName.lowercased()
+    let names = try await localBranchNames(for: repoRoot)
+    guard names.contains(normalizedName) else { return .notFound }
+    let protectedNames = await protectedLocalBranchNames(for: repoRoot)
+    guard !protectedNames.contains(normalizedName) else { return .protected }
+    _ = try await runGit(
+      operation: .branchDelete,
+      arguments: ["-C", rootPath, "branch", force ? "-D" : "-d", branchName]
+    )
+    return .deleted
+  }
+
+  nonisolated private func protectedLocalBranchNames(for repoRoot: URL) async -> Set<String> {
+    var names: Set<String> = ["main", "master"]
+    if let defaultRef = try? await defaultRemoteBranchRef(for: repoRoot),
+      let defaultBranchName = Self.localBranchName(fromRef: defaultRef)
+    {
+      names.insert(defaultBranchName.lowercased())
+    }
+    return names
+  }
+
+  nonisolated private static func localBranchName(fromRef ref: String) -> String? {
+    let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    guard let slashIndex = trimmed.firstIndex(of: "/") else {
+      return trimmed
+    }
+    let name = trimmed[trimmed.index(after: slashIndex)...]
+    return name.isEmpty ? nil : String(name)
   }
 
   nonisolated private func parseShortstat(_ output: String) -> (added: Int, removed: Int) {

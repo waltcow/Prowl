@@ -159,7 +159,7 @@ struct SettingsFilePersistenceTests {
     #expect(settings.global.analyticsEnabled == true)
     #expect(settings.global.crashReportsEnabled == true)
     #expect(settings.global.githubIntegrationEnabled == true)
-    #expect(settings.global.deleteBranchOnDeleteWorktree == true)
+    #expect(settings.global.deleteBranchOnDeleteWorktree == false)
     #expect(settings.global.mergedWorktreeAction == nil)
     #expect(settings.global.promptForWorktreeCreation == true)
     #expect(settings.global.defaultWorktreeBaseDirectoryPath == nil)

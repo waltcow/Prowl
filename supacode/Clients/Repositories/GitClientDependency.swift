@@ -32,6 +32,9 @@ struct GitClientDependency: Sendable {
       _ baseRef: String
     ) -> AsyncThrowingStream<GitWorktreeCreateEvent, Error>
   var removeWorktree: @Sendable (_ worktree: Worktree, _ deleteBranch: Bool) async throws -> URL
+  var deleteLocalBranch:
+    @Sendable (_ branchName: String, _ repoRoot: URL, _ force: Bool) async throws
+      -> LocalBranchDeletionOutcome
   var isBareRepository: @Sendable (_ repoRoot: URL) async throws -> Bool
   var branchName: @Sendable (URL) async -> String?
   var lineChanges: @Sendable (URL) async -> (added: Int, removed: Int)?
@@ -76,6 +79,9 @@ extension GitClientDependency: DependencyKey {
     },
     removeWorktree: { worktree, deleteBranch in
       try await GitClient().removeWorktree(worktree, deleteBranch: deleteBranch)
+    },
+    deleteLocalBranch: { branchName, repoRoot, force in
+      try await GitClient().deleteLocalBranch(named: branchName, for: repoRoot, force: force)
     },
     isBareRepository: { repoRoot in
       try await GitClient().isBareRepository(for: repoRoot)

@@ -556,6 +556,11 @@ extension RepositoriesFeature {
       analyticsClient.capture("worktree_created", [String: Any]?.none)
       state.pendingSetupScriptWorktreeIDs.insert(worktree.id)
       state.pendingTerminalFocusWorktreeIDs.insert(worktree.id)
+      state.$prowlCreatedWorktreeIDs.withLock {
+        if !$0.contains(worktree.id) {
+          $0.append(worktree.id)
+        }
+      }
       removePendingWorktree(pendingID, state: &state)
       if state.selection == .worktree(pendingID) {
         setSingleWorktreeSelection(worktree.id, state: &state, recordHistory: false)

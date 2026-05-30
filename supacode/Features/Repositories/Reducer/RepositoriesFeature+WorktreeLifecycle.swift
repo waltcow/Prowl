@@ -295,24 +295,12 @@ extension RepositoriesFeature {
       if state.deletingWorktreeIDs.contains(worktree.id) {
         return .none
       }
-      @Shared(.settingsFile) var settingsFile
-      let deleteBranchOnDeleteWorktree = settingsFile.global.deleteBranchOnDeleteWorktree
-      let removalMessage =
-        deleteBranchOnDeleteWorktree
-        ? "This deletes the worktree directory and its local branch."
-        : "This deletes the worktree directory and keeps the local branch."
-      state.alert = AlertState {
-        TextState("🚨 Delete worktree?")
-      } actions: {
-        ButtonState(role: .destructive, action: .confirmDeleteWorktree(worktree.id, repository.id)) {
-          TextState("Delete (⌘↩)")
-        }
-        ButtonState(role: .cancel) {
-          TextState("Cancel")
-        }
-      } message: {
-        TextState("Delete \(worktree.name)? " + removalMessage)
-      }
+      state.deleteWorktreeConfirmation = makeDeleteWorktreeConfirmation(
+        id: state.nextDeleteWorktreeConfirmationID,
+        targets: [DeleteWorktreeTarget(worktreeID: worktree.id, repositoryID: repository.id)],
+        state: state
+      )
+      state.nextDeleteWorktreeConfirmationID += 1
       return .none
 
     case .requestDeleteWorktrees(let targets):
@@ -339,28 +327,41 @@ extension RepositoriesFeature {
       guard !validTargets.isEmpty else {
         return .none
       }
-      @Shared(.settingsFile) var settingsFile
-      let deleteBranchOnDeleteWorktree = settingsFile.global.deleteBranchOnDeleteWorktree
-      let removalMessage =
-        deleteBranchOnDeleteWorktree
-        ? "This deletes the worktree directories and their local branches."
-        : "This deletes the worktree directories and keeps their local branches."
-      let count = validTargets.count
-      state.alert = AlertState {
-        TextState("🚨 Delete \(count) worktrees?")
-      } actions: {
-        ButtonState(role: .destructive, action: .confirmDeleteWorktrees(validTargets)) {
-          TextState("Delete \(count) (⌘↩)")
-        }
-        ButtonState(role: .cancel) {
-          TextState("Cancel")
-        }
-      } message: {
-        TextState("Delete \(count) worktrees? " + removalMessage)
-      }
+      state.deleteWorktreeConfirmation = makeDeleteWorktreeConfirmation(
+        id: state.nextDeleteWorktreeConfirmationID,
+        targets: validTargets,
+        state: state
+      )
+      state.nextDeleteWorktreeConfirmationID += 1
       return .none
 
-    case .deleteWorktreeConfirmed(let worktreeID, let repositoryID):
+    case .deleteWorktreePromptDeleteBranchChanged(let deleteBranch):
+      state.deleteWorktreeConfirmation?.deleteBranch = deleteBranch
+      return .none
+
+    case .deleteWorktreePromptDismissed:
+      state.deleteWorktreeConfirmation = nil
+      return .none
+
+    case .deleteWorktreePromptConfirmed:
+      guard let confirmation = state.deleteWorktreeConfirmation else {
+        return .none
+      }
+      state.deleteWorktreeConfirmation = nil
+      return .merge(
+        confirmation.targets.map { target in
+          .send(
+            .worktreeLifecycle(
+              .deleteWorktreeConfirmed(
+                target.worktreeID,
+                target.repositoryID,
+                deleteBranch: confirmation.deleteBranch
+              ))
+          )
+        }
+      )
+
+    case .deleteWorktreeConfirmed(let worktreeID, let repositoryID, let deleteBranch):
       guard let repository = state.repositories[id: repositoryID],
         let worktree = repository.worktrees[id: worktreeID]
       else {
@@ -379,21 +380,35 @@ extension RepositoriesFeature {
         selectionWasRemoved
         ? nextWorktreeID(afterRemoving: worktree, in: repository, state: state)
         : nil
-      @Shared(.settingsFile) var settingsFile
-      let deleteBranchOnDeleteWorktree = settingsFile.global.deleteBranchOnDeleteWorktree
       return .run { send in
         do {
           _ = try await gitClient.removeWorktree(
             worktree,
-            deleteBranchOnDeleteWorktree
+            false
           )
+          let forceDeleteBranchRequest: ForceDeleteBranchRequest?
+          if deleteBranch {
+            do {
+              _ = try await gitClient.deleteLocalBranch(worktree.name, worktree.repositoryRootURL, false)
+              forceDeleteBranchRequest = nil
+            } catch {
+              forceDeleteBranchRequest = ForceDeleteBranchRequest(
+                branchName: worktree.name,
+                repositoryRootURL: worktree.repositoryRootURL,
+                errorMessage: error.localizedDescription
+              )
+            }
+          } else {
+            forceDeleteBranchRequest = nil
+          }
           await send(
             .worktreeLifecycle(
               .worktreeDeleted(
                 worktree.id,
                 repositoryID: repository.id,
                 selectionWasRemoved: selectionWasRemoved,
-                nextSelection: nextSelection
+                nextSelection: nextSelection,
+                forceDeleteBranchRequest: forceDeleteBranchRequest
               )
             )
           )
@@ -406,7 +421,8 @@ extension RepositoriesFeature {
       let worktreeID,
       let repositoryID,
       _,
-      let nextSelection
+      let nextSelection,
+      let forceDeleteBranchRequest
     ):
       analyticsClient.capture("worktree_deleted", [String: Any]?.none)
       let previousSelection = state.selectedWorktreeID
@@ -424,6 +440,9 @@ extension RepositoriesFeature {
         state.worktreeInfoByID.removeValue(forKey: worktreeID)
         state.pinnedWorktreeIDs.removeAll { $0 == worktreeID }
         state.archivedWorktrees.removeAll { $0.id == worktreeID }
+        state.$prowlCreatedWorktreeIDs.withLock {
+          $0.removeAll { $0 == worktreeID }
+        }
         if var order = state.worktreeOrderByRepository[repositoryID] {
           order.removeAll { $0 == worktreeID }
           if order.isEmpty {
@@ -482,6 +501,10 @@ extension RepositoriesFeature {
           }
         )
       }
+      if let forceDeleteBranchRequest {
+        state.pendingForceDeleteBranchRequests.append(forceDeleteBranchRequest)
+        presentNextForceDeleteBranchAlert(state: &state)
+      }
       return .concatenate(
         .merge(immediateEffects),
         .merge(followupEffects)
@@ -490,6 +513,22 @@ extension RepositoriesFeature {
     case .deleteWorktreeFailed(let message, let worktreeID):
       state.deletingWorktreeIDs.remove(worktreeID)
       state.alert = messageAlert(title: "Unable to delete worktree", message: message)
+      return .none
+
+    case .forceDeleteBranchConfirmed(let request):
+      state.alert = nil
+      removePendingForceDeleteBranchRequest(request, state: &state)
+      presentNextForceDeleteBranchAlert(state: &state)
+      return .run { send in
+        do {
+          _ = try await gitClient.deleteLocalBranch(request.branchName, request.repositoryRootURL, true)
+        } catch {
+          await send(.worktreeLifecycle(.forceDeleteBranchFailed(error.localizedDescription)))
+        }
+      }
+
+    case .forceDeleteBranchFailed(let message):
+      state.alert = messageAlert(title: "Unable to delete branch", message: message)
       return .none
     }
   }
@@ -512,4 +551,93 @@ private func archiveWorktreeAlertMessage(for name: String) -> String {
 private func archiveWorktreesAlertMessage() -> String {
   let shortcut = AppShortcuts.archivedWorktrees.display
   return "Find them later in Menu Bar > Worktrees > Archived Worktrees (\(shortcut))."
+}
+
+private func makeDeleteWorktreeConfirmation(
+  id: Int,
+  targets: [RepositoriesFeature.DeleteWorktreeTarget],
+  state: RepositoriesFeature.State
+) -> DeleteWorktreeConfirmation {
+  @Shared(.settingsFile) var settingsFile
+  let count = targets.count
+  let allProwlCreated = targets.allSatisfy { target in
+    state.prowlCreatedWorktreeIDs.contains(target.worktreeID)
+  }
+  let defaultDeleteBranch = settingsFile.global.deleteBranchOnDeleteWorktree && allProwlCreated
+  if count == 1,
+    let target = targets.first,
+    let worktree = state.repositories[id: target.repositoryID]?.worktrees[id: target.worktreeID]
+  {
+    return DeleteWorktreeConfirmation(
+      id: id,
+      title: "Delete worktree?",
+      message: "Delete \(worktree.name)? The worktree directory will be removed.",
+      targets: targets,
+      deleteBranch: defaultDeleteBranch
+    )
+  }
+  return DeleteWorktreeConfirmation(
+    id: id,
+    title: "Delete \(count) worktrees?",
+    message: "Delete \(count) worktrees? Their worktree directories will be removed.",
+    targets: targets,
+    deleteBranch: defaultDeleteBranch
+  )
+}
+
+private func forceDeleteBranchAlert(_ request: ForceDeleteBranchRequest) -> AlertState<RepositoriesFeature.Alert> {
+  AlertState {
+    TextState("Force delete branch?")
+  } actions: {
+    ButtonState(role: .destructive, action: .confirmForceDeleteBranch(request)) {
+      TextState("Force Delete")
+    }
+    ButtonState(role: .cancel) {
+      TextState("Keep Branch")
+    }
+  } message: {
+    TextState(
+      """
+      The worktree was deleted, but \(request.branchName) could not be deleted safely.
+
+      \(request.errorMessage)
+      """
+    )
+  }
+}
+
+func presentNextForceDeleteBranchAlert(state: inout RepositoriesFeature.State) {
+  guard state.alert == nil, let request = state.pendingForceDeleteBranchRequests.first else {
+    return
+  }
+  state.alert = forceDeleteBranchAlert(request)
+}
+
+func dismissCurrentForceDeleteBranchRequest(state: inout RepositoriesFeature.State) {
+  guard let request = currentForceDeleteBranchRequest(from: state.alert) else {
+    state.alert = nil
+    return
+  }
+  state.alert = nil
+  removePendingForceDeleteBranchRequest(request, state: &state)
+  presentNextForceDeleteBranchAlert(state: &state)
+}
+
+private func removePendingForceDeleteBranchRequest(
+  _ request: ForceDeleteBranchRequest,
+  state: inout RepositoriesFeature.State
+) {
+  state.pendingForceDeleteBranchRequests.removeAll { $0 == request }
+}
+
+private func currentForceDeleteBranchRequest(
+  from alert: AlertState<RepositoriesFeature.Alert>?
+) -> ForceDeleteBranchRequest? {
+  guard let alert else { return nil }
+  for button in alert.buttons {
+    if case .confirmForceDeleteBranch(let request)? = button.action.action {
+      return request
+    }
+  }
+  return nil
 }

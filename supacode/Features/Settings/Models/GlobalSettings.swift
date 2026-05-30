@@ -54,7 +54,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     analyticsEnabled: true,
     crashReportsEnabled: true,
     githubIntegrationEnabled: true,
-    deleteBranchOnDeleteWorktree: true,
+    deleteBranchOnDeleteWorktree: false,
     mergedWorktreeAction: nil,
     promptForWorktreeCreation: true,
     fetchOriginBeforeWorktreeCreation: true,
