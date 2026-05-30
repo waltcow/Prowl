@@ -502,7 +502,8 @@ extension RepositoriesFeature {
         )
       }
       if let forceDeleteBranchRequest {
-        state.alert = forceDeleteBranchAlert(forceDeleteBranchRequest)
+        state.pendingForceDeleteBranchRequests.append(forceDeleteBranchRequest)
+        presentNextForceDeleteBranchAlert(state: &state)
       }
       return .concatenate(
         .merge(immediateEffects),
@@ -516,6 +517,8 @@ extension RepositoriesFeature {
 
     case .forceDeleteBranchConfirmed(let request):
       state.alert = nil
+      removePendingForceDeleteBranchRequest(request, state: &state)
+      presentNextForceDeleteBranchAlert(state: &state)
       return .run { send in
         do {
           _ = try await gitClient.deleteLocalBranch(request.branchName, request.repositoryRootURL, true)
@@ -601,4 +604,40 @@ private func forceDeleteBranchAlert(_ request: ForceDeleteBranchRequest) -> Aler
       """
     )
   }
+}
+
+func presentNextForceDeleteBranchAlert(state: inout RepositoriesFeature.State) {
+  guard state.alert == nil, let request = state.pendingForceDeleteBranchRequests.first else {
+    return
+  }
+  state.alert = forceDeleteBranchAlert(request)
+}
+
+func dismissCurrentForceDeleteBranchRequest(state: inout RepositoriesFeature.State) {
+  guard let request = currentForceDeleteBranchRequest(from: state.alert) else {
+    state.alert = nil
+    return
+  }
+  state.alert = nil
+  removePendingForceDeleteBranchRequest(request, state: &state)
+  presentNextForceDeleteBranchAlert(state: &state)
+}
+
+private func removePendingForceDeleteBranchRequest(
+  _ request: ForceDeleteBranchRequest,
+  state: inout RepositoriesFeature.State
+) {
+  state.pendingForceDeleteBranchRequests.removeAll { $0 == request }
+}
+
+private func currentForceDeleteBranchRequest(
+  from alert: AlertState<RepositoriesFeature.Alert>?
+) -> ForceDeleteBranchRequest? {
+  guard let alert else { return nil }
+  for button in alert.buttons {
+    if case .confirmForceDeleteBranch(let request)? = button.action.action {
+      return request
+    }
+  }
+  return nil
 }

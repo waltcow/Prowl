@@ -2357,6 +2357,62 @@ struct RepositoriesFeatureTests {
     #expect(forceDeleteAttempts.value == [false, true])
   }
 
+  @Test(.dependencies, .serialized) func worktreeDeletedPresentsQueuedForceDeleteBranchPromptsInOrder() async {
+    let repoRoot = "/tmp/repo"
+    let firstRequest = ForceDeleteBranchRequest(
+      branchName: "first",
+      repositoryRootURL: URL(fileURLWithPath: repoRoot),
+      errorMessage: "first failed"
+    )
+    let secondRequest = ForceDeleteBranchRequest(
+      branchName: "second",
+      repositoryRootURL: URL(fileURLWithPath: repoRoot),
+      errorMessage: "second failed"
+    )
+    let store = TestStore(initialState: makeState(repositories: [])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.deleteLocalBranch = { _, _, _ in .deleted }
+    }
+    store.exhaustivity = .off
+
+    await store.send(
+      .worktreeLifecycle(
+        .worktreeDeleted(
+          "/tmp/repo/first",
+          repositoryID: repoRoot,
+          selectionWasRemoved: false,
+          nextSelection: nil,
+          forceDeleteBranchRequest: firstRequest
+        ))
+    ) {
+      $0.pendingForceDeleteBranchRequests = [firstRequest]
+      #expect($0.alert != nil)
+    }
+    await store.send(
+      .worktreeLifecycle(
+        .worktreeDeleted(
+          "/tmp/repo/second",
+          repositoryID: repoRoot,
+          selectionWasRemoved: false,
+          nextSelection: nil,
+          forceDeleteBranchRequest: secondRequest
+        ))
+    ) {
+      $0.pendingForceDeleteBranchRequests = [firstRequest, secondRequest]
+      #expect($0.alert != nil)
+    }
+    await store.send(.alert(.presented(.confirmForceDeleteBranch(firstRequest))))
+    await store.receive(\.worktreeLifecycle.forceDeleteBranchConfirmed) {
+      $0.pendingForceDeleteBranchRequests = [secondRequest]
+      #expect($0.alert != nil)
+    }
+    await store.send(.alert(.dismiss)) {
+      $0.alert = nil
+      $0.pendingForceDeleteBranchRequests = []
+    }
+  }
+
   @Test func requestDeleteMainWorktreeShowsNotAllowedAlert() async {
     let mainWorktree = makeWorktree(id: "/tmp/repo", name: "main")
     let repository = makeRepository(id: "/tmp/repo", worktrees: [mainWorktree])
@@ -3506,6 +3562,46 @@ struct RepositoriesFeatureTests {
     }
   }
 
+  @Test(.dependencies) func repositoryPullRequestsLoadedAutoDeleteOnlyDeletesProwlCreatedBranches() async {
+    let repoRoot = "/tmp/repo"
+    let mainWorktree = makeWorktree(id: repoRoot, name: "main", repoRoot: repoRoot)
+    let externalWorktree = makeWorktree(
+      id: "\(repoRoot)/external",
+      name: "external",
+      repoRoot: repoRoot
+    )
+    let repository = makeRepository(id: repoRoot, worktrees: [mainWorktree, externalWorktree])
+    var state = makeState(repositories: [repository])
+    state.mergedWorktreeAction = .delete
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock {
+      $0.global.deleteBranchOnDeleteWorktree = true
+    }
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.removeWorktree = { worktree, deleteBranch in
+        #expect(worktree.id == externalWorktree.id)
+        #expect(deleteBranch == false)
+        return worktree.workingDirectory
+      }
+    }
+    store.exhaustivity = .off
+    let mergedPullRequest = makePullRequest(state: "MERGED", headRefName: externalWorktree.name)
+
+    await store.send(
+      .githubIntegration(
+        .repositoryPullRequestsLoaded(
+          repositoryID: repository.id,
+          pullRequestsByWorktreeID: [externalWorktree.id: mergedPullRequest]
+        ))
+    )
+    await store.receive(\.worktreeLifecycle.deleteWorktreeConfirmed) {
+      $0.deletingWorktreeIDs = [externalWorktree.id]
+    }
+    await store.receive(\.worktreeLifecycle.worktreeDeleted)
+  }
+
   @Test func repositoryPullRequestsLoadedSkipsAutoDeleteForMainWorktree() async {
     let repoRoot = "/tmp/repo"
     let mainWorktree = makeWorktree(id: repoRoot, name: "main", repoRoot: repoRoot)
@@ -4285,6 +4381,39 @@ struct RepositoriesFeatureTests {
     } withDependencies: {
       $0.date = .constant(fixedDate)
       $0.gitClient.removeWorktree = { worktree, _ in worktree.workingDirectory }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.autoDeleteExpiredArchivedWorktrees)
+    await store.receive(\.worktreeLifecycle.deleteWorktreeConfirmed) {
+      $0.deletingWorktreeIDs = [expiredWorktree.id]
+    }
+    await store.receive(\.worktreeLifecycle.worktreeDeleted)
+  }
+
+  @Test(.dependencies) func autoDeleteExpiredArchivedWorktreesOnlyDeletesProwlCreatedBranches() async {
+    let repoRoot = "/tmp/repo"
+    let mainWorktree = makeWorktree(id: repoRoot, name: "main", repoRoot: repoRoot)
+    let expiredWorktree = makeWorktree(id: "/tmp/repo/expired", name: "expired", repoRoot: repoRoot)
+    let repository = makeRepository(id: repoRoot, worktrees: [mainWorktree, expiredWorktree])
+    let fixedDate = Date(timeIntervalSince1970: 1_000_000)
+    let archivedAt = fixedDate.addingTimeInterval(-2 * 86_400)
+    var state = makeState(repositories: [repository])
+    state.archivedWorktrees = [ArchivedWorktree(id: expiredWorktree.id, archivedAt: archivedAt)]
+    state.archivedAutoDeletePeriod = .oneDay
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock {
+      $0.global.deleteBranchOnDeleteWorktree = true
+    }
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.date = .constant(fixedDate)
+      $0.gitClient.removeWorktree = { worktree, deleteBranch in
+        #expect(worktree.id == expiredWorktree.id)
+        #expect(deleteBranch == false)
+        return worktree.workingDirectory
+      }
     }
     store.exhaustivity = .off
 

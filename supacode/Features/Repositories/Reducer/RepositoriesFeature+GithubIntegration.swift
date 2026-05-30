@@ -240,12 +240,15 @@ extension RepositoriesFeature {
         @Shared(.settingsFile) var settingsFile
         return .merge(
           mergedWorktreeIDs.map { worktreeID in
-            .send(
+            let shouldDeleteBranch =
+              settingsFile.global.deleteBranchOnDeleteWorktree
+              && state.prowlCreatedWorktreeIDs.contains(worktreeID)
+            return .send(
               .worktreeLifecycle(
                 .deleteWorktreeConfirmed(
                   worktreeID,
                   repositoryID,
-                  deleteBranch: settingsFile.global.deleteBranchOnDeleteWorktree
+                  deleteBranch: shouldDeleteBranch
                 ))
             )
           }

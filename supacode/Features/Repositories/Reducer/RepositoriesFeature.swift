@@ -267,6 +267,7 @@ struct RepositoriesFeature {
     @Shared(.appStorage("prowlCreatedWorktreeIDs")) var prowlCreatedWorktreeIDs: [Worktree.ID] = []
     var nextDeleteWorktreeConfirmationID = 0
     var deleteWorktreeConfirmation: DeleteWorktreeConfirmation?
+    var pendingForceDeleteBranchRequests: [ForceDeleteBranchRequest] = []
     var nextPendingSidebarRevealID = 0
     var pendingSidebarReveal: PendingSidebarReveal?
     var nextPendingRenameBranchRequestID = 0
@@ -580,13 +581,16 @@ struct RepositoriesFeature {
             else {
               continue
             }
+            let shouldDeleteBranch =
+              settingsFile.global.deleteBranchOnDeleteWorktree
+              && state.prowlCreatedWorktreeIDs.contains(worktree.id)
             deleteEffects.append(
               .send(
                 .worktreeLifecycle(
                   .deleteWorktreeConfirmed(
                     worktree.id,
                     repository.id,
-                    deleteBranch: settingsFile.global.deleteBranchOnDeleteWorktree
+                    deleteBranch: shouldDeleteBranch
                   ))
               )
             )
@@ -1230,7 +1234,7 @@ struct RepositoriesFeature {
           return .none
 
         case .alert(.dismiss):
-          state.alert = nil
+          dismissCurrentForceDeleteBranchRequest(state: &state)
           return .none
 
         case .alert:
