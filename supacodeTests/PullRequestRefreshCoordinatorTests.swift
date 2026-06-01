@@ -227,6 +227,94 @@ struct PullRequestRefreshCoordinatorTests {
     #expect(Set(alphaRequest.branches) == ["feat-1", "feat-2"])
   }
 
+  @Test func duplicateRepoKeysBatchOnceAndFanOutToEachRepository() async throws {
+    let clock = TestClock()
+    let probe = CoordinatorProbe()
+    let outcomes = OutcomeCollector()
+    let coordinator = makeCoordinator(
+      probe: probe,
+      clock: clock,
+      outcomes: outcomes,
+      batched: { _, requests in
+        var dict: [RepoKey: [String: GithubPullRequest]] = [:]
+        for request in requests {
+          dict[request.key] = [
+            "feat-1": makeFixturePullRequest(repo: request.repo),
+            "feat-2": makeFixturePullRequest(repo: request.repo),
+          ]
+        }
+        return CrossRepoPullRequestResult(successByRepo: dict)
+      }
+    )
+
+    coordinator.enqueue(
+      request(repo: "alpha", repositoryID: "alpha-a", branches: ["feat-1"])
+    )
+    coordinator.enqueue(
+      request(repo: "alpha", repositoryID: "alpha-b", branches: ["feat-2"])
+    )
+    await clock.advance(by: .milliseconds(250))
+    await Task.yield()
+    await Task.yield()
+
+    let calls = await probe.batchedCalls()
+    #expect(calls.count == 1)
+    let batchedRequest = try #require(calls.first?.requests.first)
+    #expect(calls.first?.requests.count == 1)
+    #expect(batchedRequest.owner == "khoi")
+    #expect(batchedRequest.repo == "alpha")
+    #expect(Set(batchedRequest.branches) == ["feat-1", "feat-2"])
+
+    let snapshots = await outcomes.snapshot()
+    let refreshed = snapshots.compactMap { outcome -> (Repository.ID, [String])? in
+      if case .refreshed(let id, _, _, let prs) = outcome {
+        return (id, Array(prs.keys))
+      }
+      return nil
+    }
+    #expect(Set(refreshed.map(\.0)) == ["alpha-a", "alpha-b"])
+    #expect(refreshed.first { $0.0 == "alpha-a" }?.1 == ["feat-1"])
+    #expect(refreshed.first { $0.0 == "alpha-b" }?.1 == ["feat-2"])
+  }
+
+  @Test func duplicateRepoKeysFallbackOnceAndFanOutToEachRepository() async throws {
+    let clock = TestClock()
+    let probe = CoordinatorProbe()
+    let outcomes = OutcomeCollector()
+    let coordinator = makeCoordinator(
+      probe: probe,
+      clock: clock,
+      outcomes: outcomes,
+      batched: { _, _ in
+        throw GithubCLIError.commandFailed("batch unavailable")
+      },
+      legacy: { _, _, repo, branches in
+        Dictionary(
+          uniqueKeysWithValues: branches.map { branch in
+            (branch, makeFixturePullRequest(repo: repo))
+          }
+        )
+      }
+    )
+
+    coordinator.enqueue(
+      request(repo: "alpha", repositoryID: "alpha-a", branches: ["feat-1"])
+    )
+    coordinator.enqueue(
+      request(repo: "alpha", repositoryID: "alpha-b", branches: ["feat-2"])
+    )
+    await clock.advance(by: .milliseconds(250))
+    await Task.yield()
+    await Task.yield()
+
+    let legacyCalls = await probe.legacyCalls()
+    #expect(legacyCalls.count == 1)
+    #expect(legacyCalls.first?.repo == "alpha")
+    #expect(Set(legacyCalls.first?.branches ?? []) == ["feat-1", "feat-2"])
+    let refreshed = await outcomes.refreshedRepositories()
+    #expect(Set(refreshed) == ["alpha-a", "alpha-b"])
+  }
+
   @Test func softTimeoutFallsBackToLegacy() async throws {
     let clock = TestClock()
     let probe = CoordinatorProbe()
@@ -439,17 +527,21 @@ private func waitUntil(
 
 nonisolated private func request(
   repo: String,
+  repositoryID: Repository.ID? = nil,
+  rootPath: String? = nil,
   host: String = "github.com",
-  branches: [String] = ["feat-1"]
+  branches: [String] = ["feat-1"],
+  worktreeIDs: [Worktree.ID]? = nil
 ) -> PullRequestRefreshCoordinator.Request {
-  PullRequestRefreshCoordinator.Request(
-    repositoryID: repo,
-    repositoryRootURL: URL(fileURLWithPath: "/tmp/\(repo)"),
+  let resolvedRepositoryID = repositoryID ?? repo
+  return PullRequestRefreshCoordinator.Request(
+    repositoryID: resolvedRepositoryID,
+    repositoryRootURL: URL(fileURLWithPath: rootPath ?? "/tmp/\(resolvedRepositoryID)"),
     host: host,
     owner: "khoi",
     repo: repo,
     branches: branches,
-    worktreeIDs: ["\(repo)-wt"]
+    worktreeIDs: worktreeIDs ?? ["\(resolvedRepositoryID)-wt"]
   )
 }
 
