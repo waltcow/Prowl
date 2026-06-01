@@ -157,28 +157,34 @@ final class PullRequestRefreshCoordinator {
   }
 
   private func processBatch(host: String, requests: [Request]) async {
-    let crossRepoRequests = requests.map {
-      CrossRepoPullRequestRequest(owner: $0.owner, repo: $0.repo, branches: $0.branches)
+    let groupsByKey = groupRequestsByRepo(requests)
+    let crossRepoRequests = groupsByKey.values.map { group in
+      CrossRepoPullRequestRequest(
+        owner: group.key.owner,
+        repo: group.key.repo,
+        branches: group.branches
+      )
     }
     do {
       let result = try await runBatchWithTimeout(host: host, requests: crossRepoRequests)
-      let requestsByKey = Dictionary(
-        uniqueKeysWithValues: requests.map { (RepoKey(owner: $0.owner, repo: $0.repo), $0) }
-      )
       for (key, prsByBranch) in result.successByRepo {
-        guard let request = requestsByKey[key] else {
+        guard let group = groupsByKey[key] else {
           continue
         }
-        resultHandler(
-          .refreshed(
-            repositoryID: request.repositoryID,
-            repositoryRootURL: request.repositoryRootURL,
-            worktreeIDs: request.worktreeIDs,
-            prsByBranch: prsByBranch
+        for request in group.requests {
+          resultHandler(
+            .refreshed(
+              repositoryID: request.repositoryID,
+              repositoryRootURL: request.repositoryRootURL,
+              worktreeIDs: request.worktreeIDs,
+              prsByBranch: prsByBranch.filter { request.branches.contains($0.key) }
+            )
           )
-        )
+        }
       }
-      let failedRequests = result.failedRepos.keys.compactMap { requestsByKey[$0] }
+      let failedRequests = result.failedRepos.keys.flatMap { key in
+        groupsByKey[key]?.requests ?? []
+      }
       if !failedRequests.isEmpty {
         await fanOutFallback(failedRequests)
       }
@@ -188,12 +194,13 @@ final class PullRequestRefreshCoordinator {
   }
 
   private func fanOutFallback(_ requests: [Request]) async {
+    let groups = Array(groupRequestsByRepo(requests).values)
     // Run per-repo fallback requests concurrently; serial awaits here would multiply
     // a slow recovery path by the number of repos in the batch.
     await withTaskGroup(of: Void.self) { group in
-      for request in requests {
+      for requestGroup in groups {
         group.addTask { [weak self] in
-          await self?.fallbackPerRepo(request)
+          await self?.fallbackPerRepo(requestGroup)
         }
       }
     }
@@ -228,30 +235,61 @@ final class PullRequestRefreshCoordinator {
     }
   }
 
-  private func fallbackPerRepo(_ request: Request) async {
+  private func fallbackPerRepo(_ group: RepoRequestGroup) async {
     do {
       let prs = try await githubCLI.batchPullRequests(
-        request.host,
-        request.owner,
-        request.repo,
-        request.branches
+        group.requests[0].host,
+        group.key.owner,
+        group.key.repo,
+        group.branches
       )
-      resultHandler(
-        .refreshed(
-          repositoryID: request.repositoryID,
-          repositoryRootURL: request.repositoryRootURL,
-          worktreeIDs: request.worktreeIDs,
-          prsByBranch: prs
+      for request in group.requests {
+        resultHandler(
+          .refreshed(
+            repositoryID: request.repositoryID,
+            repositoryRootURL: request.repositoryRootURL,
+            worktreeIDs: request.worktreeIDs,
+            prsByBranch: prs.filter { request.branches.contains($0.key) }
+          )
         )
-      )
+      }
     } catch {
-      resultHandler(
-        .failed(
-          repositoryID: request.repositoryID,
-          worktreeIDs: request.worktreeIDs,
-          message: String(describing: error)
+      for request in group.requests {
+        resultHandler(
+          .failed(
+            repositoryID: request.repositoryID,
+            worktreeIDs: request.worktreeIDs,
+            message: String(describing: error)
+          )
         )
-      )
+      }
+    }
+  }
+
+  private func groupRequestsByRepo(_ requests: [Request]) -> [RepoKey: RepoRequestGroup] {
+    var groupsByKey: [RepoKey: RepoRequestGroup] = [:]
+    for request in requests {
+      let key = RepoKey(owner: request.owner, repo: request.repo)
+      groupsByKey[key, default: RepoRequestGroup(key: key)].append(request)
+    }
+    return groupsByKey
+  }
+
+  private struct RepoRequestGroup: Sendable {
+    let key: RepoKey
+    private(set) var requests: [Request] = []
+    private(set) var branches: [String] = []
+    private var seenBranches: Set<String> = []
+
+    init(key: RepoKey) {
+      self.key = key
+    }
+
+    mutating func append(_ request: Request) {
+      requests.append(request)
+      for branch in request.branches where seenBranches.insert(branch).inserted {
+        branches.append(branch)
+      }
     }
   }
 
