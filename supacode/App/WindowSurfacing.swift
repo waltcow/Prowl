@@ -15,9 +15,11 @@ extension NSApplication {
       // SwiftUI tore down (or never created) the singleton main Window scene.
       // A bare activate() cannot bring it back; only openWindow(id:) rebuilds
       // it. See MainWindowOpener / issue #297.
+      if MainWindowOpener.shared.hasRegisteredOpener {
+        WindowLifecycleDiagnostics.noteWindowless("surfaceMainWindow(openWindowRequested)")
+      }
       if MainWindowOpener.shared.openMainWindow() {
         WindowLifecycleDiagnostics.log("surfaceMainWindow: no candidate -> openWindow(id:.main) requested")
-        WindowLifecycleDiagnostics.noteWindowless("surfaceMainWindow(openWindowRequested)")
         activate(ignoringOtherApps: true)
         return true
       }
@@ -35,22 +37,73 @@ extension NSApplication {
     }
     activate(ignoringOtherApps: true)
     window.makeKeyAndOrderFront(nil)
+    WindowLifecycleDiagnostics.noteMainWindowAppeared()
     return true
   }
 
   private func mainWindowCandidate() -> NSWindow? {
-    if let window = windows.first(where: { $0.identifier?.rawValue == WindowID.main }) {
-      return window
-    }
-    let candidates = windows.filter { !($0 is NSPanel) }
-    if let window = candidates.first(where: { $0.identifier?.rawValue != WindowID.settings }) {
-      return window
-    }
-    return candidates.first
+    MainWindowSurface.mainWindowCandidate(in: windows)
   }
 }
 
 // MARK: - Issue #297 diagnostics
+
+enum MainWindowSurface {
+  struct Snapshot: Equatable {
+    let identifier: String?
+    let isVisible: Bool
+  }
+
+  static func mainWindowCandidate(in windows: [NSWindow]) -> NSWindow? {
+    let snapshots = windows.map(snapshot(for:))
+    guard let index = mainWindowIndex(in: snapshots) else { return nil }
+    return windows[index]
+  }
+
+  static func hasVisibleMainWindow(in windows: [NSWindow]) -> Bool {
+    hasVisibleMainWindow(in: windows.map(snapshot(for:)))
+  }
+
+  static func mainWindowCount(in windows: [NSWindow]) -> Int {
+    mainWindowCount(in: windows.map(snapshot(for:)))
+  }
+
+  static func visibleMainWindowCount(in windows: [NSWindow]) -> Int {
+    visibleMainWindowCount(in: windows.map(snapshot(for:)))
+  }
+
+  static func visibleWindowCount(in windows: [NSWindow]) -> Int {
+    visibleWindowCount(in: windows.map(snapshot(for:)))
+  }
+
+  static func mainWindowIndex(in snapshots: [Snapshot]) -> Int? {
+    snapshots.firstIndex(where: isMainWindow)
+  }
+
+  static func hasVisibleMainWindow(in snapshots: [Snapshot]) -> Bool {
+    snapshots.contains { isMainWindow($0) && $0.isVisible }
+  }
+
+  static func mainWindowCount(in snapshots: [Snapshot]) -> Int {
+    snapshots.filter(isMainWindow).count
+  }
+
+  static func visibleMainWindowCount(in snapshots: [Snapshot]) -> Int {
+    snapshots.filter { isMainWindow($0) && $0.isVisible }.count
+  }
+
+  static func visibleWindowCount(in snapshots: [Snapshot]) -> Int {
+    snapshots.filter(\.isVisible).count
+  }
+
+  private static func snapshot(for window: NSWindow) -> Snapshot {
+    Snapshot(identifier: window.identifier?.rawValue, isVisible: window.isVisible)
+  }
+
+  private static func isMainWindow(_ snapshot: Snapshot) -> Bool {
+    snapshot.identifier == WindowID.main
+  }
+}
 
 @MainActor
 enum WindowLifecycleDiagnostics {
@@ -93,8 +146,10 @@ enum WindowLifecycleDiagnostics {
   }
 
   static func noteWindowlessIfNoMainWindow(_ context: String) {
-    let hasMain = NSApplication.shared.windows.contains { $0.identifier?.rawValue == WindowID.main }
-    guard !hasMain else { return }
+    guard !MainWindowSurface.hasVisibleMainWindow(in: NSApplication.shared.windows) else {
+      noteMainWindowAppeared()
+      return
+    }
     noteWindowless(context)
   }
 
@@ -113,6 +168,10 @@ enum WindowLifecycleDiagnostics {
       MainActor.assumeIsolated {
         windowlessReminderScheduled = false
         guard let since = windowlessSince else { return }
+        guard !MainWindowSurface.hasVisibleMainWindow(in: NSApplication.shared.windows) else {
+          noteMainWindowAppeared()
+          return
+        }
         let seconds = Date.now.timeIntervalSince(since)
         log(
           String(
@@ -198,15 +257,27 @@ enum WindowLifecycleDiagnostics {
       event.message = SentryMessage(formatted: "Prowl main window surfacing \(kind)")
       event.logger = "WindowLifecycle"
       event.fingerprint = ["prowl", "main-window-surfacing", kind]
+      let windows = NSApplication.shared.windows
+      let mainWindowCount = MainWindowSurface.mainWindowCount(in: windows)
+      let visibleMainWindowCount = MainWindowSurface.visibleMainWindowCount(in: windows)
+      let visibleWindowCount = MainWindowSurface.visibleWindowCount(in: windows)
       event.tags = [
         "window_lifecycle_kind": kind,
+        "windowless_context": context,
         "app_active": NSApp.isActive ? "true" : "false",
         "main_window_opener_registered": MainWindowOpener.shared.hasRegisteredOpener ? "true" : "false",
+        "has_visible_main_window": visibleMainWindowCount > 0 ? "true" : "false",
+        "main_window_count": "\(mainWindowCount)",
+        "visible_main_window_count": "\(visibleMainWindowCount)",
+        "visible_window_count": "\(visibleWindowCount)",
       ]
       var extra: [String: Any] = [
         "elapsed_seconds": elapsed,
         "windowless_context": context,
-        "windows": windowsSummary(),
+        "windows": windowsSummary(windows),
+        "main_window_count": mainWindowCount,
+        "visible_main_window_count": visibleMainWindowCount,
+        "visible_window_count": visibleWindowCount,
         "max_heartbeat_lag_seconds": maxHeartbeatLagDuringWindowless,
         "arguments": ProcessInfo.processInfo.arguments.joined(separator: " "),
       ]
@@ -219,7 +290,10 @@ enum WindowLifecycleDiagnostics {
   }
 
   private static func windowsSummary() -> String {
-    let windows = NSApplication.shared.windows
+    windowsSummary(NSApplication.shared.windows)
+  }
+
+  private static func windowsSummary(_ windows: [NSWindow]) -> String {
     guard !windows.isEmpty else { return "windows[0]=(none)" }
     let parts = windows.map { window -> String in
       let id = window.identifier?.rawValue ?? "nil"

@@ -59,9 +59,7 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidBecomeActive(_ notification: Notification) {
     let app = NSApplication.shared
-    let hasVisibleMainWindow = app.windows.contains { window in
-      window.isVisible && !(window is NSPanel)
-    }
+    let hasVisibleMainWindow = MainWindowSurface.hasVisibleMainWindow(in: app.windows)
     WindowLifecycleDiagnostics.logWithWindows(
       "applicationDidBecomeActive hasVisibleMainWindow=\(hasVisibleMainWindow)"
     )
@@ -72,7 +70,10 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     WindowLifecycleDiagnostics.logWithWindows("applicationShouldHandleReopen hasVisibleWindows=\(flag)")
-    if flag { return true }
+    if flag, MainWindowSurface.hasVisibleMainWindow(in: sender.windows) {
+      WindowLifecycleDiagnostics.noteMainWindowAppeared()
+      return true
+    }
     let surfaced = sender.surfaceMainWindow()
     WindowLifecycleDiagnostics.log("applicationShouldHandleReopen surfaced=\(surfaced) -> handled=\(!surfaced)")
     return !surfaced
