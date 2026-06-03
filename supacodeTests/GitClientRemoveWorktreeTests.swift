@@ -6,7 +6,9 @@ import Testing
 struct GitClientRemoveWorktreeTests {
   @Test func removeWorktreeDoesNotDeleteMainBranch() async throws {
     let store = ShellCallStore()
-    let worktreePath = "/tmp/repo-main-copy"
+    let worktreePath = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-repo-main-copy-\(UUID().uuidString)", directoryHint: .isDirectory)
+      .path(percentEncoded: false)
     let shell = ShellClient(
       run: { _, arguments, _ in
         await store.record(arguments)
