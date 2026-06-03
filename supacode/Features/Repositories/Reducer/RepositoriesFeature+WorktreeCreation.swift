@@ -626,7 +626,7 @@ extension RepositoriesFeature {
         let repositoryRootURL = cleanupWorktree.repositoryRootURL
         effects.append(
           .run { send in
-            _ = try? await gitClient.removeWorktree(cleanupWorktree, true)
+            _ = try? await gitClient.removeWorktree(cleanupWorktree, false)
             _ = try? await gitClient.pruneWorktrees(repositoryRootURL)
             await send(.reloadRepositories(animated: true))
           }

@@ -587,7 +587,14 @@ struct GitClient {
     let rootPath = worktree.repositoryRootURL.path(percentEncoded: false)
     let worktreeURL = worktree.workingDirectory.standardizedFileURL
     let worktreePath = worktreeURL.path(percentEncoded: false)
-    let relocatedURL = Self.relocateWorktreeDirectory(worktreeURL)
+    let registeredWorktreePaths = try await registeredWorktreePaths(rootPath: rootPath)
+    guard registeredWorktreePaths.contains(worktreePath) else {
+      return worktree.workingDirectory
+    }
+    let relocatedURL =
+      Self.worktreeDirectoryHasGitMetadata(worktreeURL)
+      ? Self.relocateWorktreeDirectory(worktreeURL)
+      : nil
     if let relocatedURL {
       do {
         _ = try await runGit(
@@ -618,6 +625,14 @@ struct GitClient {
       )
     }
     return worktree.workingDirectory
+  }
+
+  nonisolated private func registeredWorktreePaths(rootPath: String) async throws -> Set<String> {
+    let output = try await runGit(
+      operation: .worktreeList,
+      arguments: ["-C", rootPath, "worktree", "list", "--porcelain"]
+    )
+    return Self.parseGitWorktreePorcelainPaths(output)
   }
 
   nonisolated func deleteLocalBranch(
@@ -912,6 +927,27 @@ struct GitClient {
       }
     }
     return nil
+  }
+
+  nonisolated private static func worktreeDirectoryHasGitMetadata(_ worktreeURL: URL) -> Bool {
+    let gitMetadataURL = worktreeURL.appending(path: ".git")
+    return FileManager.default.fileExists(atPath: gitMetadataURL.path(percentEncoded: false))
+  }
+
+  nonisolated static func parseGitWorktreePorcelainPaths(_ output: String) -> Set<String> {
+    Set(
+      output
+        .split(whereSeparator: \.isNewline)
+        .compactMap { line -> String? in
+          let prefix = "worktree "
+          guard line.hasPrefix(prefix) else {
+            return nil
+          }
+          return String(line.dropFirst(prefix.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        .filter { !$0.isEmpty }
+    )
   }
 
   nonisolated static func parseRepositoryWebInfo(_ remoteURL: String) -> GitRemoteWebInfo? {

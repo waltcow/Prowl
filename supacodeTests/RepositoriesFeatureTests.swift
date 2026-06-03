@@ -2130,7 +2130,7 @@ struct RepositoriesFeatureTests {
       globalDefaultPath: "/tmp/worktrees-changed",
       repositoryOverridePath: nil
     )
-    let removedWorktreePath = LockIsolated<String?>(nil)
+    let removedWorktree = LockIsolated<(path: String, deleteBranch: Bool)?>(nil)
     @Shared(.settingsFile) var settingsFile
     $settingsFile.withLock {
       $0.global.defaultWorktreeBaseDirectoryPath = "/tmp/worktrees-changed"
@@ -2138,9 +2138,11 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: makeState(repositories: [repository])) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.gitClient.removeWorktree = { worktree, _ in
+      $0.gitClient.removeWorktree = { worktree, deleteBranch in
         let workingDirectory = await MainActor.run { worktree.workingDirectory }
-        removedWorktreePath.withValue { $0 = workingDirectory.path(percentEncoded: false) }
+        removedWorktree.withValue {
+          $0 = (workingDirectory.path(percentEncoded: false), deleteBranch)
+        }
         return workingDirectory
       }
       $0.gitClient.pruneWorktrees = { _ in }
@@ -2174,15 +2176,16 @@ struct RepositoriesFeatureTests {
     await store.finish()
 
     #expect(changedBaseDirectory != createTimeBaseDirectory)
-    #expect(removedWorktreePath.value != nil)
+    #expect(removedWorktree.value != nil)
+    #expect(removedWorktree.value?.deleteBranch == false)
     #expect(
-      removedWorktreePath.value
+      removedWorktree.value?.path
         == createTimeBaseDirectory
         .appending(path: "new-branch", directoryHint: .isDirectory)
         .path(percentEncoded: false)
     )
     #expect(
-      removedWorktreePath.value
+      removedWorktree.value?.path
         != changedBaseDirectory
         .appending(path: "new-branch", directoryHint: .isDirectory)
         .path(percentEncoded: false)
