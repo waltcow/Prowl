@@ -132,6 +132,50 @@ prowl list --json | jq -r '
 '
 ```
 
+### `idle` does not mean the output finished rendering
+
+`task.status: idle` means the agent's model generation ended — **not** that the
+terminal has finished painting its reply. Claude Code's TUI repaints a long
+markdown answer line by line, and that rendering lags well behind `idle`. So
+reading a pane the instant it goes `idle` (or after a fixed `sleep`) routinely
+catches a half-drawn screen: the visible buffer stops mid-answer with the input
+prompt `❯` right under it. (Measured: at `idle` only the first ~2 of 6 sections
+had rendered; 10s later it still had not finished.) `--last` size does not fix
+this — the rest of the answer is not in the buffer yet.
+
+Two reliable ways to get the **final** output:
+
+1. **`prowl read --wait-stable`** — re-reads the pane on an interval until its
+   content stops changing, then returns the settled snapshot:
+
+   ```bash
+   # bare: 200ms sampling / settle after 800ms quiet / 10s cap
+   prowl read --pane <pane-id> --last 200 --wait-stable --json
+
+   # tuned
+   prowl read --pane <pane-id> --wait-stable \
+     --stable-interval 200 \   # sample every 200ms
+     --stable-period 800 \     # content must hold steady 800ms to count as stable
+     --wait-timeout 10 --json  # give up after 10s, return latest anyway
+   ```
+
+   The JSON gains `stabilized` (true = settled, false = hit the timeout),
+   `waited_ms`, and `samples`. Prefer this over manual `sleep`-then-`read`.
+
+   Note this still only sees the rendered buffer, so content Claude Code has
+   **folded** (`⎿ … +N lines (ctrl+o to expand)`) is never captured no matter
+   how stable it is.
+
+2. **Have the agent write its result to a file**, then read the file. This
+   bypasses both async rendering and folding, so it is the most robust when you
+   need the complete answer:
+
+   ```bash
+   prowl send --pane <pane-id> 'summarize … and write it to /tmp/out.md' --no-wait
+   # … wait for idle … then:
+   cat /tmp/out.md
+   ```
+
 ## Quoting
 
 Protect commands from the local shell when they should expand inside the target pane:

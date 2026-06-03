@@ -108,9 +108,28 @@ public struct KeyInput: Codable, Sendable {
 public struct ReadInput: Codable, Sendable {
   public let selector: TargetSelector
   public let last: Int?
+  /// When true, the app re-reads the pane until its output stops changing before responding.
+  public let waitStable: Bool
+  /// Sampling interval in milliseconds while waiting for stable output (nil → app default).
+  public let stableIntervalMs: Int?
+  /// Output must stay unchanged for this many milliseconds to count as stable (nil → app default).
+  public let stablePeriodMs: Int?
+  /// Maximum seconds to keep waiting for stable output before returning the latest snapshot (nil → app default).
+  public let waitTimeoutSeconds: Int?
 
-  public init(selector: TargetSelector = .none, last: Int? = nil) {
+  public init(
+    selector: TargetSelector = .none,
+    last: Int? = nil,
+    waitStable: Bool = false,
+    stableIntervalMs: Int? = nil,
+    stablePeriodMs: Int? = nil,
+    waitTimeoutSeconds: Int? = nil
+  ) {
     self.selector = selector
     self.last = last
+    self.waitStable = waitStable
+    self.stableIntervalMs = stableIntervalMs
+    self.stablePeriodMs = stablePeriodMs
+    self.waitTimeoutSeconds = waitTimeoutSeconds
   }
 }

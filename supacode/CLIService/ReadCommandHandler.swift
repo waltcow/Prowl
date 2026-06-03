@@ -54,16 +54,18 @@ final class ReadCommandHandler: CommandHandler {
 
   private let resolveProvider: ResolveProvider
   private let captureProvider: CaptureProvider
+  private let clock: any Clock<Duration>
 
   init(
     resolveProvider: @escaping ResolveProvider,
-    captureProvider: @escaping CaptureProvider
+    captureProvider: @escaping CaptureProvider,
+    clock: any Clock<Duration> = ContinuousClock()
   ) {
     self.resolveProvider = resolveProvider
     self.captureProvider = captureProvider
+    self.clock = clock
   }
 
-  // swiftlint:disable:next async_without_await
   func handle(envelope: CommandEnvelope) async -> CommandResponse {
     guard case .read(let input) = envelope.command else {
       return errorResponse(code: CLIErrorCode.readFailed, message: "Invalid command.")
@@ -77,23 +79,26 @@ final class ReadCommandHandler: CommandHandler {
       return mapResolverError(error)
     }
 
-    guard let captureInput = captureProvider(target) else {
-      return errorResponse(code: CLIErrorCode.readFailed, message: "Failed to read terminal text.")
-    }
-
     let capture: ReadCapture
-    if let last = input.last {
-      capture = captureLast(
-        requestedLineCount: last,
-        viewportText: captureInput.viewportText,
-        screenText: captureInput.screenText
-      )
+    let stabilized: Bool?
+    let waitedMs: Int?
+    let samples: Int?
+    if input.waitStable {
+      guard let result = await pollUntilStable(target: target, input: input) else {
+        return errorResponse(code: CLIErrorCode.readFailed, message: "Failed to read terminal text.")
+      }
+      capture = result.capture
+      stabilized = result.stabilized
+      waitedMs = result.waitedMs
+      samples = result.samples
     } else {
-      capture = ReadCapture(
-        text: captureInput.viewportText,
-        source: .screen,
-        truncated: false
-      )
+      guard let single = makeCapture(target: target, last: input.last) else {
+        return errorResponse(code: CLIErrorCode.readFailed, message: "Failed to read terminal text.")
+      }
+      capture = single
+      stabilized = nil
+      waitedMs = nil
+      samples = nil
     }
 
     let payload = ReadCommandPayload(
@@ -103,7 +108,10 @@ final class ReadCommandHandler: CommandHandler {
       source: capture.source,
       truncated: capture.truncated,
       lineCount: lineCount(in: capture.text),
-      text: capture.text
+      text: capture.text,
+      stabilized: stabilized,
+      waitedMs: waitedMs,
+      samples: samples
     )
 
     do {
@@ -116,6 +124,91 @@ final class ReadCommandHandler: CommandHandler {
     } catch {
       return errorResponse(code: CLIErrorCode.readFailed, message: "Failed to encode response.")
     }
+  }
+
+  private struct StableResult {
+    let capture: ReadCapture
+    let stabilized: Bool
+    let waitedMs: Int
+    let samples: Int
+  }
+
+  /// Default stability tuning, applied when the request omits the corresponding value.
+  private enum StabilityDefaults {
+    static let intervalMs = 200
+    static let periodMs = 800
+    static let timeoutSeconds = 10
+  }
+
+  /// Capture the pane's current content, applying `--last` line selection when requested.
+  private func makeCapture(target: ReadResolvedTarget, last: Int?) -> ReadCapture? {
+    guard let captureInput = captureProvider(target) else { return nil }
+    if let last {
+      return captureLast(
+        requestedLineCount: last,
+        viewportText: captureInput.viewportText,
+        screenText: captureInput.screenText
+      )
+    }
+    return ReadCapture(
+      text: captureInput.viewportText,
+      source: .screen,
+      truncated: false
+    )
+  }
+
+  /// Re-read the pane on a fixed interval until its content stops changing for a streak of
+  /// consecutive samples (≈ `period`), or until the timeout caps the total number of samples.
+  /// Returns the latest capture either way, flagging whether it actually stabilized.
+  private func pollUntilStable(target: ReadResolvedTarget, input: ReadInput) async -> StableResult? {
+    let intervalMs = input.stableIntervalMs ?? StabilityDefaults.intervalMs
+    let periodMs = input.stablePeriodMs ?? StabilityDefaults.periodMs
+    let timeoutMs = (input.waitTimeoutSeconds ?? StabilityDefaults.timeoutSeconds) * 1000
+    let interval = Duration.milliseconds(intervalMs)
+
+    // Consecutive unchanged samples that together cover `period`, and the hard cap from `timeout`.
+    let requiredStreak = max(1, Int((Double(periodMs) / Double(intervalMs)).rounded(.up)))
+    let maxSleeps = max(1, Int((Double(timeoutMs) / Double(intervalMs)).rounded(.up)))
+
+    guard var current = makeCapture(target: target, last: input.last) else { return nil }
+    var streak = 0
+    var samples = 1
+    var sleeps = 0
+    var stabilized = false
+
+    while true {
+      if streak >= requiredStreak {
+        stabilized = true
+        break
+      }
+      if sleeps >= maxSleeps {
+        stabilized = false
+        break
+      }
+      do {
+        try await clock.sleep(for: interval)
+      } catch {
+        break  // Cancelled: return the best capture so far.
+      }
+      sleeps += 1
+      guard let next = makeCapture(target: target, last: input.last) else {
+        break  // Capture became unavailable mid-poll (e.g. pane closed): stop with what we have.
+      }
+      samples += 1
+      if next.text == current.text {
+        streak += 1
+      } else {
+        current = next
+        streak = 0
+      }
+    }
+
+    return StableResult(
+      capture: current,
+      stabilized: stabilized,
+      waitedMs: sleeps * intervalMs,
+      samples: samples
+    )
   }
 
   private func captureLast(

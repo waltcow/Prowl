@@ -314,6 +314,15 @@ enum OutputRenderer {
       + "  \("lines:".dim) \(payload.lineCount)"
     )
 
+    if let stabilized = payload.stabilized {
+      let stableLabel = stabilized ? "yes".green : "timed out".yellow
+      lines.append(
+        "  \("stable:".dim) \(stableLabel)"
+        + "  \("waited:".dim) \(formatDurationMs(payload.waitedMs ?? 0))"
+        + "  \("samples:".dim) \(payload.samples ?? 0)"
+      )
+    }
+
     if let cwd = pane.cwd {
       lines.append("  \("cwd:".dim) \(cwd)")
     }

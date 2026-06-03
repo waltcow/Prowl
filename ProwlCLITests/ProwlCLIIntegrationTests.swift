@@ -1166,6 +1166,58 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("a\nb\nc"), "Missing text body: \(result.stdout)")
   }
 
+  func testReadWaitStablePassesOptionsToEnvelope() throws {
+    let socketPath = temporarySocketPath(suffix: "read-wait-stable")
+    let response = CommandResponse(
+      ok: true,
+      command: "read",
+      schemaVersion: "prowl.cli.read.v1"
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: [
+        "read", "--wait-stable",
+        "--stable-interval", "150",
+        "--stable-period", "600",
+        "--wait-timeout", "5",
+        "--json",
+      ]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .read(let input) = envelope.command {
+      XCTAssertTrue(input.waitStable)
+      XCTAssertEqual(input.stableIntervalMs, 150)
+      XCTAssertEqual(input.stablePeriodMs, 600)
+      XCTAssertEqual(input.waitTimeoutSeconds, 5)
+    } else {
+      XCTFail("Expected read command envelope")
+    }
+  }
+
+  func testReadStabilityOptionsRequireWaitStable() throws {
+    let result = try runProwl(args: ["read", "--stable-interval", "150", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
+  func testReadWaitStableRejectsOutOfRangeInterval() throws {
+    let result = try runProwl(args: ["read", "--wait-stable", "--stable-interval", "10", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
   // MARK: - Helpers
 
   private func runWithMockServer(
