@@ -17,11 +17,14 @@ struct AppFeatureSettingsChangedTests {
     settings.githubIntegrationEnabled = false
     settings.mergedWorktreeAction = .archive
     settings.moveNotifiedWorktreeToTop = false
+    settings.showActiveAgentTabTitles = true
     let store = TestStore(initialState: AppFeature.State()) {
       AppFeature()
     }
 
-    await store.send(.settings(.delegate(.settingsChanged(settings))))
+    await store.send(.settings(.delegate(.settingsChanged(settings)))) {
+      $0.repositories.showActiveAgentTabTitles = true
+    }
     await store.receive(\.repositories.githubIntegration.setGithubIntegrationEnabled) {
       $0.repositories.githubIntegrationAvailability = .disabled
     }
