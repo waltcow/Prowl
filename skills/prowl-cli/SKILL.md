@@ -1,6 +1,6 @@
 ---
 name: prowl-cli
-description: Use the Prowl CLI to inspect or control a running Prowl app, especially when a user asks to read from, coordinate, focus, send text to, or send keys to Prowl worktrees, tabs, panes, or sibling agent sessions.
+description: Use the Prowl CLI (`prowl`) to inspect or control a running Prowl GUI app and the agent sessions it hosts. Prowl runs several coding agents in parallel, each in its own pane/tab/worktree, so reach for this whenever the user wants to act on a pane other than the current one — check on, coordinate, read from, focus, send text or keys to, open, or close another pane, tab, worktree, split, window, or sibling/neighboring agent. Covers colloquial framings that never say "prowl": "check what the agent in my other window is doing", "are any of my agents running side by side still working or idle?", "tell the agent in my left split to rerun the tests", "send npm run build to the build tab and grab the output", "open ~/proj in a fresh tab", "close that scratch tab I left open". Not for ordinary editing or building inside the Prowl source repo, and not for how-to questions about Prowl's settings, preferences, or keybindings — only when the task is to actually drive panes in the live Prowl app.
 ---
 
 # Prowl CLI
@@ -86,7 +86,7 @@ Prefer `read --wait-stable` for screen snapshots:
 prowl read --pane "$pane" --last 200 --wait-stable --json
 ```
 
-For polling, avoid zsh's readonly `status` variable:
+Most of the time `--wait-stable` alone is enough — it blocks until the screen stops changing. Only poll `task.status` first when you specifically need to wait for an agent to go from `working` back to `idle` (status flips before the TUI finishes painting, so still finish with `--wait-stable`). When polling in zsh, do not name the variable `status` — it is readonly there:
 
 ```bash
 for i in 1 2 3 4 5 6; do
@@ -171,6 +171,7 @@ Avoid outer double quotes around payloads containing `$PWD`, `$VAR`, backticks, 
 - `open /path` creates a new tab/pane. It is not a refocus command.
 - Focused pane is not stable; `open` and `focus` change it.
 - `read --wait-stable` sees rendered screen only. It cannot recover content folded by a TUI.
+- `read` sets `truncated: true` only when the returned text may be incomplete (the full scrollback could not be read and the viewport had fewer lines than `--last` asked for). Getting fewer lines than `--last` simply because the pane has less history is `truncated: false` — you already have everything; do not retry expecting more.
 - `send --capture` captures a screen diff; multiline input may include command echo.
 - `prowl list --json | jq ...` snippets should pass shell values with `--arg`.
 - In zsh, do not name variables `status`; it is readonly.
@@ -190,9 +191,11 @@ Common codes and recovery:
 - `APP_NOT_RUNNING`: Prowl is not reachable. Ask before restarting the app.
 - `TARGET_NOT_FOUND` / `TARGET_NOT_UNIQUE`: run `prowl list --json` again and choose an explicit pane UUID.
 - `EMPTY_INPUT`: `send` got neither argv text nor stdin.
+- `NO_ACTIVE_PANE`: no pane resolved for positional (focused-pane) targeting; pass an explicit `--pane`.
 - `INVALID_ARGUMENT`: illegal flag or flag combination, such as `--capture --no-wait`.
 - `UNSUPPORTED_KEY` / `INVALID_REPEAT`: check `prowl key --help`.
-- `WAIT_TIMEOUT`: retry with `--no-wait`, or use `--capture` only in a shell-integrated pane.
+- `CAPTURE_UNSUPPORTED`: `--capture` needs shell integration (OSC 133) on the target pane. Drop `--capture` and `read --wait-stable` instead, or redirect the command's output to a file (see "Reading Agent Output").
+- `WAIT_TIMEOUT`: command did not finish in time; retry with `--no-wait`, or raise `--timeout`.
 - `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED`: fix the path passed to `open`.
 
 Always check the exit code before piping output into `jq`; parser-level errors print plaintext usage to stderr.
