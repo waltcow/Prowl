@@ -274,6 +274,7 @@ struct RepositoriesFeature {
     var pendingRenameBranchRequest: PendingRenameBranchRequest?
     var isSidebarDragActive = false
     var pendingSidebarNotifyReorderIDs: [Worktree.ID] = []
+    var showActiveAgentTabTitles = false
     var activeAgents = ActiveAgentsFeature.State()
     @Shared(.appStorage("sidebarCollapsedRepositoryIDs")) var collapsedRepositoryIDs: [Repository.ID] = []
     @Presents var worktreeCreationPrompt: WorktreeCreationPromptFeature.State?

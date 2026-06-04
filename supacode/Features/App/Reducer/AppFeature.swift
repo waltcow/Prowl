@@ -69,6 +69,8 @@ struct AppFeature {
       repositories: RepositoriesFeature.State = .init(),
       settings: SettingsFeature.State = .init()
     ) {
+      var repositories = repositories
+      repositories.showActiveAgentTabTitles = settings.showActiveAgentTabTitles
       self.repositories = repositories
       self.settings = settings
       lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
@@ -622,6 +624,7 @@ struct AppFeature {
           settings.systemNotificationsEnabled && !state.lastKnownSystemNotificationsEnabled
         state.lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
         state.settings.keybindingUserOverrides = settings.keybindingUserOverrides
+        state.repositories.showActiveAgentTabTitles = settings.showActiveAgentTabTitles
         let agentDetectionEnabled = ActiveAgentsFeature.detectionEnabled(
           isPanelHidden: state.repositories.activeAgents.isPanelHidden,
           autoShowPanel: settings.autoShowActiveAgentsPanel

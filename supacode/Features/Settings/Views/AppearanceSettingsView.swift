@@ -93,9 +93,14 @@ struct AppearanceSettingsView: View {
             isOn: $store.autoShowActiveAgentsPanel
           )
           .help("Open the Active Agents panel when an agent is detected.")
-          Text("When enabled, hidden panels reopen as soon as an agent starts or updates.")
+          Text("Hidden panels reopen as soon as an agent starts or updates.")
             .foregroundStyle(.secondary)
             .font(.callout)
+          Toggle(
+            "Show tab titles in agent rows",
+            isOn: $store.showActiveAgentTabTitles
+          )
+          .help("Display each agent's tab title in the row and show the branch name on hover.")
         }
         Section("Default View") {
           Picker("Launch in", selection: $store.defaultViewMode) {

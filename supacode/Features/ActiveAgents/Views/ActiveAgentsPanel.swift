@@ -11,6 +11,7 @@ struct ActiveAgentsPanel: View {
   /// Merged "⌥⌃↑↓" hint shown while Cmd is held; `nil` hides it (bindings customized
   /// or Cmd not held). Resolved by the parent so the panel stays presentational.
   let navigationShortcutHint: String?
+  let showTabTitles: Bool
   let height: Double
   let maximumHeight: Double
   let onHeightChanged: (Double) -> Void
@@ -54,7 +55,7 @@ struct ActiveAgentsPanel: View {
                 ActiveAgentRow(
                   entry: entry,
                   repositoryName: repositoryName(for: entry),
-                  branchName: branchName(for: entry),
+                  subtitle: subtitle(for: entry),
                   repositoryColor: repositoryColor(for: entry),
                   isDimmed: isDimmed(entry)
                 )
@@ -128,6 +129,14 @@ struct ActiveAgentsPanel: View {
     rowDisplays[entry.id]?.branchName ?? entry.worktreeName
   }
 
+  private func subtitle(for entry: ActiveAgentEntry) -> String {
+    Self.subtitle(
+      for: entry,
+      branchName: branchName(for: entry),
+      showTabTitles: showTabTitles
+    )
+  }
+
   private func repositoryColor(for entry: ActiveAgentEntry) -> RepositoryColorChoice? {
     rowDisplays[entry.id]?.color
   }
@@ -145,6 +154,30 @@ struct ActiveAgentsPanel: View {
   }
 
   private func helpText(for entry: ActiveAgentEntry) -> String {
+    Self.helpText(
+      for: entry,
+      branchName: branchName(for: entry),
+      showTabTitles: showTabTitles
+    )
+  }
+
+  static func subtitle(
+    for entry: ActiveAgentEntry,
+    branchName: String,
+    showTabTitles: Bool
+  ) -> String {
+    showTabTitles ? tabTitle(for: entry) : branchName
+  }
+
+  static func helpText(
+    for entry: ActiveAgentEntry,
+    branchName: String,
+    showTabTitles: Bool
+  ) -> String {
+    showTabTitles ? branchName : tabTitle(for: entry)
+  }
+
+  static func tabTitle(for entry: ActiveAgentEntry) -> String {
     let trimmed = entry.tabTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? "Untitled tab" : trimmed
   }

@@ -157,6 +157,33 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
+  @Test func panelSubtitleAndHelpSwapTabTitleAndBranchWhenEnabled() {
+    let entry = entry(id: UUID(0), tabTitle: "Review issue 385", state: .idle, changedAt: Date())
+
+    #expect(
+      ActiveAgentsPanel.subtitle(for: entry, branchName: "main", showTabTitles: false)
+        == "main"
+    )
+    #expect(
+      ActiveAgentsPanel.helpText(for: entry, branchName: "main", showTabTitles: false)
+        == "Review issue 385"
+    )
+    #expect(
+      ActiveAgentsPanel.subtitle(for: entry, branchName: "main", showTabTitles: true)
+        == "Review issue 385"
+    )
+    #expect(
+      ActiveAgentsPanel.helpText(for: entry, branchName: "main", showTabTitles: true)
+        == "main"
+    )
+  }
+
+  @Test func panelTabTitleFallsBackForEmptyTitles() {
+    let entry = entry(id: UUID(0), tabTitle: "   ", state: .idle, changedAt: Date())
+
+    #expect(ActiveAgentsPanel.tabTitle(for: entry) == "Untitled tab")
+  }
+
   private func sampleEntries() -> IdentifiedArrayOf<ActiveAgentEntry> {
     let now = Date(timeIntervalSince1970: 10)
     return [
@@ -166,14 +193,19 @@ struct ActiveAgentsFeatureTests {
     ]
   }
 
-  private func entry(id: UUID, state: AgentDisplayState, changedAt: Date) -> ActiveAgentEntry {
+  private func entry(
+    id: UUID,
+    tabTitle: String = "1",
+    state: AgentDisplayState,
+    changedAt: Date
+  ) -> ActiveAgentEntry {
     ActiveAgentEntry(
       id: id,
       worktreeID: "/repo/wt",
       worktreeName: "wt",
       workingDirectory: nil,
       tabID: TerminalTabID(rawValue: UUID()),
-      tabTitle: "1",
+      tabTitle: tabTitle,
       surfaceID: id,
       paneIndex: 1,
       agent: .codex,

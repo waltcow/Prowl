@@ -99,6 +99,15 @@ struct AppFeatureSettingsChangedTests {
     }
   }
 
+  @Test func appStateInitializesActiveAgentTabTitleDisplayFromSettings() {
+    var settings = SettingsFeature.State()
+    settings.showActiveAgentTabTitles = true
+
+    let state = AppFeature.State(settings: settings)
+
+    #expect(state.repositories.showActiveAgentTabTitles == true)
+  }
+
   @Test(.dependencies) func settingsChangedRecomputesResolvedKeybindings() async {
     var settings = GlobalSettings.default
     settings.keybindingUserOverrides = KeybindingUserOverrideStore(

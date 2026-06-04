@@ -36,6 +36,7 @@ struct SettingsFeature {
     var defaultViewMode: DefaultViewMode
     var dimUnfocusedSplits: Bool
     var autoShowActiveAgentsPanel: Bool
+    var showActiveAgentTabTitles: Bool
     var windowTintMode: WindowTintMode
     var shelfSpineTintFallback: ShelfSpineTintFallback
     var shelfSpineTintFollowsRepositoryColor: Bool
@@ -90,6 +91,7 @@ struct SettingsFeature {
       defaultViewMode = settings.defaultViewMode
       dimUnfocusedSplits = settings.dimUnfocusedSplits
       autoShowActiveAgentsPanel = settings.autoShowActiveAgentsPanel
+      showActiveAgentTabTitles = settings.showActiveAgentTabTitles
       windowTintMode = settings.windowTintMode
       shelfSpineTintFallback = settings.shelfSpineTintFallback
       shelfSpineTintFollowsRepositoryColor = settings.shelfSpineTintFollowsRepositoryColor
@@ -134,6 +136,7 @@ struct SettingsFeature {
         defaultViewMode: defaultViewMode,
         dimUnfocusedSplits: dimUnfocusedSplits,
         autoShowActiveAgentsPanel: autoShowActiveAgentsPanel,
+        showActiveAgentTabTitles: showActiveAgentTabTitles,
         windowTintMode: windowTintMode,
         windowTintCustomColor: TintColor(windowTintCustomColor),
         showRunButtonInToolbar: showRunButtonInToolbar,
@@ -246,6 +249,7 @@ struct SettingsFeature {
         state.defaultViewMode = normalizedSettings.defaultViewMode
         state.dimUnfocusedSplits = normalizedSettings.dimUnfocusedSplits
         state.autoShowActiveAgentsPanel = normalizedSettings.autoShowActiveAgentsPanel
+        state.showActiveAgentTabTitles = normalizedSettings.showActiveAgentTabTitles
         state.windowTintMode = normalizedSettings.windowTintMode
         state.shelfSpineTintFallback = normalizedSettings.shelfSpineTintFallback
         state.shelfSpineTintFollowsRepositoryColor = normalizedSettings.shelfSpineTintFollowsRepositoryColor

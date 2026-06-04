@@ -395,6 +395,24 @@ struct SettingsFeatureTests {
     #expect(settingsFile.global.autoShowActiveAgentsPanel == true)
   }
 
+  @Test(.dependencies) func showActiveAgentTabTitlesPersistsChanges() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.showActiveAgentTabTitles = false
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.showActiveAgentTabTitles, true))) {
+      $0.showActiveAgentTabTitles = true
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.showActiveAgentTabTitles == true)
+  }
+
   @Test(.dependencies) func disablingAnalyticsResetsClient() async {
     var initialSettings = GlobalSettings.default
     initialSettings.analyticsEnabled = true

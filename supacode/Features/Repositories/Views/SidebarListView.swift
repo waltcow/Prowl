@@ -160,6 +160,7 @@ struct SidebarListView: View {
           rowDisplays: agentRowDisplays,
           selectedSurfaceID: selectedSurfaceID,
           navigationShortcutHint: activeAgentsShortcutHint,
+          showTabTitles: state.showActiveAgentTabTitles,
           height: panelHeight,
           maximumHeight: maximumPanelHeight,
           onHeightChanged: { height in

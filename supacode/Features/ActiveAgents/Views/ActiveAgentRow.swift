@@ -4,7 +4,7 @@ import SwiftUI
 struct ActiveAgentRow: View {
   let entry: ActiveAgentEntry
   let repositoryName: String
-  let branchName: String
+  let subtitle: String
   let repositoryColor: RepositoryColorChoice?
   let isDimmed: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,10 +14,11 @@ struct ActiveAgentRow: View {
       agentIcon
       VStack(alignment: .leading, spacing: 2) {
         title
-        Text(branchName)
+        Text(subtitle)
           .font(.caption)
           .foregroundStyle(.secondary)
           .lineLimit(1)
+          .truncationMode(.tail)
       }
       Spacer(minLength: 8)
       statusPill
