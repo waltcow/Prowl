@@ -1,5 +1,22 @@
 # Changelog
 
+## [2026.6.5](https://github.com/onevcat/Prowl/releases/tag/v2026.6.5)
+
+This release focuses on CLI reliability for agent workflows and several startup and window-management fixes.
+
+### New
+
+- `prowl read` gains a `--wait-stable` flag that polls the pane buffer until output has stopped changing before returning, avoiding truncated reads at the moment an agent finishes generating. Use `prowl read --pane <id> --last 200 --wait-stable --json`; tuning flags `--stable-interval`, `--stable-period`, and `--wait-timeout` are available.
+- New "Show tab titles in Active Agents" setting (Appearance preferences): when enabled, each agent row shows the terminal tab title as its subtitle instead of the branch name.
+
+### Fixed
+
+- `prowl read` no longer reports `truncated: true` when the full scrollback buffer is available but simply holds fewer lines than requested. The flag now correctly means "the returned text may be incomplete."
+- Fixed a launch race and restoration hang where the default view (Shelf or Canvas) could fail to apply or stall indefinitely at startup.
+- Hardened main window surfacing so Prowl reliably comes to the front when clicked in the Dock or reopened, and no longer raises unrelated helper windows.
+- Worktree cleanup on a failed creation no longer requests branch deletion; directory removal is now gated on an exact path match and the presence of `.git` metadata.
+- Fixed a CLI socket ownership bug where a secondary app instance could unlink or replace a live socket, breaking `prowl` CLI connectivity.
+
 ## [2026.6.1](https://github.com/onevcat/Prowl/releases/tag/v2026.6.1)
 
 ### Fixed
