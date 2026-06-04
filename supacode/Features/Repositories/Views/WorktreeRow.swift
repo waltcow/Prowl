@@ -16,6 +16,7 @@ struct WorktreeRow: View {
   let notifications: [WorktreeTerminalNotification]
   let onFocusNotification: (WorktreeTerminalNotification) -> Void
   let shortcutHint: String?
+  let showsShortcutHint: Bool
   let pinAction: (() -> Void)?
   let isSelected: Bool
   let archiveAction: (() -> Void)?
@@ -128,7 +129,8 @@ struct WorktreeRow: View {
         pullRequestNumber: display.pullRequest?.number,
         pullRequestState: display.pullRequestState,
         mergeReadiness: mergeReadiness,
-        shortcutHint: shortcutHint
+        shortcutHint: shortcutHint,
+        showsShortcutHint: showsShortcutHint
       )
       .padding(.leading, 22)
     }
@@ -178,6 +180,7 @@ private struct WorktreeRowInfoView: View {
   let pullRequestState: String?
   let mergeReadiness: PullRequestMergeReadiness?
   let shortcutHint: String?
+  let showsShortcutHint: Bool
 
   var body: some View {
     HStack(spacing: 4) {
@@ -188,10 +191,13 @@ private struct WorktreeRowInfoView: View {
       Spacer(minLength: 0)
       if let shortcutHint {
         ShortcutHintView(text: shortcutHint, color: .secondary)
+          .opacity(showsShortcutHint ? 1 : 0)
+          .accessibilityHidden(!showsShortcutHint)
       }
     }
     .font(.caption)
     .frame(minHeight: 14)
+    .animation(.easeInOut(duration: 0.15), value: showsShortcutHint)
   }
 
   private var summaryText: Text {
@@ -299,6 +305,7 @@ private struct WorktreeRowPreview: View {
       notifications: [],
       onFocusNotification: { _ in },
       shortcutHint: shortcutHint,
+      showsShortcutHint: shortcutHint != nil,
       pinAction: {},
       isSelected: isSelected,
       archiveAction: {},

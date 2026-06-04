@@ -29,16 +29,21 @@ struct WorktreeRowsView: View {
     let sections = state.worktreeRowSections(in: repository)
     let isRepositoryRemoving = state.isRemovingRepository(repository)
     let isSidebarDragActive = state.isSidebarDragActive
-    let showShortcutHints = commandKeyObserver.isPressed
-    let allRows = showShortcutHints ? hotkeyRows : []
-    let shortcutIndexByID = Dictionary(
-      uniqueKeysWithValues: allRows.enumerated().map { ($0.element.id, $0.offset) }
+    let shortcutHintTextByID = Dictionary(
+      uniqueKeysWithValues: hotkeyRows.enumerated().compactMap { index, row -> (Worktree.ID, String)? in
+        guard let text = worktreeShortcutHint(for: index) else { return nil }
+        return (row.id, text)
+      }
+    )
+    let shortcutHints = WorktreeShortcutHints(
+      textByID: shortcutHintTextByID,
+      isVisible: commandKeyObserver.isPressed
     )
     let rowIDs = sections.allRows.map(\.id)
     return rowsGroup(
       sections: sections,
       isRepositoryRemoving: isRepositoryRemoving,
-      shortcutIndexByID: shortcutIndexByID
+      shortcutHints: shortcutHints
     )
     .animation(isSidebarDragActive ? nil : .easeOut(duration: 0.2), value: rowIDs)
     .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
@@ -50,14 +55,14 @@ struct WorktreeRowsView: View {
   private func rowsGroup(
     sections: WorktreeRowSections,
     isRepositoryRemoving: Bool,
-    shortcutIndexByID: [Worktree.ID: Int]
+    shortcutHints: WorktreeShortcutHints
   ) -> some View {
     if let row = sections.main {
       rowView(
         row,
         isRepositoryRemoving: isRepositoryRemoving,
         moveDisabled: true,
-        shortcutHint: worktreeShortcutHint(for: shortcutIndexByID[row.id])
+        shortcutHint: shortcutHints.display(for: row.id)
       )
     }
     movableRowsGroup(
@@ -65,14 +70,14 @@ struct WorktreeRowsView: View {
       section: .pinned,
       targetedDestination: $targetedPinnedDropDestination,
       isRepositoryRemoving: isRepositoryRemoving,
-      shortcutIndexByID: shortcutIndexByID
+      shortcutHints: shortcutHints
     )
     ForEach(sections.pending) { row in
       rowView(
         row,
         isRepositoryRemoving: isRepositoryRemoving,
         moveDisabled: true,
-        shortcutHint: worktreeShortcutHint(for: shortcutIndexByID[row.id])
+        shortcutHint: shortcutHints.display(for: row.id)
       )
     }
     movableRowsGroup(
@@ -80,7 +85,7 @@ struct WorktreeRowsView: View {
       section: .unpinned,
       targetedDestination: $targetedUnpinnedDropDestination,
       isRepositoryRemoving: isRepositoryRemoving,
-      shortcutIndexByID: shortcutIndexByID
+      shortcutHints: shortcutHints
     )
   }
 
@@ -90,7 +95,7 @@ struct WorktreeRowsView: View {
     section: SidebarWorktreeSection,
     targetedDestination: Binding<Int?>,
     isRepositoryRemoving: Bool,
-    shortcutIndexByID: [Worktree.ID: Int]
+    shortcutHints: WorktreeShortcutHints
   ) -> some View {
     let rowIDs = rows.map(\.id)
     let isWorktreeDragActive = !draggingWorktreeIDs.isEmpty
@@ -99,7 +104,7 @@ struct WorktreeRowsView: View {
         row,
         isRepositoryRemoving: isRepositoryRemoving,
         moveDisabled: isRepositoryRemoving || row.isDeleting || row.isArchiving,
-        shortcutHint: worktreeShortcutHint(for: shortcutIndexByID[row.id])
+        shortcutHint: shortcutHints.display(for: row.id)
       )
       .worktreeDropTarget(
         index: index,
@@ -122,7 +127,7 @@ struct WorktreeRowsView: View {
     _ row: WorktreeRowModel,
     isRepositoryRemoving: Bool,
     moveDisabled: Bool,
-    shortcutHint: String?
+    shortcutHint: WorktreeShortcutHintDisplay
   ) -> some View {
     let isWorktreeDragActive = !draggingWorktreeIDs.isEmpty
     let config = rowConfig(
@@ -194,7 +199,7 @@ struct WorktreeRowsView: View {
     isRepositoryRemoving: Bool,
     isWorktreeDragActive: Bool,
     moveDisabled: Bool,
-    shortcutHint: String?
+    shortcutHint: WorktreeShortcutHintDisplay
   ) -> WorktreeRowViewConfig {
     let displayName =
       if row.isDeleting {
@@ -214,7 +219,8 @@ struct WorktreeRowsView: View {
       showsNotificationIndicator: !isWorktreeDragActive && showsNotificationIndicator,
       notifications: isWorktreeDragActive ? [] : notifications,
       onFocusNotification: focusNotificationHandler(for: row.id),
-      shortcutHint: shortcutHint,
+      shortcutHint: shortcutHint.text,
+      showsShortcutHint: shortcutHint.isVisible,
       pinAction: canShowRowActions && !row.isMainWorktree ? { togglePin(for: row.id, isPinned: row.isPinned) } : nil,
       archiveAction: canShowRowActions && !row.isMainWorktree ? { archiveWorktree(row.id) } : nil,
       onDiffTap: diffTapHandler(for: row.id),
@@ -326,11 +332,26 @@ struct WorktreeRowsView: View {
     let notifications: [WorktreeTerminalNotification]
     let onFocusNotification: (WorktreeTerminalNotification) -> Void
     let shortcutHint: String?
+    let showsShortcutHint: Bool
     let pinAction: (() -> Void)?
     let archiveAction: (() -> Void)?
     let onDiffTap: (() -> Void)?
     let onStopRunScript: (() -> Void)?
     let moveDisabled: Bool
+  }
+
+  private struct WorktreeShortcutHints {
+    let textByID: [Worktree.ID: String]
+    let isVisible: Bool
+
+    func display(for worktreeID: Worktree.ID) -> WorktreeShortcutHintDisplay {
+      WorktreeShortcutHintDisplay(text: textByID[worktreeID], isVisible: isVisible)
+    }
+  }
+
+  private struct WorktreeShortcutHintDisplay {
+    let text: String?
+    let isVisible: Bool
   }
 
   private func worktreeRowView(_ row: WorktreeRowModel, config: WorktreeRowViewConfig) -> some View {
@@ -354,6 +375,7 @@ struct WorktreeRowsView: View {
       notifications: config.notifications,
       onFocusNotification: config.onFocusNotification,
       shortcutHint: config.shortcutHint,
+      showsShortcutHint: config.showsShortcutHint,
       pinAction: config.pinAction,
       isSelected: isSelected,
       archiveAction: config.archiveAction,
