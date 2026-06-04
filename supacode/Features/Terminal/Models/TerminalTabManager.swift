@@ -31,17 +31,28 @@ final class TerminalTabManager {
     selectedTabId = id
   }
 
-  func updateTitle(_ id: TerminalTabID, title: String) {
-    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-    guard !tabs[index].isTitleLocked else { return }
+  /// Updates the live shell title. Returns `true` when the visible
+  /// `displayTitle` actually changed (a custom title masks live updates),
+  /// so callers can refresh derived UI like the Active Agents subtitle.
+  @discardableResult
+  func updateTitle(_ id: TerminalTabID, title: String) -> Bool {
+    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
+    guard !tabs[index].isTitleLocked else { return false }
+    let previousDisplayTitle = tabs[index].displayTitle
     tabs[index].title = title
+    return tabs[index].displayTitle != previousDisplayTitle
   }
 
-  func setCustomTitle(_ id: TerminalTabID, title: String) {
-    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-    guard !tabs[index].isTitleLocked else { return }
+  /// Sets (or clears, when blank) the user-defined title. Returns `true` when
+  /// the visible `displayTitle` actually changed.
+  @discardableResult
+  func setCustomTitle(_ id: TerminalTabID, title: String) -> Bool {
+    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
+    guard !tabs[index].isTitleLocked else { return false }
+    let previousDisplayTitle = tabs[index].displayTitle
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
     tabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
+    return tabs[index].displayTitle != previousDisplayTitle
   }
 
   func beginTabRename(_ id: TerminalTabID) {

@@ -1220,7 +1220,9 @@ final class WorktreeTerminalState {
     view.bridge.onTitleChange = { [weak self, weak view] title in
       guard let self, let view else { return }
       if self.focusedSurfaceIdByTab[tabId] == view.id {
-        self.tabManager.updateTitle(tabId, title: title)
+        if self.tabManager.updateTitle(tabId, title: title) {
+          self.refreshAgentEntriesForTitleChange(in: tabId)
+        }
       }
       self.noteTitleForCommandDetection(title, surfaceId: view.id, tabId: tabId)
     }
@@ -1425,7 +1427,9 @@ final class WorktreeTerminalState {
         guard response == .alertFirstButtonReturn else { return }
         guard let self else { return }
         let newTitle = textField.stringValue
-        self.tabManager.setCustomTitle(tabId, title: newTitle)
+        if self.tabManager.setCustomTitle(tabId, title: newTitle) {
+          self.refreshAgentEntriesForTitleChange(in: tabId)
+        }
       }
     }
   }
@@ -1435,7 +1439,9 @@ final class WorktreeTerminalState {
       let surface = surfaces[focusedId],
       let title = surface.bridge.state.title
     else { return }
-    tabManager.updateTitle(tabId, title: title)
+    if tabManager.updateTitle(tabId, title: title) {
+      refreshAgentEntriesForTitleChange(in: tabId)
+    }
   }
 
   private func focusSurface(in tabId: TerminalTabID) {
@@ -1821,6 +1827,21 @@ final class WorktreeTerminalState {
     surfaceAgentStates[surfaceID] = PaneAgentState(lastChangedAt: Date())
     lastClaudeWorkingAtBySurface.removeValue(forKey: surfaceID)
     onAgentEntryRemoved?(surfaceID)
+  }
+
+  /// Re-emit Active Agents entries for every pane in `tabId` so the panel picks
+  /// up a fresh tab-title snapshot. Title changes (OSC-2, focus sync, manual
+  /// rename) don't move agent detection state, so without this nudge the
+  /// subtitle only refreshes on the next agent state transition.
+  private func refreshAgentEntriesForTitleChange(in tabId: TerminalTabID) {
+    let surfaceIDs = trees[tabId]?.leaves().map(\.id) ?? []
+    for surfaceID in surfaceIDs {
+      guard let state = surfaceAgentStates[surfaceID],
+        state.detectedAgent != nil,
+        state.state != .unknown
+      else { continue }
+      emitAgentEntry(surfaceID: surfaceID, tabId: tabId, state: state)
+    }
   }
 
   private func emitAgentEntry(surfaceID: UUID, tabId: TerminalTabID, state: PaneAgentState) {
