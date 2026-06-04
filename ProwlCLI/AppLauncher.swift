@@ -2,13 +2,15 @@
 // Launches Prowl.app when CLI detects the app is not running, then waits
 // for the CLI socket to become available.
 
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
+import AppKit
 import Foundation
 import ProwlCLIShared
+
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 
 enum AppLauncher {
   /// Maximum time to wait for the socket after launching the app.
@@ -29,7 +31,7 @@ enum AppLauncher {
   static func ensureAppRunning() throws -> Bool {
     // If a custom socket path is set, skip auto-launch entirely.
     if let override = ProcessInfo.processInfo.environment[ProwlSocket.environmentKey],
-       !override.isEmpty
+      !override.isEmpty
     {
       return false
     }
@@ -54,20 +56,11 @@ enum AppLauncher {
 
   // MARK: - Process detection
 
-  /// Check whether a Prowl process is currently running via `pgrep`.
+  /// Check whether a Prowl app instance is currently running.
   private static func isAppProcessRunning() -> Bool {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-    process.arguments = ["-x", "Prowl"]
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    do {
-      try process.run()
-      process.waitUntilExit()
-    } catch {
-      return false
+    NSWorkspace.shared.runningApplications.contains { application in
+      application.bundleIdentifier == "com.onevcat.prowl"
     }
-    return process.terminationStatus == 0
   }
 
   // MARK: - App launch
@@ -98,7 +91,7 @@ enum AppLauncher {
   private static func launchArguments() -> [String] {
     var args = ["-a", "Prowl"]
     if let openPath = ProcessInfo.processInfo.environment[ProwlSocket.cliOpenPathEnvironmentKey],
-       !openPath.isEmpty
+      !openPath.isEmpty
     {
       args.append(contentsOf: ["--args", ProwlSocket.cliOpenPathArgument, openPath])
     }

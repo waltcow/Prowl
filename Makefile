@@ -134,7 +134,16 @@ run-app: build-app # Build then launch (Debug) with log streaming
 		echo "error: failed to resolve app path from build settings"; \
 		exit 1; \
 	fi; \
-	"$$build_dir/$$product/Contents/MacOS/$$exec_name"
+	app_path="$$build_dir/$$product/Contents/MacOS/$$exec_name"; \
+	if [ "$${ALLOW_MULTIPLE_PROWL:-0}" != "1" ]; then \
+		existing_pid="$$(ps -axww -o pid= -o command= | awk '$$2 ~ /\/Prowl\.app\/Contents\/MacOS\/ProwlApp$$/ { print $$1; exit }')"; \
+		if [ -n "$$existing_pid" ]; then \
+			echo "error: another Prowl app instance is already running (pid $$existing_pid). Quit it before make run-app."; \
+			echo "       Direct debug launches share app state and the CLI socket. Set ALLOW_MULTIPLE_PROWL=1 only if you need a second GUI instance."; \
+			exit 1; \
+		fi; \
+	fi; \
+	"$$app_path"
 
 install-dev-build: build-app # install dev build to /Applications
 	@set -euo pipefail; \
