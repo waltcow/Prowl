@@ -384,11 +384,15 @@ struct WorktreeDetailView: View {
       CanvasView(
         terminalManager: terminalManager,
         repositoryCustomTitles: repositories.repositoryCustomTitles,
+        focusRequest: repositories.pendingCanvasFocusRequest,
         onExitToTab: {
           store.send(.repositories(.toggleCanvas))
         },
         onFocusedWorktreeChanged: { worktreeID in
           store.send(.canvasFocusedWorktreeChanged(worktreeID))
+        },
+        onFocusRequestConsumed: { requestID in
+          store.send(.repositories(.consumeCanvasFocusRequest(requestID)))
         }
       )
       // Canvas tints the nav (leading) only; the toolbar is left untinted so

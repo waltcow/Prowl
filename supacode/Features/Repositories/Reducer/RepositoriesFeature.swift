@@ -275,6 +275,8 @@ struct RepositoriesFeature {
     var isSidebarDragActive = false
     var pendingSidebarNotifyReorderIDs: [Worktree.ID] = []
     var showActiveAgentTabTitles = false
+    var nextCanvasFocusRequestID = 0
+    var pendingCanvasFocusRequest: CanvasFocusRequest?
     var activeAgents = ActiveAgentsFeature.State()
     @Shared(.appStorage("sidebarCollapsedRepositoryIDs")) var collapsedRepositoryIDs: [Repository.ID] = []
     @Presents var worktreeCreationPrompt: WorktreeCreationPromptFeature.State?
@@ -345,8 +347,11 @@ struct RepositoriesFeature {
     case setSidebarSelectedWorktreeIDs(Set<Worktree.ID>)
     case selectRepository(Repository.ID?)
     case selectWorktree(Worktree.ID?, focusTerminal: Bool = false, recordHistory: Bool = true)
+    case focusCanvasRepository(Repository.ID)
+    case focusCanvasWorktree(Worktree.ID)
     case selectNextWorktree
     case selectPreviousWorktree
+    case consumeCanvasFocusRequest(Int)
     case worktreeHistoryBack
     case worktreeHistoryForward
     case revealSelectedWorktreeInSidebar
@@ -446,6 +451,12 @@ struct RepositoriesFeature {
 
         case .activeAgents(.entryTapped(let id)):
           guard let entry = state.activeAgents.entries[id: id] else { return .none }
+          if state.isShowingCanvas {
+            requestCanvasFocus(.tab(entry.tabID), openedWorktreeID: entry.worktreeID, state: &state)
+            return .run { _ in
+              _ = await terminalClient.focusSurface(entry.worktreeID, entry.surfaceID)
+            }
+          }
           let isPlainFolder =
             state.repositories[id: entry.worktreeID]?.kind == .plain
           if isPlainFolder {
@@ -982,6 +993,28 @@ struct RepositoriesFeature {
           let selectedWorktree = state.worktree(for: worktreeID)
           return .send(.delegate(.selectedWorktreeChanged(selectedWorktree)))
 
+        case .focusCanvasRepository(let repositoryID):
+          guard state.isShowingCanvas,
+            let worktree = state.canvasNavigationWorktree(forRepositoryID: repositoryID)
+          else {
+            return .none
+          }
+          requestCanvasFocus(.worktree(worktree.id), openedWorktreeID: worktree.id, state: &state)
+          return .run { _ in
+            await terminalClient.send(.ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false))
+          }
+
+        case .focusCanvasWorktree(let worktreeID):
+          guard state.isShowingCanvas,
+            let worktree = state.worktree(for: worktreeID)
+          else {
+            return .none
+          }
+          requestCanvasFocus(.worktree(worktree.id), openedWorktreeID: worktree.id, state: &state)
+          return .run { _ in
+            await terminalClient.send(.ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false))
+          }
+
         case .selectNextWorktree:
           // In Shelf, the vertical arrow pair maps to tab navigation
           // within the open book — horizontal (← / →) is already book
@@ -1002,6 +1035,12 @@ struct RepositoriesFeature {
           }
           guard let id = state.worktreeID(byOffset: -1) else { return .none }
           return .send(.selectWorktree(id))
+
+        case .consumeCanvasFocusRequest(let id):
+          if state.pendingCanvasFocusRequest?.id == id {
+            state.pendingCanvasFocusRequest = nil
+          }
+          return .none
 
         case .worktreeHistoryBack:
           return navigateWorktreeHistory(direction: .backward, state: &state)
@@ -1808,6 +1847,23 @@ extension RepositoriesFeature.State {
     return nil
   }
 
+  func canvasNavigationWorktree(forRepositoryID repositoryID: Repository.ID) -> Worktree? {
+    guard let repository = repositories[id: repositoryID] else { return nil }
+    if repository.capabilities.supportsWorktrees {
+      return worktreeRows(in: repository)
+        .compactMap { worktree(for: $0.id) }
+        .first
+    }
+    guard repository.capabilities.supportsRunnableFolderActions else { return nil }
+    return Worktree(
+      id: repository.id,
+      name: repository.name,
+      detail: repository.rootURL.path(percentEncoded: false),
+      workingDirectory: repository.rootURL,
+      repositoryRootURL: repository.rootURL
+    )
+  }
+
   func pendingWorktree(for id: Worktree.ID?) -> PendingWorktree? {
     guard let id else { return nil }
     return pendingWorktrees.first(where: { $0.id == id })
@@ -2130,6 +2186,19 @@ struct FailedWorktreeCleanup {
 
 func removePendingWorktree(_ id: String, state: inout RepositoriesFeature.State) {
   state.pendingWorktrees.removeAll { $0.id == id }
+}
+
+func requestCanvasFocus(
+  _ target: CanvasFocusRequest.Target,
+  openedWorktreeID: Worktree.ID,
+  state: inout RepositoriesFeature.State
+) {
+  state.nextCanvasFocusRequestID += 1
+  state.pendingCanvasFocusRequest = CanvasFocusRequest(
+    id: state.nextCanvasFocusRequestID,
+    target: target
+  )
+  state.openedWorktreeIDs.insert(openedWorktreeID)
 }
 
 func updatePendingWorktreeProgress(

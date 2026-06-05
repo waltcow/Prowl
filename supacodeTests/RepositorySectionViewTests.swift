@@ -85,6 +85,26 @@ struct RepositorySectionViewTests {
     #expect(SidebarListView.selectedWorktreeIDs(in: state) == [worktree.id])
   }
 
+  @Test func repositoryHeaderDoesNotOpenCanvasTargetForExpandableGitRepositories() {
+    let gitRepository = Repository(
+      id: "/tmp/git",
+      rootURL: URL(fileURLWithPath: "/tmp/git"),
+      name: "git",
+      kind: .git,
+      worktrees: []
+    )
+    let plainRepository = Repository(
+      id: "/tmp/plain",
+      rootURL: URL(fileURLWithPath: "/tmp/plain"),
+      name: "plain",
+      kind: .plain,
+      worktrees: []
+    )
+
+    #expect(!SidebarListView.repositoryHeaderOpensCanvasTarget(gitRepository))
+    #expect(SidebarListView.repositoryHeaderOpensCanvasTarget(plainRepository))
+  }
+
   @Test func activeAgentWorktreeMetadataUsesCustomRepositoryTitleAndCurrentBranchName() {
     let repositoryRootURL = URL(fileURLWithPath: "/tmp/prowl")
     let worktree = Worktree(

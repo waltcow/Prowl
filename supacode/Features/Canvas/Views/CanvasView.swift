@@ -12,8 +12,10 @@ struct CanvasView: View {
   /// bar without subscribing to per-repo settings files on the
   /// per-frame canvas hot path.
   var repositoryCustomTitles: [Repository.ID: String] = [:]
+  var focusRequest: CanvasFocusRequest?
   var onExitToTab: () -> Void = {}
   var onFocusedWorktreeChanged: (Worktree.ID?) -> Void = { _ in }
+  var onFocusRequestConsumed: (Int) -> Void = { _ in }
   @State private var layoutStore = CanvasLayoutStore()
   @Shared(.repositoryAppearances) private var repositoryAppearances
 
@@ -29,6 +31,7 @@ struct CanvasView: View {
   @State private var viewportSize: CGSize = .zero
   @State private var showsCanvasHelp = false
   @State private var configReloadCounter = 0
+  @State private var focusViewportAnimationID = 0
 
   private let minCardWidth: CGFloat = 300
   private let minCardHeight: CGFloat = 200
@@ -78,6 +81,7 @@ struct CanvasView: View {
             }
             pruneSelection(previousOrder: [], currentOrder: allTabIDs, states: activeStates)
             syncBroadcastCallbacks(states: activeStates)
+            fulfillPendingFocusRequest(focusRequest, states: activeStates)
           }
           .onChange(of: allCardKeys) { _, newKeys in
             if newKeys.isEmpty {
@@ -93,9 +97,14 @@ struct CanvasView: View {
               layoutStore.ensureZOrder(for: newKeys)
             }
             syncBroadcastCallbacks(states: activeStates)
+            fulfillPendingFocusRequest(focusRequest, states: activeStates)
           }
           .onChange(of: allTabIDs) { oldTabIDs, newTabIDs in
             pruneSelection(previousOrder: oldTabIDs, currentOrder: newTabIDs, states: activeStates)
+            fulfillPendingFocusRequest(focusRequest, states: activeStates)
+          }
+          .onChange(of: focusRequest) { _, newRequest in
+            fulfillPendingFocusRequest(newRequest, states: activeStates)
           }
           .contentShape(.rect)
           .accessibilityAddTraits(.isButton)
@@ -106,6 +115,7 @@ struct CanvasView: View {
       }
       .contentShape(.rect)
       .simultaneousGesture(canvasZoomGesture)
+      .animation(.easeInOut(duration: 0.22), value: focusViewportAnimationID)
       .onGeometryChange(for: CGSize.self) { proxy in
         proxy.size
       } action: { newSize in
@@ -231,7 +241,7 @@ struct CanvasView: View {
         if cmdHeld {
           handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
         } else {
-          focusSingleCard(tab.id, surfaceState: state, states: activeStates)
+          focusSingleCard(tab.id, states: activeStates)
         }
       },
       onSelectionTap: {
@@ -258,7 +268,7 @@ struct CanvasView: View {
         let wasAlreadyFocused =
           selectionState.primaryTabID == tab.id
           && selectionState.selectedTabIDs.count <= 1
-        focusSingleCard(tab.id, surfaceState: state, states: activeStates)
+        focusSingleCard(tab.id, states: activeStates)
         let now = Date()
         if wasAlreadyFocused,
           now.timeIntervalSince(lastTitleBarTapDate) <= NSEvent.doubleClickInterval
@@ -268,7 +278,7 @@ struct CanvasView: View {
         lastTitleBarTapDate = now
       },
       onExpand: {
-        focusSingleCard(tab.id, surfaceState: state, states: activeStates)
+        focusSingleCard(tab.id, states: activeStates)
         onExitToTab()
       },
       onClose: {
@@ -425,6 +435,16 @@ struct CanvasView: View {
     states.flatMap { state in
       state.tabManager.tabs.compactMap { tab in
         state.surfaceView(for: tab.id) != nil ? tab.id : nil
+      }
+    }
+  }
+
+  private func collectFocusCandidates(from states: [WorktreeTerminalState]) -> [CanvasFocusCandidate] {
+    states.flatMap { state in
+      state.tabManager.tabs.compactMap { tab in
+        state.surfaceView(for: tab.id) != nil
+          ? CanvasFocusCandidate(worktreeID: state.worktreeID, tabID: tab.id)
+          : nil
       }
     }
   }
@@ -695,13 +715,58 @@ struct CanvasView: View {
 
   private func focusSingleCard(
     _ tabID: TerminalTabID,
-    surfaceState _: WorktreeTerminalState,
     states: [WorktreeTerminalState]
   ) {
     layoutStore.moveToFront(tabID.rawValue.uuidString)
     mutateSelection(states: states) { state in
       state.focusSingle(tabID)
     }
+  }
+
+  private func fulfillPendingFocusRequest(
+    _ request: CanvasFocusRequest?,
+    states: [WorktreeTerminalState]
+  ) {
+    guard let request else { return }
+    let tabID = CanvasFocusResolver.resolve(
+      request: request,
+      candidates: collectFocusCandidates(from: states),
+      currentPrimaryTabID: selectionState.primaryTabID
+    )
+    guard let tabID else { return }
+    focusSingleCard(tabID, states: states)
+    focusViewport(on: tabID)
+    onFocusRequestConsumed(request.id)
+  }
+
+  private func focusViewport(on tabID: TerminalTabID) {
+    guard viewportSize.width > 0, viewportSize.height > 0 else { return }
+    let cardKey = tabID.rawValue.uuidString
+    guard let layout = layoutStore.cardLayouts[cardKey] else { return }
+
+    let horizontalPadding: CGFloat = 80
+    let verticalPadding: CGFloat = 80 + bottomToolbarReserve
+    let availableWidth = max(1, viewportSize.width - horizontalPadding)
+    let availableHeight = max(1, viewportSize.height - verticalPadding)
+    let targetScale = max(
+      0.25,
+      min(
+        1.25,
+        min(
+          availableWidth / layout.size.width,
+          availableHeight / (layout.size.height + titleBarHeight)
+        )
+      )
+    )
+    let targetOffset = CGSize(
+      width: viewportSize.width / 2 - layout.position.x * targetScale,
+      height: (viewportSize.height - bottomToolbarReserve) / 2 - layout.position.y * targetScale
+    )
+    canvasScale = targetScale
+    canvasOffset = targetOffset
+    lastCanvasScale = targetScale
+    lastCanvasOffset = targetOffset
+    focusViewportAnimationID &+= 1
   }
 
   private func handleSelectionShieldTap(
