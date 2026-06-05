@@ -2521,7 +2521,7 @@ struct RepositoriesFeatureTests {
   @Test(.dependencies) func requestDeleteProwlCreatedWorktreeCanPreselectBranchDeletion() async {
     let worktree = makeWorktree(id: "/tmp/wt", name: "owl")
     let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
-    var state = makeState(repositories: [repository])
+    let state = makeState(repositories: [repository])
     state.$prowlCreatedWorktreeIDs.withLock {
       $0 = [worktree.id]
     }
@@ -2601,7 +2601,7 @@ struct RepositoriesFeatureTests {
     #expect(forceDeleteAttempts.value == [false, true])
   }
 
-  @Test(.dependencies, .serialized) func worktreeDeletedPresentsQueuedForceDeleteBranchPromptsInOrder() async {
+  @Test(.dependencies) func worktreeDeletedPresentsQueuedForceDeleteBranchPromptsInOrder() async {
     let repoRoot = "/tmp/repo"
     let firstRequest = ForceDeleteBranchRequest(
       branchName: "first",

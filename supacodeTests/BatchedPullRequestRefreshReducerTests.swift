@@ -49,11 +49,11 @@ struct BatchedPullRequestRefreshReducerTests {
 
     let snapshot = enqueued.value
     #expect(snapshot.count == 1)
-    let request = try? #require(snapshot.first)
-    #expect(request?.host == "github.com")
-    #expect(request?.owner == "khoi")
-    #expect(request?.repo == "alpha")
-    #expect(request?.branches == ["main", "feature"])
+    let request = snapshot[0]
+    #expect(request.host == "github.com")
+    #expect(request.owner == "khoi")
+    #expect(request.repo == "alpha")
+    #expect(request.branches == ["main", "feature"])
   }
 
   @Test func refreshResolvesAndCachesRemoteInfoOnFirstRun() async {
