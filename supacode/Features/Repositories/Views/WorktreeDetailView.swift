@@ -15,6 +15,7 @@ struct WorktreeDetailView: View {
     let runScriptIsRunning: Bool
     let customCommands: [UserCustomCommand]
     let isUpdateAvailable: Bool
+    let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
     let showRunButtonInToolbar: Bool
     let showDefaultEditorInToolbar: Bool
@@ -27,6 +28,7 @@ struct WorktreeDetailView: View {
     let runScriptIsRunning: Bool
     let customCommands: [UserCustomCommand]
     let isUpdateAvailable: Bool
+    let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
     let showRunButtonInToolbar: Bool
   }
@@ -93,6 +95,7 @@ struct WorktreeDetailView: View {
             runScriptIsRunning: runScriptIsRunning,
             customCommands: customCommands,
             isUpdateAvailable: state.updates.isUpdateAvailable,
+            isUpdateReadyToInstall: state.updates.isUpdateReadyToInstall,
             availableUpdateVersion: state.updates.availableVersion,
             showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar
           )
@@ -110,6 +113,7 @@ struct WorktreeDetailView: View {
             runScriptIsRunning: runScriptIsRunning,
             customCommands: customCommands,
             isUpdateAvailable: state.updates.isUpdateAvailable,
+            isUpdateReadyToInstall: state.updates.isUpdateReadyToInstall,
             availableUpdateVersion: state.updates.availableVersion,
             showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar,
             showDefaultEditorInToolbar: settingsFile.global.showDefaultEditorInToolbar
@@ -174,7 +178,7 @@ struct WorktreeDetailView: View {
       onRunCustomCommand: { index in
         store.send(.runCustomCommand(index))
       },
-      onCheckForUpdates: { store.send(.updates(.checkForUpdates)) }
+      onActivateUpdateButton: { store.send(.updates(.activateUpdateButton)) }
     )
   }
 
@@ -190,8 +194,11 @@ struct WorktreeDetailView: View {
         onDismissAll: { dismissAllToolbarNotifications(in: state.notificationGroups) }
       )
       if state.isUpdateAvailable {
-        ToolbarUpdateButton(availableVersion: state.availableUpdateVersion) {
-          store.send(.updates(.checkForUpdates))
+        ToolbarUpdateButton(
+          availableVersion: state.availableUpdateVersion,
+          isReadyToInstall: state.isUpdateReadyToInstall
+        ) {
+          store.send(.updates(.activateUpdateButton))
         }
       }
     }
@@ -310,6 +317,7 @@ struct WorktreeDetailView: View {
       runScriptIsRunning: input.runScriptIsRunning,
       customCommands: input.customCommands,
       isUpdateAvailable: input.isUpdateAvailable,
+      isUpdateReadyToInstall: input.isUpdateReadyToInstall,
       availableUpdateVersion: input.availableUpdateVersion,
       showRunButtonInToolbar: input.showRunButtonInToolbar,
       showDefaultEditorInToolbar: input.showDefaultEditorInToolbar
@@ -708,6 +716,7 @@ struct WorktreeDetailView: View {
     let runScriptIsRunning: Bool
     let customCommands: [UserCustomCommand]
     let isUpdateAvailable: Bool
+    let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
     let showRunButtonInToolbar: Bool
     let showDefaultEditorInToolbar: Bool
@@ -726,7 +735,7 @@ struct WorktreeDetailView: View {
     let onRunScript: () -> Void
     let onStopRunScript: () -> Void
     let onRunCustomCommand: (Int) -> Void
-    let onCheckForUpdates: () -> Void
+    let onActivateUpdateButton: () -> Void
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
     var body: some ToolbarContent {
@@ -758,7 +767,8 @@ struct WorktreeDetailView: View {
         if toolbarState.isUpdateAvailable {
           ToolbarUpdateButton(
             availableVersion: toolbarState.availableUpdateVersion,
-            onCheckForUpdates: onCheckForUpdates
+            isReadyToInstall: toolbarState.isUpdateReadyToInstall,
+            onActivate: onActivateUpdateButton
           )
         }
       }
@@ -1210,6 +1220,7 @@ private struct WorktreeToolbarPreview: View {
         )
       ],
       isUpdateAvailable: true,
+      isUpdateReadyToInstall: false,
       availableUpdateVersion: "2026.5.1",
       showRunButtonInToolbar: true,
       showDefaultEditorInToolbar: true
@@ -1238,7 +1249,7 @@ private struct WorktreeToolbarPreview: View {
         onRunScript: {},
         onStopRunScript: {},
         onRunCustomCommand: { _ in },
-        onCheckForUpdates: {}
+        onActivateUpdateButton: {}
       )
     }
     .environment(commandKeyObserver)

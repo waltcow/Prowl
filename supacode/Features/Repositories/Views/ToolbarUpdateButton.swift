@@ -2,9 +2,16 @@ import SwiftUI
 
 struct ToolbarUpdateButton: View {
   let availableVersion: String?
-  let onCheckForUpdates: () -> Void
+  let isReadyToInstall: Bool
+  let onActivate: () -> Void
 
   private var tooltip: String {
+    if isReadyToInstall {
+      if let availableVersion, !availableVersion.isEmpty {
+        return "Version \(availableVersion) has been downloaded. Click to relaunch and install."
+      }
+      return "An update has been downloaded. Click to relaunch and install."
+    }
     if let availableVersion, !availableVersion.isEmpty {
       return "Version \(availableVersion) is available. Click to review and install."
     }
@@ -13,13 +20,13 @@ struct ToolbarUpdateButton: View {
 
   var body: some View {
     Button {
-      onCheckForUpdates()
+      onActivate()
     } label: {
       Image(systemName: "arrow.down.circle.fill")
         .foregroundStyle(Color("ProwlAccent"))
         .accessibilityHidden(true)
     }
     .help(tooltip)
-    .accessibilityLabel("Install update")
+    .accessibilityLabel(isReadyToInstall ? "Relaunch to install update" : "Install update")
   }
 }

@@ -4,25 +4,48 @@ import Sparkle
 private let updaterLogger = SupaLogger("Updater")
 
 struct UpdaterClient {
-  var configure: @MainActor @Sendable (_ checks: Bool, _ downloads: Bool, _ checkInBackground: Bool) -> Void
+  var configure: @MainActor @Sendable (_ checks: Bool, _ checkInBackground: Bool) -> Void
   var setUpdateChannel: @MainActor @Sendable (UpdateChannel) -> Void
   var checkForUpdates: @MainActor @Sendable () -> Void
+  var installDownloadedUpdate: @MainActor @Sendable () -> Void
   var events: @MainActor @Sendable () -> AsyncStream<Event>
 }
 
 extension UpdaterClient {
   enum Event: Equatable, Sendable {
     case silentUpdateFound(version: String?)
+    case downloadedUpdateReadyToInstall(version: String?)
   }
 }
 
 @MainActor
 final class SparkleUpdateDelegate: NSObject, SPUUpdaterDelegate {
   var updateChannel: UpdateChannel = .stable
+  private var continuation: AsyncStream<UpdaterClient.Event>.Continuation?
+  private var immediateInstallHandler: (() -> Void)?
 
   nonisolated func allowedChannels(for updater: SPUUpdater) -> Set<String> {
     // Tip channel is no longer published separately; treat it the same as stable.
     []
+  }
+
+  func setContinuation(_ continuation: AsyncStream<UpdaterClient.Event>.Continuation) {
+    self.continuation?.finish()
+    self.continuation = continuation
+  }
+
+  func installDownloadedUpdate() {
+    immediateInstallHandler?()
+  }
+
+  func updater(
+    _ updater: SPUUpdater,
+    willInstallUpdateOnQuit item: SUAppcastItem,
+    immediateInstallationBlock immediateInstallHandler: @escaping () -> Void
+  ) -> Bool {
+    self.immediateInstallHandler = immediateInstallHandler
+    continuation?.yield(.downloadedUpdateReadyToInstall(version: item.displayVersionString))
+    return true
   }
 }
 
@@ -32,10 +55,15 @@ final class SparkleUpdateDelegate: NSObject, SPUUpdaterDelegate {
 final class SilentUpdateDriver: NSObject, SPUUserDriver {
   private let standard: SPUStandardUserDriver
   private var continuation: AsyncStream<UpdaterClient.Event>.Continuation?
+  private var automaticallyChecksForUpdates = GlobalSettings.default.updatesAutomaticallyCheckForUpdates
 
   init(hostBundle: Bundle) {
     self.standard = SPUStandardUserDriver(hostBundle: hostBundle, delegate: nil)
     super.init()
+  }
+
+  func setAutomaticUpdatePreferences(checks: Bool) {
+    automaticallyChecksForUpdates = checks
   }
 
   func setContinuation(_ continuation: AsyncStream<UpdaterClient.Event>.Continuation) {
@@ -51,7 +79,13 @@ final class SilentUpdateDriver: NSObject, SPUUserDriver {
     _ request: SPUUpdatePermissionRequest,
     reply: @escaping @Sendable (SUUpdatePermissionResponse) -> Void
   ) {
-    standard.show(request, reply: reply)
+    reply(
+      SUUpdatePermissionResponse(
+        automaticUpdateChecks: automaticallyChecksForUpdates,
+        automaticUpdateDownloading: nil,
+        sendSystemProfile: false
+      )
+    )
   }
 
   func showUserInitiatedUpdateCheck(cancellation: @escaping @Sendable () -> Void) {
@@ -162,12 +196,9 @@ extension UpdaterClient: DependencyKey {
       updaterLogger.warning("SPUUpdater start failed: \(String(describing: error))")
     }
     return UpdaterClient(
-      configure: { checks, _, checkInBackground in
+      configure: { checks, checkInBackground in
+        driver.setAutomaticUpdatePreferences(checks: checks)
         updater.automaticallyChecksForUpdates = checks
-        // Silent update flow requires Sparkle to always prompt us via `showUpdateFound`
-        // so we can decide whether to surface the toolbar button. Auto-download would
-        // bypass that callback, so we force it off regardless of user preference.
-        updater.automaticallyDownloadsUpdates = false
         if checkInBackground, checks {
           updater.checkForUpdatesInBackground()
         }
@@ -182,18 +213,23 @@ extension UpdaterClient: DependencyKey {
       checkForUpdates: {
         updater.checkForUpdates()
       },
+      installDownloadedUpdate: {
+        delegate.installDownloadedUpdate()
+      },
       events: {
         let (stream, continuation) = AsyncStream.makeStream(of: Event.self)
         driver.setContinuation(continuation)
+        delegate.setContinuation(continuation)
         return stream
       }
     )
   }()
 
   static let testValue = UpdaterClient(
-    configure: { _, _, _ in },
+    configure: { _, _ in },
     setUpdateChannel: { _ in },
     checkForUpdates: {},
+    installDownloadedUpdate: {},
     events: { AsyncStream { _ in } }
   )
 }
