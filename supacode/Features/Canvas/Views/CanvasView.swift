@@ -31,6 +31,7 @@ struct CanvasView: View {
   @State private var viewportSize: CGSize = .zero
   @State private var showsCanvasHelp = false
   @State private var configReloadCounter = 0
+  @State private var focusViewportAnimationID = 0
 
   private let minCardWidth: CGFloat = 300
   private let minCardHeight: CGFloat = 200
@@ -114,6 +115,7 @@ struct CanvasView: View {
       }
       .contentShape(.rect)
       .simultaneousGesture(canvasZoomGesture)
+      .animation(.easeInOut(duration: 0.22), value: focusViewportAnimationID)
       .onGeometryChange(for: CGSize.self) { proxy in
         proxy.size
       } action: { newSize in
@@ -760,12 +762,11 @@ struct CanvasView: View {
       width: viewportSize.width / 2 - layout.position.x * targetScale,
       height: (viewportSize.height - bottomToolbarReserve) / 2 - layout.position.y * targetScale
     )
-    withAnimation(.easeInOut(duration: 0.22)) {
-      canvasScale = targetScale
-      canvasOffset = targetOffset
-      lastCanvasScale = targetScale
-      lastCanvasOffset = targetOffset
-    }
+    canvasScale = targetScale
+    canvasOffset = targetOffset
+    lastCanvasScale = targetScale
+    lastCanvasOffset = targetOffset
+    focusViewportAnimationID &+= 1
   }
 
   private func handleSelectionShieldTap(
