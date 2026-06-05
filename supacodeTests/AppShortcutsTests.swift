@@ -441,6 +441,30 @@ struct AppShortcutsTests {
     #expect(arguments.contains("--keybind=super+;=unbind") == false)
   }
 
+  @Test func disabledCanvasLayoutOverridesResolveToNil() {
+    let overrides = KeybindingUserOverrideStore(
+      overrides: [
+        AppShortcuts.CommandID.arrangeCanvasCards: KeybindingUserOverride(
+          binding: Keybinding(key: "r", modifiers: .init(command: true, option: true)),
+          isEnabled: false
+        ),
+        AppShortcuts.CommandID.organizeCanvasCards: KeybindingUserOverride(
+          binding: Keybinding(key: "g", modifiers: .init(command: true, option: true)),
+          isEnabled: false
+        ),
+      ]
+    )
+    let resolved = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: overrides
+    )
+
+    // When disabled the resolved shortcut must be nil so CanvasView's handler bails
+    // instead of falling back to the app-default ⌘⌥R / ⌘⌥G key.
+    #expect(AppShortcuts.resolvedShortcut(for: AppShortcuts.CommandID.arrangeCanvasCards, in: resolved) == nil)
+    #expect(AppShortcuts.resolvedShortcut(for: AppShortcuts.CommandID.organizeCanvasCards, in: resolved) == nil)
+  }
+
   @Test func resolvedShortcutFallsBackToDefaultWhenCommandMissingInResolvedMap() {
     let resolved = ResolvedKeybindingMap(bindingsByCommandID: [:])
 

@@ -138,8 +138,10 @@ struct CanvasView: View {
       selectAllCanvasShortcut?.keyEquivalent ?? AppShortcuts.selectAllCanvasCards.keyEquivalent,
       phases: .down
     ) { keyPress in
-      let shortcutModifiers = selectAllCanvasShortcut?.modifiers ?? AppShortcuts.selectAllCanvasCards.modifiers
-      guard keyPress.modifiers == shortcutModifiers else { return .ignored }
+      // Bail when the binding is disabled in Settings (resolved shortcut is nil);
+      // otherwise the app-default key would still fire despite being unbound.
+      guard let shortcut = selectAllCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
       selectAllCards()
       return .handled
     }
@@ -147,8 +149,8 @@ struct CanvasView: View {
       arrangeCanvasShortcut?.keyEquivalent ?? AppShortcuts.arrangeCanvasCards.keyEquivalent,
       phases: .down
     ) { keyPress in
-      let shortcutModifiers = arrangeCanvasShortcut?.modifiers ?? AppShortcuts.arrangeCanvasCards.modifiers
-      guard keyPress.modifiers == shortcutModifiers else { return .ignored }
+      guard let shortcut = arrangeCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
       arrangeCardsWithFit()
       return .handled
     }
@@ -156,8 +158,8 @@ struct CanvasView: View {
       organizeCanvasShortcut?.keyEquivalent ?? AppShortcuts.organizeCanvasCards.keyEquivalent,
       phases: .down
     ) { keyPress in
-      let shortcutModifiers = organizeCanvasShortcut?.modifiers ?? AppShortcuts.organizeCanvasCards.modifiers
-      guard keyPress.modifiers == shortcutModifiers else { return .ignored }
+      guard let shortcut = organizeCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
       organizeCardsWithFit()
       return .handled
     }
