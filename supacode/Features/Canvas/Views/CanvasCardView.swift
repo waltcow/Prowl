@@ -23,6 +23,7 @@ struct CanvasCardView: View {
   let isSelected: Bool
   let hasUnseenNotification: Bool
   let cardSize: CGSize
+  let animatesSizeChanges: Bool
   let canvasScale: CGFloat
   let showsSelectionShield: Bool
   let onTap: () -> Void
@@ -237,6 +238,7 @@ struct CanvasCardView: View {
       hasNotification: { _ in false },
       action: onSplitOperation
     )
+    .animation(animatesSizeChanges ? .easeInOut(duration: 0.2) : nil, value: cardSize)
     .allowsHitTesting(isFocused && !showsSelectionShield)
   }
 

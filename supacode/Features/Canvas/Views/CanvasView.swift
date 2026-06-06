@@ -234,6 +234,7 @@ struct CanvasView: View {
       isSelected: selectionState.selectedTabIDs.contains(tab.id),
       hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
       cardSize: resized.size,
+      animatesSizeChanges: activeResize[tab.id] == nil,
       canvasScale: canvasScale,
       showsSelectionShield: showsSelectionShield(for: tab.id),
       onTap: {
