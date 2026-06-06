@@ -219,7 +219,10 @@ struct CanvasView: View {
   /// reaching the NSView, keeping terminal grid stable during zoom.
   @ViewBuilder
   private func cardsLayer(activeStates: [WorktreeTerminalState]) -> some View {
-    ZStack {
+    // Pin to .topLeading and fill the viewport so each card's `.offset()` keeps
+    // the same (0,0) origin it had under GeometryReader — otherwise the scrim's
+    // full-size frame would resize the stack and shift the cards' base position.
+    ZStack(alignment: .topLeading) {
       ForEach(activeStates, id: \.worktreeID) { state in
         ForEach(state.tabManager.tabs) { tab in
           if state.surfaceView(for: tab.id) != nil {
@@ -242,6 +245,7 @@ struct CanvasView: View {
           .transition(.opacity)
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
   @ViewBuilder
