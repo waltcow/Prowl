@@ -90,7 +90,9 @@ struct SidebarListView: View {
 
     ScrollViewReader { scrollProxy in
       ScrollView {
-        LazyVStack(spacing: 0) {
+        // Avoid LazyVStack here: after collapsing and expanding large sections,
+        // SwiftUI's lazy placement cache can spin on the main thread while scrolling.
+        VStack(spacing: 0) {
           // When there are no repositories the sidebar stays empty — the
           // detail pane's `EmptyStateView` ("Open a repository or folder")
           // carries the prompt and the Add Repository button instead.
