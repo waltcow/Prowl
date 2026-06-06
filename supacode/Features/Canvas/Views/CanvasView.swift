@@ -34,6 +34,10 @@ struct CanvasView: View {
   /// The tab currently expanded in place (near-fullscreen overlay) on canvas,
   /// or nil when no card is expanded.
   @State private var expandedTabID: TerminalTabID?
+  /// The tab playing its restore (collapse) animation. Kept set for the
+  /// animation's duration so the card's terminal size refit stays driven by the
+  /// single expand `withAnimation` transaction instead of its own.
+  @State private var collapsingTabID: TerminalTabID?
 
   private let minCardWidth: CGFloat = 300
   private let minCardHeight: CGFloat = 200
@@ -284,7 +288,11 @@ struct CanvasView: View {
       isSelected: selectionState.selectedTabIDs.contains(tab.id),
       hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
       cardSize: resized.size,
-      animatesSizeChanges: activeResize[tab.id] == nil,
+      // While expanding/restoring this card, defer its size animation to the
+      // single expand `withAnimation` so offset/scale/size/terminal stay in
+      // lock-step (a true magic-move from the card's origin, not the center).
+      animatesSizeChanges: activeResize[tab.id] == nil && expandedTabID != tab.id
+        && collapsingTabID != tab.id,
       isExpanded: isCardExpanded,
       canvasScale: appliedScale,
       showsSelectionShield: showsSelectionShield(for: tab.id),
@@ -831,17 +839,23 @@ struct CanvasView: View {
     guard viewportSize.width > 0, viewportSize.height > 0,
       layoutStore.cardLayouts[tabID.rawValue.uuidString] != nil
     else { return }
+    collapsingTabID = nil
     focusSingleCard(tabID, states: states)
     withAnimation(expandAnimation) {
       expandedTabID = tabID
     }
   }
 
-  /// Restore the expanded card back into the (unchanged) canvas.
+  /// Restore the expanded card back into the (unchanged) canvas. Marks the tab
+  /// as collapsing for the animation's duration so its terminal size refit is
+  /// driven by this single transaction, keeping the magic-move in sync.
   private func collapseExpand() {
-    guard expandedTabID != nil else { return }
+    guard let tabID = expandedTabID else { return }
+    collapsingTabID = tabID
     withAnimation(expandAnimation) {
       expandedTabID = nil
+    } completion: {
+      if collapsingTabID == tabID { collapsingTabID = nil }
     }
   }
 
@@ -849,6 +863,7 @@ struct CanvasView: View {
   /// (Arrange/Organize) takes over the canvas.
   private func cancelExpandForRelayout() {
     expandedTabID = nil
+    collapsingTabID = nil
   }
 
   private func fulfillPendingFocusRequest(
@@ -1056,6 +1071,7 @@ struct CanvasView: View {
 
   private func deactivateCanvas() {
     expandedTabID = nil
+    collapsingTabID = nil
     let activeStates = terminalManager.activeWorktreeStates
     for state in activeStates {
       state.isCanvasManaged = false
