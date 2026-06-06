@@ -15,7 +15,47 @@ extension AppFeature {
       guard state.commandPalette.isPresented else { return .none }
       return restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
 
-    case .delegate(.selectWorktree(let worktreeID)):
+    case .delegate(let delegate):
+      return reduceCommandPaletteDelegate(delegate, state: &state)
+
+    default:
+      return .none
+    }
+  }
+
+  func reduceCommandPaletteDelegate(
+    _ delegate: CommandPaletteFeature.Delegate,
+    state: inout State
+  ) -> Effect<Action> {
+    if let effect = reduceCommandPaletteNavigationDelegate(delegate, state: &state) {
+      return effect
+    }
+    if let effect = reduceCommandPaletteCanvasDelegate(delegate) {
+      return effect
+    }
+    if let effect = reduceCommandPaletteWorktreeFileDelegate(delegate, state: &state) {
+      return effect
+    }
+    if let effect = reduceCommandPaletteWorktreeActionDelegate(delegate, state: &state) {
+      return effect
+    }
+    if let effect = reduceCommandPalettePullRequestDelegate(delegate) {
+      return effect
+    }
+    #if DEBUG
+      if let effect = reduceCommandPaletteDebugDelegate(delegate) {
+        return effect
+      }
+    #endif
+    return .none
+  }
+
+  func reduceCommandPaletteNavigationDelegate(
+    _ delegate: CommandPaletteFeature.Delegate,
+    state: inout State
+  ) -> Effect<Action>? {
+    switch delegate {
+    case .selectWorktree(let worktreeID):
       if state.repositories.isShowingCanvas {
         if state.repositories.worktree(for: worktreeID) == nil,
           state.repositories.repositories[id: worktreeID]?.kind == .plain
@@ -26,10 +66,10 @@ extension AppFeature {
       }
       return .send(.repositories(.selectWorktree(worktreeID)))
 
-    case .delegate(.checkForUpdates):
+    case .checkForUpdates:
       return .send(.updates(.checkForUpdates))
 
-    case .delegate(.openSettings):
+    case .openSettings:
       return .merge(
         .send(.settings(.setSelection(.general))),
         .run { _ in
@@ -37,52 +77,71 @@ extension AppFeature {
         }
       )
 
-    case .delegate(.newWorktree):
+    case .newWorktree:
       return .send(.repositories(.worktreeCreation(.createRandomWorktree)))
 
-    case .delegate(.openRepository):
+    case .openRepository:
       return .send(.repositories(.setOpenPanelPresented(true)))
 
-    case .delegate(.deleteWorktree(let worktreeID, let repositoryID)):
+    case .deleteWorktree(let worktreeID, let repositoryID):
       return .send(.repositories(.worktreeLifecycle(.requestDeleteWorktree(worktreeID, repositoryID))))
 
-    case .delegate(.viewArchivedWorktrees):
+    case .viewArchivedWorktrees:
       return .send(.repositories(.selectArchivedWorktrees))
 
-    case .delegate(.refreshWorktrees):
+    case .refreshWorktrees:
       return .send(.repositories(.refreshWorktrees))
 
-    case .delegate(.jumpToLatestUnread):
+    case .jumpToLatestUnread:
       return .send(.jumpToLatestUnread)
 
-    case .delegate(.installCLI):
+    case .installCLI:
       return .send(.settings(.installCLIButtonTapped(showAlert: false)))
 
-    case .delegate(.toggleLeftSidebar):
+    case .toggleLeftSidebar:
       return .send(.toggleLeftSidebar)
 
-    case .delegate(.toggleActiveAgentsPanel):
+    case .toggleActiveAgentsPanel:
       return .send(.repositories(.activeAgents(.togglePanelVisibility)))
 
-    case .delegate(.toggleCanvas):
+    default:
+      return nil
+    }
+  }
+
+  func reduceCommandPaletteCanvasDelegate(
+    _ delegate: CommandPaletteFeature.Delegate
+  ) -> Effect<Action>? {
+    switch delegate {
+    case .toggleCanvas:
       return .send(.repositories(.toggleCanvas))
 
-    case .delegate(.expandCanvasCard):
+    case .expandCanvasCard:
       return .send(.repositories(.requestCanvasCommand(.toggleExpand)))
 
-    case .delegate(.arrangeCanvasCards):
+    case .arrangeCanvasCards:
       return .send(.repositories(.requestCanvasCommand(.arrange)))
 
-    case .delegate(.organizeCanvasCards):
+    case .organizeCanvasCards:
       return .send(.repositories(.requestCanvasCommand(.organize)))
 
-    case .delegate(.selectAllCanvasCards):
+    case .selectAllCanvasCards:
       return .send(.repositories(.requestCanvasCommand(.selectAll)))
 
-    case .delegate(.toggleShelf):
+    case .toggleShelf:
       return .send(.repositories(.toggleShelf))
 
-    case .delegate(.showDiff):
+    default:
+      return nil
+    }
+  }
+
+  func reduceCommandPaletteWorktreeFileDelegate(
+    _ delegate: CommandPaletteFeature.Delegate,
+    state: inout State
+  ) -> Effect<Action>? {
+    switch delegate {
+    case .showDiff:
       guard let worktreeID = state.repositories.selectedWorktreeID,
         let worktree = state.repositories.worktree(for: worktreeID)
       else {
@@ -99,10 +158,10 @@ extension AppFeature {
         }
       }
 
-    case .delegate(.revealInFinder):
+    case .revealInFinder:
       return .send(.openWorktree(.finder))
 
-    case .delegate(.copyPath):
+    case .copyPath:
       guard let worktree = state.repositories.selectedTerminalWorktree else {
         return .none
       }
@@ -114,38 +173,48 @@ extension AppFeature {
         }
       }
 
-    case .delegate(.revealInSidebar):
+    case .revealInSidebar:
       guard state.repositories.selectedWorktreeID != nil else { return .none }
       return .merge(
         .send(.showLeftSidebar),
         .send(.repositories(.revealSelectedWorktreeInSidebar))
       )
 
-    case .delegate(.runScript):
+    default:
+      return nil
+    }
+  }
+
+  func reduceCommandPaletteWorktreeActionDelegate(
+    _ delegate: CommandPaletteFeature.Delegate,
+    state: inout State
+  ) -> Effect<Action>? {
+    switch delegate {
+    case .runScript:
       return .send(.runScript)
 
-    case .delegate(.stopRunScript):
+    case .stopRunScript:
       return .send(.stopRunScript)
 
-    case .delegate(.renameBranch):
+    case .renameBranch:
       guard let worktreeID = state.repositories.selectedWorktreeID else { return .none }
       return .send(.repositories(.requestRenameBranchPrompt(worktreeID)))
 
-    case .delegate(.openRepositorySettings(let repositoryID)):
+    case .openRepositorySettings(let repositoryID):
       // Reuse the existing repo-side flow so the repo-existence guard and
       // settingsWindowClient.show() live in one place.
       return .send(.repositories(.repositoryManagement(.openRepositorySettings(repositoryID))))
 
-    case .delegate(.togglePinWorktree(let worktreeID, let isCurrentlyPinned)):
+    case .togglePinWorktree(let worktreeID, let isCurrentlyPinned):
       if isCurrentlyPinned {
         return .send(.repositories(.worktreeOrdering(.unpinWorktree(worktreeID))))
       }
       return .send(.repositories(.worktreeOrdering(.pinWorktree(worktreeID))))
 
-    case .delegate(.runCustomCommand(let index)):
+    case .runCustomCommand(let index):
       return .send(.runCustomCommand(index))
 
-    case .delegate(.ghosttyCommand(let action)):
+    case .ghosttyCommand(let action):
       guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
         return .none
       }
@@ -153,7 +222,7 @@ extension AppFeature {
         await terminalClient.send(.performBindingAction(worktree, action: action))
       }
 
-    case .delegate(.changeFocusedTabIcon(let worktreeID)):
+    case .changeFocusedTabIcon(let worktreeID):
       guard let worktree = state.repositories.selectedTerminalWorktree,
         worktree.id == worktreeID
       else {
@@ -163,43 +232,61 @@ extension AppFeature {
         await terminalClient.send(.presentTabIconPicker(worktree))
       }
 
-    case .delegate(.openPullRequest(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .openOnCodeHost))))
-
-    case .delegate(.markPullRequestReady(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .markReadyForReview))))
-
-    case .delegate(.mergePullRequest(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .merge))))
-
-    case .delegate(.closePullRequest(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .close))))
-
-    case .delegate(.copyFailingJobURL(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .copyFailingJobURL))))
-
-    case .delegate(.copyCiFailureLogs(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .copyCiFailureLogs))))
-
-    case .delegate(.rerunFailedJobs(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .rerunFailedJobs))))
-
-    case .delegate(.openFailingCheckDetails(let worktreeID)):
-      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .openFailingCheckDetails))))
-
-    #if DEBUG
-      case .delegate(.debugTestToast(let toast)):
-        return .send(.repositories(.showToast(toast)))
-
-      case .delegate(.debugSimulateUpdateFound):
-        return .send(.updates(.debugSimulateUpdateFound))
-
-      case .delegate(.debugLightDockNotificationDot):
-        return .run { _ in await dockClient.setNotificationBadge(1) }
-    #endif
-
     default:
-      return .none
+      return nil
     }
   }
+
+  func reduceCommandPalettePullRequestDelegate(
+    _ delegate: CommandPaletteFeature.Delegate
+  ) -> Effect<Action>? {
+    switch delegate {
+    case .openPullRequest(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .openOnCodeHost))))
+
+    case .markPullRequestReady(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .markReadyForReview))))
+
+    case .mergePullRequest(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .merge))))
+
+    case .closePullRequest(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .close))))
+
+    case .copyFailingJobURL(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .copyFailingJobURL))))
+
+    case .copyCiFailureLogs(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .copyCiFailureLogs))))
+
+    case .rerunFailedJobs(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .rerunFailedJobs))))
+
+    case .openFailingCheckDetails(let worktreeID):
+      return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .openFailingCheckDetails))))
+
+    default:
+      return nil
+    }
+  }
+
+  #if DEBUG
+    func reduceCommandPaletteDebugDelegate(
+      _ delegate: CommandPaletteFeature.Delegate
+    ) -> Effect<Action>? {
+      switch delegate {
+      case .debugTestToast(let toast):
+        return .send(.repositories(.showToast(toast)))
+
+      case .debugSimulateUpdateFound:
+        return .send(.updates(.debugSimulateUpdateFound))
+
+      case .debugLightDockNotificationDot:
+        return .run { _ in await dockClient.setNotificationBadge(1) }
+
+      default:
+        return nil
+      }
+    }
+  #endif
 }
