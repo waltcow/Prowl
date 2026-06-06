@@ -54,6 +54,10 @@ struct CommandPaletteFeature {
     case toggleLeftSidebar
     case toggleActiveAgentsPanel
     case toggleCanvas
+    case expandCanvasCard
+    case arrangeCanvasCards
+    case organizeCanvasCards
+    case selectAllCanvasCards
     case toggleShelf
     case showDiff
     case revealInFinder
@@ -224,6 +228,9 @@ struct CommandPaletteFeature {
       repositories.repositories.isEmpty
       || repositories.repositories.contains { $0.capabilities.supportsWorktrees }
     var items = globalCommandItems(showsNewWorktreeAction: showsNewWorktreeAction)
+    if repositories.isShowingCanvas {
+      items.append(contentsOf: canvasCommandItems())
+    }
     let worktreeActionTargetID = actionTargetWorktreeID ?? repositories.selectedWorktreeID
     if repositories.selectedWorktreeID != nil {
       items.append(
@@ -580,6 +587,39 @@ private func viewToggleCommandItems() -> [CommandPaletteItem] {
   ]
 }
 
+private func canvasCommandItems() -> [CommandPaletteItem] {
+  [
+    .appShortcut(
+      id: CommandPaletteItemID.globalExpandCanvasCard,
+      title: "Expand / Restore Canvas Card",
+      category: .view,
+      kind: .expandCanvasCard,
+      keywords: ["canvas", "expand", "restore", "focus", "fullscreen", "card"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalArrangeCanvasCards,
+      title: "Arrange Canvas Cards",
+      category: .view,
+      kind: .arrangeCanvasCards,
+      keywords: ["canvas", "arrange", "layout", "pack", "fit"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalOrganizeCanvasCards,
+      title: "Organize Canvas Cards",
+      category: .view,
+      kind: .organizeCanvasCards,
+      keywords: ["canvas", "organize", "grid", "tidy", "uniform"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalSelectAllCanvasCards,
+      title: "Select All Canvas Cards",
+      category: .view,
+      kind: .selectAllCanvasCards,
+      keywords: ["canvas", "select all", "broadcast"]
+    ),
+  ]
+}
+
 private func selectedCodeHostItems(
   from repositories: RepositoriesFeature.State
 ) -> [CommandPaletteItem] {
@@ -858,6 +898,10 @@ private enum CommandPaletteItemID {
   static let globalToggleLeftSidebar = "global.toggle-left-sidebar"
   static let globalToggleActiveAgentsPanel = "global.toggle-active-agents-panel"
   static let globalToggleCanvas = "global.toggle-canvas"
+  static let globalExpandCanvasCard = "global.expand-canvas-card"
+  static let globalArrangeCanvasCards = "global.arrange-canvas-cards"
+  static let globalOrganizeCanvasCards = "global.organize-canvas-cards"
+  static let globalSelectAllCanvasCards = "global.select-all-canvas-cards"
   static let globalToggleShelf = "global.toggle-shelf"
   static let globalShowDiff = "global.show-diff"
   static let globalRevealInFinder = "global.reveal-in-finder"
@@ -890,6 +934,10 @@ private enum CommandPaletteItemID {
       globalToggleLeftSidebar,
       globalToggleActiveAgentsPanel,
       globalToggleCanvas,
+      globalExpandCanvasCard,
+      globalArrangeCanvasCards,
+      globalOrganizeCanvasCards,
+      globalSelectAllCanvasCards,
       globalToggleShelf,
       globalShowDiff,
       globalRevealInFinder,
@@ -1021,6 +1069,10 @@ private func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPalette
     .toggleLeftSidebar,
     .toggleActiveAgentsPanel,
     .toggleCanvas,
+    .expandCanvasCard,
+    .arrangeCanvasCards,
+    .organizeCanvasCards,
+    .selectAllCanvasCards,
     .toggleShelf,
     .showDiff,
     .revealInFinder,
@@ -1089,6 +1141,14 @@ private func viewDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPal
     return .toggleActiveAgentsPanel
   case .toggleCanvas:
     return .toggleCanvas
+  case .expandCanvasCard:
+    return .expandCanvasCard
+  case .arrangeCanvasCards:
+    return .arrangeCanvasCards
+  case .organizeCanvasCards:
+    return .organizeCanvasCards
+  case .selectAllCanvasCards:
+    return .selectAllCanvasCards
   case .toggleShelf:
     return .toggleShelf
   case .showDiff:
@@ -1133,6 +1193,10 @@ private func pullRequestDelegateAction(
     .toggleLeftSidebar,
     .toggleActiveAgentsPanel,
     .toggleCanvas,
+    .expandCanvasCard,
+    .arrangeCanvasCards,
+    .organizeCanvasCards,
+    .selectAllCanvasCards,
     .toggleShelf,
     .showDiff,
     .revealInFinder,

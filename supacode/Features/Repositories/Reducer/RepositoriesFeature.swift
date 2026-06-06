@@ -277,6 +277,8 @@ struct RepositoriesFeature {
     var showActiveAgentTabTitles = false
     var nextCanvasFocusRequestID = 0
     var pendingCanvasFocusRequest: CanvasFocusRequest?
+    var nextCanvasCommandRequestID = 0
+    var pendingCanvasCommandRequest: CanvasCommandRequest?
     var activeAgents = ActiveAgentsFeature.State()
     @Shared(.appStorage("sidebarCollapsedRepositoryIDs")) var collapsedRepositoryIDs: [Repository.ID] = []
     @Presents var worktreeCreationPrompt: WorktreeCreationPromptFeature.State?
@@ -352,6 +354,8 @@ struct RepositoriesFeature {
     case selectNextWorktree
     case selectPreviousWorktree
     case consumeCanvasFocusRequest(Int)
+    case requestCanvasCommand(CanvasCommandRequest.Command)
+    case consumeCanvasCommandRequest(Int)
     case worktreeHistoryBack
     case worktreeHistoryForward
     case revealSelectedWorktreeInSidebar
@@ -1039,6 +1043,20 @@ struct RepositoriesFeature {
         case .consumeCanvasFocusRequest(let id):
           if state.pendingCanvasFocusRequest?.id == id {
             state.pendingCanvasFocusRequest = nil
+          }
+          return .none
+
+        case .requestCanvasCommand(let command):
+          state.nextCanvasCommandRequestID += 1
+          state.pendingCanvasCommandRequest = CanvasCommandRequest(
+            id: state.nextCanvasCommandRequestID,
+            command: command
+          )
+          return .none
+
+        case .consumeCanvasCommandRequest(let id):
+          if state.pendingCanvasCommandRequest?.id == id {
+            state.pendingCanvasCommandRequest = nil
           }
           return .none
 

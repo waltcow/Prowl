@@ -142,6 +142,7 @@ enum AppShortcuts {
     static let selectAllCanvasCards = "select_all_canvas_cards"
     static let arrangeCanvasCards = "arrange_canvas_cards"
     static let organizeCanvasCards = "organize_canvas_cards"
+    static let expandCanvasCard = "expand_canvas_card"
     static let selectPreviousTerminalTab = "select_previous_terminal_tab"
     static let selectNextTerminalTab = "select_next_terminal_tab"
     static let selectPreviousTerminalPane = "select_previous_terminal_pane"
@@ -290,6 +291,7 @@ enum AppShortcuts {
   static let selectAllCanvasCards = AppShortcut(key: "a", modifiers: [.command, .option])
   static let arrangeCanvasCards = AppShortcut(key: "r", modifiers: [.command, .option])
   static let organizeCanvasCards = AppShortcut(key: "g", modifiers: [.command, .option])
+  static let expandCanvasCard = AppShortcut(key: "e", modifiers: [.command, .option])
   static let worktreeSelection: [AppShortcut] = [
     selectWorktree1,
     selectWorktree2,
@@ -766,6 +768,12 @@ enum AppShortcuts {
       title: "Organize Canvas Cards",
       scope: .localInteraction,
       shortcut: organizeCanvasCards
+    ),
+    .init(
+      id: CommandID.expandCanvasCard,
+      title: "Expand / Restore Canvas Card",
+      scope: .localInteraction,
+      shortcut: expandCanvasCard
     ),
   ]
 

@@ -399,11 +399,15 @@ struct WorktreeDetailView: View {
         terminalManager: terminalManager,
         repositoryCustomTitles: repositories.repositoryCustomTitles,
         focusRequest: repositories.pendingCanvasFocusRequest,
+        commandRequest: repositories.pendingCanvasCommandRequest,
         onFocusedWorktreeChanged: { worktreeID in
           store.send(.canvasFocusedWorktreeChanged(worktreeID))
         },
         onFocusRequestConsumed: { requestID in
           store.send(.repositories(.consumeCanvasFocusRequest(requestID)))
+        },
+        onCommandConsumed: { requestID in
+          store.send(.repositories(.consumeCanvasCommandRequest(requestID)))
         },
         onExpandedChange: { expanded in
           isCanvasCardExpanded = expanded

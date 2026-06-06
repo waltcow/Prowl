@@ -1207,6 +1207,18 @@ struct AppFeature {
       case .commandPalette(.delegate(.toggleCanvas)):
         return .send(.repositories(.toggleCanvas))
 
+      case .commandPalette(.delegate(.expandCanvasCard)):
+        return .send(.repositories(.requestCanvasCommand(.toggleExpand)))
+
+      case .commandPalette(.delegate(.arrangeCanvasCards)):
+        return .send(.repositories(.requestCanvasCommand(.arrange)))
+
+      case .commandPalette(.delegate(.organizeCanvasCards)):
+        return .send(.repositories(.requestCanvasCommand(.organize)))
+
+      case .commandPalette(.delegate(.selectAllCanvasCards)):
+        return .send(.repositories(.requestCanvasCommand(.selectAll)))
+
       case .commandPalette(.delegate(.toggleShelf)):
         return .send(.repositories(.toggleShelf))
 

@@ -15,6 +15,22 @@ struct CanvasFocusCandidate: Equatable, Sendable {
   let tabID: TerminalTabID
 }
 
+/// A reducer-driven request to run one of CanvasView's view-local commands
+/// (which live in CanvasView's `@State`, not the reducer) — e.g. triggered from
+/// the command palette. CanvasView observes it, runs the command, and reports
+/// the id back to clear it (the same one-shot pattern as `CanvasFocusRequest`).
+struct CanvasCommandRequest: Equatable, Sendable {
+  enum Command: Equatable, Sendable {
+    case toggleExpand
+    case arrange
+    case organize
+    case selectAll
+  }
+
+  let id: Int
+  let command: Command
+}
+
 enum CanvasFocusResolver {
   static func resolve(
     request: CanvasFocusRequest,

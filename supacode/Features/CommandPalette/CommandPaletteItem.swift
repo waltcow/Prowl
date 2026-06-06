@@ -64,6 +64,10 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case toggleLeftSidebar
     case toggleActiveAgentsPanel
     case toggleCanvas
+    case expandCanvasCard
+    case arrangeCanvasCards
+    case organizeCanvasCards
+    case selectAllCanvasCards
     case toggleShelf
     case showDiff
     case revealInFinder
@@ -120,6 +124,14 @@ struct CommandPaletteItem: Identifiable, Equatable {
       return AppShortcuts.CommandID.toggleActiveAgentsPanel
     case .toggleCanvas:
       return AppShortcuts.CommandID.toggleCanvas
+    case .expandCanvasCard:
+      return AppShortcuts.CommandID.expandCanvasCard
+    case .arrangeCanvasCards:
+      return AppShortcuts.CommandID.arrangeCanvasCards
+    case .organizeCanvasCards:
+      return AppShortcuts.CommandID.organizeCanvasCards
+    case .selectAllCanvasCards:
+      return AppShortcuts.CommandID.selectAllCanvasCards
     case .toggleShelf:
       return AppShortcuts.CommandID.toggleShelf
     case .showDiff:

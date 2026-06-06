@@ -11,6 +11,37 @@ import Testing
 
 @MainActor
 struct RepositoriesFeatureTests {
+  @Test func requestCanvasCommandSetsPendingRequestWithIncrementingID() async {
+    let store = TestStore(initialState: RepositoriesFeature.State()) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.requestCanvasCommand(.toggleExpand)) {
+      $0.nextCanvasCommandRequestID = 1
+      $0.pendingCanvasCommandRequest = CanvasCommandRequest(id: 1, command: .toggleExpand)
+    }
+    await store.send(.requestCanvasCommand(.arrange)) {
+      $0.nextCanvasCommandRequestID = 2
+      $0.pendingCanvasCommandRequest = CanvasCommandRequest(id: 2, command: .arrange)
+    }
+  }
+
+  @Test func consumeCanvasCommandRequestClearsOnlyMatchingID() async {
+    var initialState = RepositoriesFeature.State()
+    initialState.nextCanvasCommandRequestID = 5
+    initialState.pendingCanvasCommandRequest = CanvasCommandRequest(id: 5, command: .organize)
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    }
+
+    // A stale id is ignored.
+    await store.send(.consumeCanvasCommandRequest(4))
+    // The matching id clears the request.
+    await store.send(.consumeCanvasCommandRequest(5)) {
+      $0.pendingCanvasCommandRequest = nil
+    }
+  }
+
   @Test func refreshWorktreesSetsRefreshingStateUntilLoadCompletes() async {
     let worktree = makeWorktree(id: "/tmp/repo/main", name: "main")
     let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])

@@ -526,7 +526,9 @@ private struct CommandPaletteRowView: View {
       .copyFailingJobURL,
       .copyCiFailureLogs,
       .rerunFailedJobs, .openFailingCheckDetails, .worktreeSelect, .changeFocusedTabIcon,
-      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
+      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
+      .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+      .toggleShelf, .showDiff,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
       .openRepositorySettings, .runCustomCommand:
@@ -586,6 +588,14 @@ private struct CommandPaletteRowView: View {
       return "person.crop.rectangle.stack"
     case .toggleCanvas:
       return "square.grid.2x2"
+    case .expandCanvasCard:
+      return "arrow.up.left.and.arrow.down.right"
+    case .arrangeCanvasCards:
+      return "rectangle.3.group"
+    case .organizeCanvasCards:
+      return "square.grid.2x2"
+    case .selectAllCanvasCards:
+      return "checkmark.rectangle.stack"
     case .toggleShelf:
       return "books.vertical"
     case .showDiff:
@@ -629,7 +639,9 @@ private struct CommandPaletteRowView: View {
       .copyFailingJobURL,
       .copyCiFailureLogs,
       .rerunFailedJobs, .openFailingCheckDetails, .changeFocusedTabIcon,
-      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
+      .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
+      .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+      .toggleShelf, .showDiff,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
       .openRepositorySettings,
@@ -754,6 +766,14 @@ private struct CommandPaletteRowView: View {
       base = "Toggle Active Agents Panel"
     case .toggleCanvas:
       base = "Toggle Canvas"
+    case .expandCanvasCard:
+      base = "Expand / Restore Canvas Card"
+    case .arrangeCanvasCards:
+      base = "Arrange Canvas Cards"
+    case .organizeCanvasCards:
+      base = "Organize Canvas Cards"
+    case .selectAllCanvasCards:
+      base = "Select All Canvas Cards"
     case .toggleShelf:
       base = "Toggle Shelf"
     case .showDiff:

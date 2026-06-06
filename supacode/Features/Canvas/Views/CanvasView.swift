@@ -13,8 +13,12 @@ struct CanvasView: View {
   /// per-frame canvas hot path.
   var repositoryCustomTitles: [Repository.ID: String] = [:]
   var focusRequest: CanvasFocusRequest?
+  /// A one-shot, reducer-driven request to run a view-local canvas command
+  /// (expand/arrange/organize/select-all), e.g. from the command palette.
+  var commandRequest: CanvasCommandRequest?
   var onFocusedWorktreeChanged: (Worktree.ID?) -> Void = { _ in }
   var onFocusRequestConsumed: (Int) -> Void = { _ in }
+  var onCommandConsumed: (Int) -> Void = { _ in }
   /// Reports whether a card is currently expanded in place, so the parent can
   /// give the window toolbar a matching scrim (it can't be covered from here).
   var onExpandedChange: (Bool) -> Void = { _ in }
@@ -80,6 +84,10 @@ struct CanvasView: View {
     )
     let organizeCanvasShortcut = AppShortcuts.resolvedShortcut(
       for: AppShortcuts.CommandID.organizeCanvasCards,
+      in: resolvedKeybindings
+    )
+    let expandCanvasShortcut = AppShortcuts.resolvedShortcut(
+      for: AppShortcuts.CommandID.expandCanvasCard,
       in: resolvedKeybindings
     )
     let _ = configReloadCounter
@@ -202,8 +210,20 @@ struct CanvasView: View {
       organizeCardsWithFit()
       return .handled
     }
+    .onKeyPress(
+      expandCanvasShortcut?.keyEquivalent ?? AppShortcuts.expandCanvasCard.keyEquivalent,
+      phases: .down
+    ) { keyPress in
+      guard let shortcut = expandCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
+      toggleExpandFocusedCard()
+      return .handled
+    }
     .onChange(of: expandedTabID) { _, newValue in
       onExpandedChange(newValue != nil)
+    }
+    .onChange(of: commandRequest) { _, newRequest in
+      fulfillCommandRequest(newRequest)
     }
     .task { activateCanvas() }
     .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
@@ -854,6 +874,33 @@ struct CanvasView: View {
     } else {
       expandCard(tabID, states: states)
     }
+  }
+
+  /// Toggle expand/restore for the focused (primary) card. Used by the keyboard
+  /// shortcut and the command palette, which target whichever card is focused.
+  private func toggleExpandFocusedCard() {
+    if expandedTabID != nil {
+      collapseExpand()
+    } else if let tabID = selectionState.primaryTabID {
+      expandCard(tabID, states: terminalManager.activeWorktreeStates)
+    }
+  }
+
+  /// Run a reducer-driven canvas command (from the command palette) and clear
+  /// the one-shot request.
+  private func fulfillCommandRequest(_ request: CanvasCommandRequest?) {
+    guard let request else { return }
+    switch request.command {
+    case .toggleExpand:
+      toggleExpandFocusedCard()
+    case .arrange:
+      arrangeCardsWithFit()
+    case .organize:
+      organizeCardsWithFit()
+    case .selectAll:
+      selectAllCards()
+    }
+    onCommandConsumed(request.id)
   }
 
   /// Expand a card in place: raise it to the top, then flip `expandedTabID`

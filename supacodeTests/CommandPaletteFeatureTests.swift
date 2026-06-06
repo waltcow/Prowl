@@ -46,6 +46,25 @@ struct CommandPaletteFeatureTests {
     #expect(items.contains { $0.id == "global.show-diff" })
   }
 
+  @Test func commandPaletteItems_includesCanvasCommandsInCanvasMode() {
+    var state = RepositoriesFeature.State()
+    state.selection = .canvas
+
+    let ids = CommandPaletteFeature.commandPaletteItems(from: state).map(\.id)
+    #expect(ids.contains("global.expand-canvas-card"))
+    #expect(ids.contains("global.arrange-canvas-cards"))
+    #expect(ids.contains("global.organize-canvas-cards"))
+    #expect(ids.contains("global.select-all-canvas-cards"))
+  }
+
+  @Test func commandPaletteItems_omitsCanvasCommandsOutsideCanvas() {
+    let ids = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State()).map(\.id)
+    #expect(!ids.contains("global.expand-canvas-card"))
+    #expect(!ids.contains("global.arrange-canvas-cards"))
+    #expect(!ids.contains("global.organize-canvas-cards"))
+    #expect(!ids.contains("global.select-all-canvas-cards"))
+  }
+
   @Test func commandPaletteItems_omitsShowDiffWithoutSelectedWorktree() {
     let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
     #expect(!items.contains { $0.id == "global.show-diff" })
@@ -1701,7 +1720,9 @@ private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteIt
     return .pullRequest
   case .ghosttyCommand:
     return .terminal
-  case .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff:
+  case .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
+    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+    .toggleShelf, .showDiff:
     return .view
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:
@@ -1716,7 +1737,9 @@ private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
     .newWorktree, .refreshWorktrees, .viewArchivedWorktrees, .jumpToLatestUnread,
     .openPullRequest, .markPullRequestReady, .mergePullRequest, .closePullRequest,
     .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails,
-    .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas, .toggleShelf, .showDiff,
+    .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
+    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+    .toggleShelf, .showDiff,
     .revealInFinder, .copyPath, .revealInSidebar,
     .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
     .openRepositorySettings:
