@@ -1,0 +1,322 @@
+import SwiftUI
+
+struct MultiSelectedWorktreeSummary: Identifiable {
+  let id: Worktree.ID
+  let name: String
+  let repositoryName: String?
+}
+
+struct MultiSelectedWorktreesDetailView: View {
+  let rows: [MultiSelectedWorktreeSummary]
+
+  private let visibleRowsLimit = 8
+
+  var body: some View {
+    let deleteShortcut = KeyboardShortcut(.delete, modifiers: [.command, .shift]).display
+    VStack(alignment: .leading, spacing: 16) {
+      Text("\(rows.count) worktrees selected")
+        .font(.title3)
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(Array(rows.prefix(visibleRowsLimit))) { row in
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(row.name)
+              .lineLimit(1)
+            if let repositoryName = row.repositoryName {
+              Text(repositoryName)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+          }
+          .font(.body)
+        }
+        if rows.count > visibleRowsLimit {
+          Text("+\(rows.count - visibleRowsLimit) more")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      Divider()
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Available actions")
+          .font(.headline)
+        Text("Archive selected")
+        Text("Delete selected (\(deleteShortcut))")
+        Text("Right-click any selected worktree to apply actions to all selected worktrees.")
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      Spacer(minLength: 0)
+    }
+    .padding(20)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+}
+
+struct RunScriptToolbarButton: View {
+  let isRunning: Bool
+  let isEnabled: Bool
+  let runHelpText: String
+  let stopHelpText: String
+  let runShortcut: String?
+  let stopShortcut: String?
+  let runAction: () -> Void
+  let stopAction: () -> Void
+  @Environment(CommandKeyObserver.self) private var commandKeyObserver
+
+  var body: some View {
+    if isRunning {
+      button(
+        config: RunScriptButtonConfig(
+          title: "Stop",
+          systemImage: "stop.fill",
+          helpText: stopHelpText,
+          shortcut: stopShortcut,
+          isEnabled: true,
+          action: stopAction
+        ))
+    } else {
+      button(
+        config: RunScriptButtonConfig(
+          title: "Run",
+          systemImage: "play.fill",
+          helpText: runHelpText,
+          shortcut: runShortcut,
+          isEnabled: isEnabled,
+          action: runAction
+        ))
+    }
+  }
+
+  @ViewBuilder
+  private func button(config: RunScriptButtonConfig) -> some View {
+    Button {
+      config.action()
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: config.systemImage)
+          .accessibilityHidden(true)
+        Text(config.title)
+
+        if commandKeyObserver.isPressed, let shortcut = config.shortcut {
+          Text(shortcut)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .font(.caption)
+    .help(config.helpText)
+    .disabled(!config.isEnabled)
+  }
+
+  private struct RunScriptButtonConfig {
+    let title: String
+    let systemImage: String
+    let helpText: String
+    let shortcut: String?
+    let isEnabled: Bool
+    let action: () -> Void
+  }
+}
+
+struct UserCustomCommandToolbarButton: View {
+  let title: String
+  let systemImage: String
+  let shortcut: String?
+  let isEnabled: Bool
+  let action: () -> Void
+  @Environment(CommandKeyObserver.self) private var commandKeyObserver
+
+  var body: some View {
+    Button {
+      action()
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: systemImage)
+          .accessibilityHidden(true)
+        Text(title)
+        if commandKeyObserver.isPressed, let shortcut {
+          Text(shortcut)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .font(.caption)
+    .help(helpText)
+    .disabled(!isEnabled)
+  }
+
+  private var helpText: String {
+    guard isEnabled else {
+      return "\(title) (Set command script in Repository Settings)"
+    }
+    if let shortcut {
+      return "\(title) (\(shortcut))"
+    }
+    return title
+  }
+}
+
+struct CustomCommandOverflowButton: View {
+  let entries: [(index: Int, command: UserCustomCommand)]
+  let shortcutDisplay: (UserCustomCommand) -> String?
+  let onRunCustomCommand: (Int) -> Void
+
+  @State private var isPresented = false
+  private let maxVisibleRows = 10
+
+  var body: some View {
+    Button {
+      isPresented.toggle()
+    } label: {
+      Image(systemName: "chevron.down")
+        .font(.caption2)
+        .accessibilityLabel("More custom commands")
+    }
+    .help("More custom commands")
+    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 2) {
+          ForEach(entries, id: \.command.id) { entry in
+            Button {
+              isPresented = false
+              onRunCustomCommand(entry.index)
+            } label: {
+              HStack(spacing: 8) {
+                Image(systemName: entry.command.resolvedSystemImage)
+                  .foregroundStyle(.secondary)
+                  .frame(width: 14)
+                  .accessibilityHidden(true)
+                Text(entry.command.resolvedTitle)
+                  .lineLimit(1)
+                Spacer(minLength: 0)
+                if let shortcut = shortcutDisplay(entry.command) {
+                  Text(shortcut)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+              }
+              .padding(.horizontal, 8)
+              .padding(.vertical, 6)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!entry.command.hasRunnableCommand)
+          }
+        }
+        .padding(8)
+      }
+      .frame(width: 320, height: popoverHeight)
+    }
+  }
+
+  private var popoverHeight: CGFloat {
+    let visibleRows = min(maxVisibleRows, max(entries.count, 1))
+    return CGFloat(visibleRows) * 32 + 16
+  }
+}
+
+@MainActor
+private struct WorktreeToolbarPreview: View {
+  private let toolbarState: WorktreeDetailView.WorktreeToolbarState
+  private let commandKeyObserver: CommandKeyObserver
+
+  init() {
+    toolbarState = WorktreeDetailView.WorktreeToolbarState(
+      title: DetailToolbarTitle(kind: .branch(name: "feature/toolbar-preview")),
+      statusToast: nil,
+      pullRequest: nil,
+      codeHost: .github,
+      notificationGroups: [],
+      unseenNotificationWorktreeCount: 0,
+      openActionSelection: .finder,
+      showExtras: false,
+      runScriptEnabled: true,
+      runScriptIsRunning: false,
+      customCommands: [
+        UserCustomCommand(
+          title: "Test",
+          systemImage: "checkmark.circle.fill",
+          command: "swift test",
+          execution: .shellScript,
+          shortcut: UserCustomShortcut(
+            key: "u",
+            modifiers: UserCustomShortcutModifiers()
+          )
+        )
+      ],
+      isUpdateAvailable: true,
+      isUpdateReadyToInstall: false,
+      availableUpdateVersion: "2026.5.1",
+      showRunButtonInToolbar: true,
+      showDefaultEditorInToolbar: true
+    )
+    let observer = CommandKeyObserver()
+    observer.isPressed = false
+    commandKeyObserver = observer
+  }
+
+  var body: some View {
+    NavigationStack {
+      Text("Worktree Toolbar")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    .toolbar {
+      WorktreeDetailView.WorktreeToolbarContent(
+        toolbarState: toolbarState,
+        onRenameBranch: { _ in },
+        externalRenamePrompt: nil,
+        onConsumeExternalRenamePrompt: { _ in },
+        onOpenWorktree: { _ in },
+        onOpenActionSelectionChanged: { _ in },
+        onCopyPath: {},
+        onSelectNotification: { _, _ in },
+        onDismissAllNotifications: {},
+        onRunScript: {},
+        onStopRunScript: {},
+        onRunCustomCommand: { _ in },
+        onActivateUpdateButton: {}
+      )
+    }
+    .environment(commandKeyObserver)
+    .frame(width: 900, height: 160)
+  }
+}
+
+#Preview("Worktree Toolbar") {
+  WorktreeToolbarPreview()
+}
+
+@MainActor
+private struct CanvasToolbarPreview: View {
+  var body: some View {
+    NavigationSplitView {
+      List {
+        Text("Sidebar Item 1")
+        Text("Sidebar Item 2")
+      }
+      .navigationSplitViewColumnWidth(220)
+    } detail: {
+      Text("Canvas Content")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Canvas")
+        .toolbar {
+          ToolbarItem(placement: .primaryAction) {
+            ToolbarNotificationsPopoverButton(
+              groups: [],
+              unseenWorktreeCount: 0,
+              onSelectNotification: { _, _ in },
+              onDismissAll: {}
+            )
+          }
+        }
+    }
+    .frame(width: 900, height: 300)
+  }
+}
+
+#Preview("Canvas Toolbar") {
+  CanvasToolbarPreview()
+}
