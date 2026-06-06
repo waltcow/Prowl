@@ -23,7 +23,34 @@ struct CanvasCardLayout: Codable, Equatable, Hashable, Sendable {
     }
   }
 
-  static let defaultSize = CGSize(width: 800, height: 550)
+  /// Card size used on small screens (≈14" MacBook Pro). On a small viewport
+  /// the canvas must zoom out to fit a multi-card grid, which shrinks rendered
+  /// text; smaller cards keep the fit-to-view scale — and thus text — larger.
+  static let minDefaultSize = CGSize(width: 800, height: 550)
+  /// Card size used on large screens (≈27" display and up), where fit-to-view
+  /// caps at 1.0 so a larger card simply shows more content at native size.
+  static let maxDefaultSize = CGSize(width: 1000, height: 680)
+  /// Reference screen widths (logical points, default scaling) mapped to the
+  /// interpolation endpoints above.
+  static let minDefaultScreenWidth: CGFloat = 1512  // 14" MacBook Pro
+  static let maxDefaultScreenWidth: CGFloat = 2560  // 27" / Studio Display
+
+  /// Size new cards adopt when no explicit size is given. Equal to
+  /// `maxDefaultSize`, used only for transient fallbacks; creation paths pass
+  /// an explicit `adaptiveDefaultSize(forScreenWidth:)` instead.
+  static let defaultSize = maxDefaultSize
+
+  /// Linearly interpolate the default card size between `minDefaultSize`
+  /// (14"-class screens) and `maxDefaultSize` (27"-class and larger) by screen
+  /// width, clamped at both ends.
+  static func adaptiveDefaultSize(forScreenWidth screenWidth: CGFloat) -> CGSize {
+    let span = maxDefaultScreenWidth - minDefaultScreenWidth
+    let fraction = span > 0 ? min(max((screenWidth - minDefaultScreenWidth) / span, 0), 1) : 1
+    return CGSize(
+      width: minDefaultSize.width + (maxDefaultSize.width - minDefaultSize.width) * fraction,
+      height: minDefaultSize.height + (maxDefaultSize.height - minDefaultSize.height) * fraction
+    )
+  }
 
   init(position: CGPoint, size: CGSize = Self.defaultSize) {
     self.positionX = position.x

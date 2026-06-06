@@ -44,6 +44,20 @@ struct CanvasView: View {
   /// Cards end up shifted upward by half of this amount.
   private let bottomToolbarReserve: CGFloat = 50
 
+  /// Width of the screen hosting the canvas window, used to scale the default
+  /// card size. Falls back to the large-screen reference when unknown.
+  private var hostScreenWidth: CGFloat {
+    (NSApp.keyWindow?.screen ?? NSScreen.main)?.frame.width
+      ?? CanvasCardLayout.maxDefaultScreenWidth
+  }
+
+  /// Default size for newly created and uniformly arranged cards, scaled to the
+  /// host screen so small screens (14") don't zoom out into tiny text while
+  /// large screens still get the roomier card.
+  private var adaptiveDefaultCardSize: CGSize {
+    CanvasCardLayout.adaptiveDefaultSize(forScreenWidth: hostScreenWidth)
+  }
+
   var body: some View {
     let selectAllCanvasShortcut = AppShortcuts.resolvedShortcut(
       for: AppShortcuts.CommandID.selectAllCanvasCards,
@@ -353,10 +367,12 @@ struct CanvasView: View {
       : gridColumns(for: cardKeys.count)
 
     // Build locally, assign once to trigger a single save.
+    let cardSize = adaptiveDefaultCardSize
     var layouts = layoutStore.cardLayouts
     for (offset, key) in unpositioned.enumerated() {
       layouts[key] = CanvasCardLayout(
-        position: gridPosition(index: positionedCount + offset, columns: columns)
+        position: gridPosition(index: positionedCount + offset, columns: columns, cardSize: cardSize),
+        size: cardSize
       )
     }
     layoutStore.setCardLayouts(layouts)
@@ -368,9 +384,9 @@ struct CanvasView: View {
     max(1, Int(ceil(sqrt(Double(count)))))
   }
 
-  private func gridPosition(index: Int, columns: Int) -> CGPoint {
-    let cardW = CanvasCardLayout.defaultSize.width
-    let cardH = CanvasCardLayout.defaultSize.height + titleBarHeight
+  private func gridPosition(index: Int, columns: Int, cardSize: CGSize) -> CGPoint {
+    let cardW = cardSize.width
+    let cardH = cardSize.height + titleBarHeight
     let row = index / columns
     let col = index % columns
     return CGPoint(
@@ -454,10 +470,12 @@ struct CanvasView: View {
   private func organizeCards() {
     let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
     let columns = gridColumns(for: keys.count)
+    let cardSize = adaptiveDefaultCardSize
     var layouts = layoutStore.cardLayouts
     for (index, key) in keys.enumerated() {
       layouts[key] = CanvasCardLayout(
-        position: gridPosition(index: index, columns: columns)
+        position: gridPosition(index: index, columns: columns, cardSize: cardSize),
+        size: cardSize
       )
     }
     layoutStore.setCardLayouts(layouts, zOrder: keys)
@@ -471,7 +489,7 @@ struct CanvasView: View {
     guard !keys.isEmpty, viewportSize.width > 0, viewportSize.height > 0 else { return }
 
     let cards: [CanvasCardPacker.CardInfo] = keys.map { key in
-      let size = layoutStore.cardLayouts[key]?.size ?? CanvasCardLayout.defaultSize
+      let size = layoutStore.cardLayouts[key]?.size ?? adaptiveDefaultCardSize
       return CanvasCardPacker.CardInfo(key: key, size: size)
     }
 
