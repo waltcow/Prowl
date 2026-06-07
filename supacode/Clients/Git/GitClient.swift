@@ -526,7 +526,7 @@ struct GitClient {
   nonisolated func removeWorktree(_ worktree: Worktree, deleteBranch: Bool) async throws -> URL {
     let rootPath = worktree.repositoryRootURL.path(percentEncoded: false)
     let worktreeURL = worktree.workingDirectory.standardizedFileURL
-    let worktreePath = worktreeURL.path(percentEncoded: false)
+    let worktreePath = Self.canonicalWorktreePath(worktreeURL.path(percentEncoded: false))
     let registeredWorktreePaths = try await registeredWorktreePaths(rootPath: rootPath)
     guard registeredWorktreePaths.contains(worktreePath) else {
       return worktree.workingDirectory
@@ -572,7 +572,11 @@ struct GitClient {
       operation: .worktreeList,
       arguments: ["-C", rootPath, "worktree", "list", "--porcelain"]
     )
-    return Self.parseGitWorktreePorcelainPaths(output)
+    // `git worktree list --porcelain` reports the raw on-disk path (e.g. `/private/tmp/foo`),
+    // while `worktrees(for:)` stores `standardizedFileURL` paths (which resolve `/private`
+    // symlinks to `/tmp`). Canonicalize both sides identically so the removal guard matches
+    // externally-created worktrees living under symlinked roots like /tmp or /var.
+    return Set(Self.parseGitWorktreePorcelainPaths(output).map(Self.canonicalWorktreePath))
   }
 
   nonisolated func deleteLocalBranch(
@@ -872,6 +876,13 @@ struct GitClient {
   nonisolated private static func worktreeDirectoryHasGitMetadata(_ worktreeURL: URL) -> Bool {
     let gitMetadataURL = worktreeURL.appending(path: ".git")
     return FileManager.default.fileExists(atPath: gitMetadataURL.path(percentEncoded: false))
+  }
+
+  /// Normalizes a worktree path to the same canonical form `worktrees(for:)` stores, so paths
+  /// reported by git (which keep `/private` symlink prefixes) compare equal to the standardized
+  /// URLs Prowl tracks internally.
+  nonisolated static func canonicalWorktreePath(_ path: String) -> String {
+    URL(fileURLWithPath: path).standardizedFileURL.path(percentEncoded: false)
   }
 
   nonisolated static func parseGitWorktreePorcelainPaths(_ output: String) -> Set<String> {

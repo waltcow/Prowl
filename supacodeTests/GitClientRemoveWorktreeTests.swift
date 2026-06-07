@@ -131,6 +131,55 @@ struct GitClientRemoveWorktreeTests {
     #expect(!calls.contains { $0.suffix(3) == ["branch", "-d", "feat"] })
   }
 
+  @Test func removeWorktreeMatchesWhenGitReportsPrivateSymlinkPath() async throws {
+    // Regression: externally-created worktrees under /tmp are reported by git as `/private/tmp/...`,
+    // but Prowl tracks them as standardized `/tmp/...` URLs. The removal guard must treat them as
+    // the same worktree, otherwise removal silently no-ops and the row reappears after a refresh.
+    let fileManager = FileManager.default
+    let name = "prowl-private-symlink-wt-\(UUID().uuidString)"
+    let standardizedURL = URL(fileURLWithPath: "/tmp/\(name)", isDirectory: true)
+    try fileManager.createDirectory(at: standardizedURL, withIntermediateDirectories: true)
+    try Data("gitdir: /tmp/repo/.git/worktrees/\(name)\n".utf8)
+      .write(to: standardizedURL.appending(path: ".git"))
+    defer {
+      try? fileManager.removeItem(at: standardizedURL)
+    }
+
+    let store = ShellCallStore()
+    let shell = ShellClient(
+      run: { _, arguments, _ in
+        await store.record(arguments)
+        if arguments.contains("--porcelain") {
+          // Git reports the raw, non-standardized path with the /private prefix.
+          return ShellOutput(
+            stdout: "worktree /private/tmp/\(name)\nHEAD abc\ndetached\n",
+            stderr: "",
+            exitCode: 0
+          )
+        }
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      },
+      runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
+    )
+    let client = GitClient(shell: shell)
+    let worktree = Worktree(
+      id: standardizedURL.path(percentEncoded: false),
+      name: name,
+      detail: "../\(name)",
+      workingDirectory: standardizedURL,
+      repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
+    )
+
+    _ = try await client.removeWorktree(worktree, deleteBranch: false)
+
+    // The guard matched, so removal proceeded: the directory was relocated off its original path
+    // and git was asked to prune the now-missing worktree.
+    let stillExists = fileManager.fileExists(atPath: standardizedURL.path(percentEncoded: false))
+    #expect(!stillExists)
+    let calls = await store.calls
+    #expect(calls.contains { $0.contains("prune") })
+  }
+
   @Test func forceDeleteLocalBranchUsesForceFlag() async throws {
     let store = ShellCallStore()
     let shell = ShellClient(
