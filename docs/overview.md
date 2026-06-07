@@ -44,12 +44,13 @@ one-keystroke triage instead of a hunt.
 ### 👀 Active Agents panel — your dispatcher for a fleet
 With several agents in flight, the bottleneck isn't running them — it's knowing
 **where to look next**. The Active Agents panel is a live roster of **every agent
-across every worktree, tab, and split**, sorted by urgency: **Blocked** (waiting
-on your approval) first, then **Working**, **Done** (just finished), and **Idle**.
-One click jumps straight to that agent's pane, and **`⌃⌥↑`/`⌃⌥↓`** cycle through
-them from the keyboard — so "which of my ten agents needs me right now?" becomes a
-glance instead of a hunt. For supervising many agents at once, this is the single
-most efficient habit in Prowl.
+across every worktree, tab, and split**, each row **color-coded by status** so you
+can tell at a glance who needs you: **Blocked** (waiting on your approval),
+**Working**, **Done** (just finished), or **Idle**. One click jumps straight to
+that agent's pane, and **`⌃⌥↑`/`⌃⌥↓`** cycle through them from the keyboard — so
+"which of my ten agents needs me right now?" becomes a glance instead of a hunt.
+For supervising many agents at once, this is the single most efficient habit in
+Prowl.
 → [`components/active-agents.md`](components/active-agents.md) ·
 [`components/agent-detection.md`](components/agent-detection.md)
 
