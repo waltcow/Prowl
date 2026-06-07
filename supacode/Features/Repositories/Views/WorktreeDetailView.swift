@@ -142,7 +142,12 @@ struct WorktreeDetailView: View {
       runScriptEnabled: runScriptEnabled,
       runScriptIsRunning: runScriptIsRunning
     )
-    return applyFocusedActions(content: content, actions: actions)
+    let actionToken = WorktreeActionContext(
+      selectedWorktreeID: selectedTerminalWorktree?.id,
+      isShowingCanvas: repositories.isShowingCanvas,
+      canvasFocusedWorktreeID: repositories.isShowingCanvas ? terminalManager.canvasFocusedWorktreeID : nil
+    )
+    return applyFocusedActions(content: content, actions: actions, token: actionToken)
   }
 
   @ToolbarContentBuilder
@@ -530,31 +535,40 @@ struct WorktreeDetailView: View {
 
   private func applyFocusedActions<Content: View>(
     content: Content,
-    actions: FocusedActions
+    actions: FocusedActions,
+    token: WorktreeActionContext
   ) -> some View {
     content
-      .focusedSceneValue(\.openSelectedWorktreeAction, actions.openSelectedWorktree)
-      .focusedSceneValue(\.newTerminalAction, actions.newTerminal)
-      .focusedSceneValue(\.closeTabAction, actions.closeTab)
-      .focusedSceneValue(\.closeSurfaceAction, actions.closeSurface)
-      .focusedSceneValue(\.resetFontSizeAction, actions.resetFontSize)
-      .focusedSceneValue(\.increaseFontSizeAction, actions.increaseFontSize)
-      .focusedSceneValue(\.decreaseFontSizeAction, actions.decreaseFontSize)
-      .focusedSceneValue(\.startSearchAction, actions.startSearch)
-      .focusedSceneValue(\.searchSelectionAction, actions.searchSelection)
-      .focusedSceneValue(\.navigateSearchNextAction, actions.navigateSearchNext)
-      .focusedSceneValue(\.navigateSearchPreviousAction, actions.navigateSearchPrevious)
-      .focusedSceneValue(\.endSearchAction, actions.endSearch)
-      .focusedSceneValue(\.selectPreviousTerminalTabAction, actions.selectPreviousTerminalTab)
-      .focusedSceneValue(\.selectNextTerminalTabAction, actions.selectNextTerminalTab)
-      .focusedSceneValue(\.selectPreviousTerminalPaneAction, actions.selectPreviousTerminalPane)
-      .focusedSceneValue(\.selectNextTerminalPaneAction, actions.selectNextTerminalPane)
-      .focusedSceneValue(\.selectTerminalPaneAboveAction, actions.selectTerminalPaneAbove)
-      .focusedSceneValue(\.selectTerminalPaneBelowAction, actions.selectTerminalPaneBelow)
-      .focusedSceneValue(\.selectTerminalPaneLeftAction, actions.selectTerminalPaneLeft)
-      .focusedSceneValue(\.selectTerminalPaneRightAction, actions.selectTerminalPaneRight)
-      .focusedSceneValue(\.runScriptAction, actions.runScript)
-      .focusedSceneValue(\.stopRunScriptAction, actions.stopRunScript)
+      .focusedSceneValue(\.openSelectedWorktreeAction, actions.openSelectedWorktree.asFocusedAction(token: token))
+      .focusedSceneValue(\.newTerminalAction, actions.newTerminal.asFocusedAction(token: token))
+      .focusedSceneValue(\.closeTabAction, actions.closeTab.asFocusedAction(token: token))
+      .focusedSceneValue(\.closeSurfaceAction, actions.closeSurface.asFocusedAction(token: token))
+      .focusedSceneValue(\.resetFontSizeAction, actions.resetFontSize.asFocusedAction(token: token))
+      .focusedSceneValue(\.increaseFontSizeAction, actions.increaseFontSize.asFocusedAction(token: token))
+      .focusedSceneValue(\.decreaseFontSizeAction, actions.decreaseFontSize.asFocusedAction(token: token))
+      .focusedSceneValue(\.startSearchAction, actions.startSearch.asFocusedAction(token: token))
+      .focusedSceneValue(\.searchSelectionAction, actions.searchSelection.asFocusedAction(token: token))
+      .focusedSceneValue(\.navigateSearchNextAction, actions.navigateSearchNext.asFocusedAction(token: token))
+      .focusedSceneValue(
+        \.navigateSearchPreviousAction, actions.navigateSearchPrevious.asFocusedAction(token: token)
+      )
+      .focusedSceneValue(\.endSearchAction, actions.endSearch.asFocusedAction(token: token))
+      .focusedSceneValue(
+        \.selectPreviousTerminalTabAction, actions.selectPreviousTerminalTab.asFocusedAction(token: token)
+      )
+      .focusedSceneValue(\.selectNextTerminalTabAction, actions.selectNextTerminalTab.asFocusedAction(token: token))
+      .focusedSceneValue(
+        \.selectPreviousTerminalPaneAction, actions.selectPreviousTerminalPane.asFocusedAction(token: token)
+      )
+      .focusedSceneValue(
+        \.selectNextTerminalPaneAction, actions.selectNextTerminalPane.asFocusedAction(token: token)
+      )
+      .focusedSceneValue(\.selectTerminalPaneAboveAction, actions.selectTerminalPaneAbove.asFocusedAction(token: token))
+      .focusedSceneValue(\.selectTerminalPaneBelowAction, actions.selectTerminalPaneBelow.asFocusedAction(token: token))
+      .focusedSceneValue(\.selectTerminalPaneLeftAction, actions.selectTerminalPaneLeft.asFocusedAction(token: token))
+      .focusedSceneValue(\.selectTerminalPaneRightAction, actions.selectTerminalPaneRight.asFocusedAction(token: token))
+      .focusedSceneValue(\.runScriptAction, actions.runScript.asFocusedAction(token: token))
+      .focusedSceneValue(\.stopRunScriptAction, actions.stopRunScript.asFocusedAction(token: token))
   }
 
   private func makeFocusedActions(
@@ -686,6 +700,19 @@ struct WorktreeDetailView: View {
         terminalManager.stateIfExists(for: worktreeGroup.id)?.dismissAllNotifications()
       }
     }
+  }
+
+  /// Hashable identity of the inputs the focused actions capture, used as the
+  /// `FocusedAction` token. The detail body re-runs on every OSC-9 progress
+  /// tick during agent activity; without a stable token each run would look
+  /// like a focused-value change and rebuild the menu bar. Including the
+  /// selected / canvas-focused worktree here keeps the published actions stable
+  /// while the same worktree is focused, yet still republishes when the target
+  /// worktree changes (so a menu item never fires against a stale worktree).
+  private struct WorktreeActionContext: Hashable {
+    let selectedWorktreeID: Worktree.ID?
+    let isShowingCanvas: Bool
+    let canvasFocusedWorktreeID: Worktree.ID?
   }
 
   private struct FocusedActions {

@@ -190,88 +190,88 @@ struct KeyboardShortcutModifier: ViewModifier {
 }
 
 private struct SelectPreviousTerminalTabActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectPreviousTerminalTabAction: (() -> Void)? {
+  var selectPreviousTerminalTabAction: FocusedAction<Void>? {
     get { self[SelectPreviousTerminalTabActionKey.self] }
     set { self[SelectPreviousTerminalTabActionKey.self] = newValue }
   }
 }
 
 private struct SelectNextTerminalTabActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectNextTerminalTabAction: (() -> Void)? {
+  var selectNextTerminalTabAction: FocusedAction<Void>? {
     get { self[SelectNextTerminalTabActionKey.self] }
     set { self[SelectNextTerminalTabActionKey.self] = newValue }
   }
 }
 
 private struct SelectPreviousTerminalPaneActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectPreviousTerminalPaneAction: (() -> Void)? {
+  var selectPreviousTerminalPaneAction: FocusedAction<Void>? {
     get { self[SelectPreviousTerminalPaneActionKey.self] }
     set { self[SelectPreviousTerminalPaneActionKey.self] = newValue }
   }
 }
 
 private struct SelectNextTerminalPaneActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectNextTerminalPaneAction: (() -> Void)? {
+  var selectNextTerminalPaneAction: FocusedAction<Void>? {
     get { self[SelectNextTerminalPaneActionKey.self] }
     set { self[SelectNextTerminalPaneActionKey.self] = newValue }
   }
 }
 
 private struct SelectTerminalPaneAboveActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectTerminalPaneAboveAction: (() -> Void)? {
+  var selectTerminalPaneAboveAction: FocusedAction<Void>? {
     get { self[SelectTerminalPaneAboveActionKey.self] }
     set { self[SelectTerminalPaneAboveActionKey.self] = newValue }
   }
 }
 
 private struct SelectTerminalPaneBelowActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectTerminalPaneBelowAction: (() -> Void)? {
+  var selectTerminalPaneBelowAction: FocusedAction<Void>? {
     get { self[SelectTerminalPaneBelowActionKey.self] }
     set { self[SelectTerminalPaneBelowActionKey.self] = newValue }
   }
 }
 
 private struct SelectTerminalPaneLeftActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectTerminalPaneLeftAction: (() -> Void)? {
+  var selectTerminalPaneLeftAction: FocusedAction<Void>? {
     get { self[SelectTerminalPaneLeftActionKey.self] }
     set { self[SelectTerminalPaneLeftActionKey.self] = newValue }
   }
 }
 
 private struct SelectTerminalPaneRightActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var selectTerminalPaneRightAction: (() -> Void)? {
+  var selectTerminalPaneRightAction: FocusedAction<Void>? {
     get { self[SelectTerminalPaneRightActionKey.self] }
     set { self[SelectTerminalPaneRightActionKey.self] = newValue }
   }

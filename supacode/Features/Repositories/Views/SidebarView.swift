@@ -33,6 +33,8 @@ struct SidebarView: View {
     .focusedValue(\.archiveWorktreeAction, archiveWorktreeAction)
     .focusedValue(\.deleteWorktreeAction, deleteWorktreeAction)
     .focusedSceneValue(\.visibleHotkeyWorktreeRows, visibleHotkeyRows)
+    // `visibleHotkeyWorktreeRows` stays a plain value: `WorktreeRowModel` is
+    // Equatable, so SwiftUI already skips republishing it on no-op body runs.
     .onAppear { syncSidebarSelections(state: state, visibleWorktreeIDs: visibleWorktreeIDs) }
     .onChange(of: state.selection) { _, _ in
       syncSidebarSelections(state: state, visibleWorktreeIDs: visibleWorktreeIDs)
@@ -75,16 +77,16 @@ struct SidebarView: View {
 
   private func makeConfirmWorktreeAction(
     state: RepositoriesFeature.State
-  ) -> (() -> Void)? {
+  ) -> FocusedAction<Void>? {
     guard let alert = state.confirmWorktreeAlert else { return nil }
-    return {
+    return FocusedAction(isEnabled: true, token: state.confirmWorktreeActionToken) {
       store.send(.alert(.presented(alert)))
     }
   }
 
   private func makeArchiveWorktreeAction(
     rows: [WorktreeRowModel]
-  ) -> (() -> Void)? {
+  ) -> FocusedAction<Void>? {
     let targets =
       rows
       .filter { $0.isRemovable && !$0.isMainWorktree && !$0.isDeleting }
@@ -95,7 +97,7 @@ struct SidebarView: View {
         )
       }
     guard !targets.isEmpty else { return nil }
-    return {
+    return FocusedAction(isEnabled: true, token: targets.map(\.worktreeID)) {
       if targets.count == 1, let target = targets.first {
         store.send(.worktreeLifecycle(.requestArchiveWorktree(target.worktreeID, target.repositoryID)))
       } else {
@@ -106,7 +108,7 @@ struct SidebarView: View {
 
   private func makeDeleteWorktreeAction(
     rows: [WorktreeRowModel]
-  ) -> (() -> Void)? {
+  ) -> FocusedAction<Void>? {
     let targets =
       rows
       .filter { $0.isRemovable && !$0.isDeleting }
@@ -117,7 +119,7 @@ struct SidebarView: View {
         )
       }
     guard !targets.isEmpty else { return nil }
-    return {
+    return FocusedAction(isEnabled: true, token: targets.map(\.worktreeID)) {
       if targets.count == 1, let target = targets.first {
         store.send(.worktreeLifecycle(.requestDeleteWorktree(target.worktreeID, target.repositoryID)))
       } else {

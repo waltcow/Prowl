@@ -294,48 +294,48 @@ private struct WorktreeMenuEntry: Identifiable {
 }
 
 private struct ArchiveWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct OpenSelectedWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct DeleteWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct ConfirmWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var openSelectedWorktreeAction: (() -> Void)? {
+  var openSelectedWorktreeAction: FocusedAction<Void>? {
     get { self[OpenSelectedWorktreeActionKey.self] }
     set { self[OpenSelectedWorktreeActionKey.self] = newValue }
   }
 
-  var confirmWorktreeAction: (() -> Void)? {
+  var confirmWorktreeAction: FocusedAction<Void>? {
     get { self[ConfirmWorktreeActionKey.self] }
     set { self[ConfirmWorktreeActionKey.self] = newValue }
   }
 
-  var archiveWorktreeAction: (() -> Void)? {
+  var archiveWorktreeAction: FocusedAction<Void>? {
     get { self[ArchiveWorktreeActionKey.self] }
     set { self[ArchiveWorktreeActionKey.self] = newValue }
   }
 
-  var deleteWorktreeAction: (() -> Void)? {
+  var deleteWorktreeAction: FocusedAction<Void>? {
     get { self[DeleteWorktreeActionKey.self] }
     set { self[DeleteWorktreeActionKey.self] = newValue }
   }
 
-  var runScriptAction: (() -> Void)? {
+  var runScriptAction: FocusedAction<Void>? {
     get { self[RunScriptActionKey.self] }
     set { self[RunScriptActionKey.self] = newValue }
   }
 
-  var stopRunScriptAction: (() -> Void)? {
+  var stopRunScriptAction: FocusedAction<Void>? {
     get { self[StopRunScriptActionKey.self] }
     set { self[StopRunScriptActionKey.self] = newValue }
   }
@@ -347,11 +347,11 @@ extension FocusedValues {
 }
 
 private struct RunScriptActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct StopRunScriptActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct VisibleHotkeyWorktreeRowsKey: FocusedValueKey {

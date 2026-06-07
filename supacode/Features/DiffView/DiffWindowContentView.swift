@@ -29,7 +29,9 @@ struct DiffWindowContentView: View {
     } detail: {
       diffDetail
     }
-    .focusedSceneValue(\.toggleLeftSidebarAction, toggleSidebar)
+    .focusedSceneAction(\.toggleLeftSidebarAction, enabled: true) {
+      toggleSidebar()
+    }
     .toolbar(id: "diffToolbar") {
       ToolbarItem(id: "sidebarToggle", placement: .navigation) {
         Button {

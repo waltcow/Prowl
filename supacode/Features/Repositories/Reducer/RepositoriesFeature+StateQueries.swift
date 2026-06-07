@@ -425,6 +425,20 @@ extension RepositoriesFeature.State {
     return nil
   }
 
+  /// Hashable projection of `confirmWorktreeAlert`, used as a `FocusedAction`
+  /// token so the confirm command republishes only when the pending alert's
+  /// targets actually change rather than on every view body run.
+  var confirmWorktreeActionToken: [Worktree.ID]? {
+    switch confirmWorktreeAlert {
+    case .confirmArchiveWorktree(let worktreeID, _):
+      return [worktreeID]
+    case .confirmArchiveWorktrees(let targets):
+      return targets.map(\.worktreeID)
+    default:
+      return nil
+    }
+  }
+
   func isRemovingRepository(_ repository: Repository) -> Bool {
     removingRepositoryIDs.contains(repository.id)
   }

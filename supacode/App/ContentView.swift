@@ -107,8 +107,10 @@ struct ContentView: View {
         }
       )
     }
-    .focusedSceneValue(\.toggleLeftSidebarAction, toggleLeftSidebar)
-    .focusedSceneValue(\.revealInSidebarAction, revealInSidebarAction)
+    .focusedSceneAction(\.toggleLeftSidebarAction, enabled: true) {
+      toggleLeftSidebar()
+    }
+    .focusedSceneValue(\.revealInSidebarAction, revealInSidebarAction.asFocusedAction())
     .overlay {
       CommandPaletteOverlayView(
         store: store.scope(state: \.commandPalette, action: \.commandPalette),

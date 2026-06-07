@@ -84,7 +84,7 @@ struct ArchivedWorktreesDetailView: View {
   }
 
   @ToolbarContentBuilder
-  private func toolbarContent(deleteWorktreeAction: (() -> Void)?) -> some ToolbarContent {
+  private func toolbarContent(deleteWorktreeAction: FocusedAction<Void>?) -> some ToolbarContent {
     ToolbarItem {
       let deleteShortcut = KeyboardShortcut(.delete, modifiers: [.command, .shift]).display
       Button("Delete Selected", systemImage: "trash", role: .destructive) {
@@ -100,8 +100,8 @@ struct ArchivedWorktreesDetailView: View {
     var groupIDs: Set<Repository.ID>
     var archivedRowIDs: [Worktree.ID]
     var archivedWorktreeIDs: Set<Worktree.ID>
-    var deleteWorktreeAction: (() -> Void)?
-    var confirmWorktreeAction: (() -> Void)?
+    var deleteWorktreeAction: FocusedAction<Void>?
+    var confirmWorktreeAction: FocusedAction<Void>?
   }
 
   private func makeSnapshot() -> ArchivedSnapshot {
@@ -131,20 +131,20 @@ struct ArchivedWorktreesDetailView: View {
       }
     }
 
-    let deleteWorktreeAction: (() -> Void)?
+    let deleteWorktreeAction: FocusedAction<Void>?
     if selectedTargets.isEmpty {
       deleteWorktreeAction = nil
     } else {
       let store = self.store
-      deleteWorktreeAction = {
+      deleteWorktreeAction = FocusedAction(isEnabled: true, token: selectedTargets.map(\.worktreeID)) {
         store.send(.worktreeLifecycle(.requestDeleteWorktrees(selectedTargets)))
       }
     }
 
-    let confirmWorktreeAction: (() -> Void)?
+    let confirmWorktreeAction: FocusedAction<Void>?
     if let alert = store.state.confirmWorktreeAlert {
       let store = self.store
-      confirmWorktreeAction = {
+      confirmWorktreeAction = FocusedAction(isEnabled: true, token: store.state.confirmWorktreeActionToken) {
         store.send(.alert(.presented(alert)))
       }
     } else {
