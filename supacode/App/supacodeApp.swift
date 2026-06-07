@@ -106,6 +106,7 @@ struct SupacodeApp: App {
   @State private var cliSocketServer: CLISocketServer
   @State private var store: StoreOf<AppFeature>
   @State private var memoryWatchdog: MemoryWatchdog
+  @State private var askAgentHelp = AskAgentHelpPresenter()
 
   private static func cliLaunchOpenPath() -> String? {
     let args = ProcessInfo.processInfo.arguments
@@ -749,6 +750,15 @@ struct SupacodeApp: App {
           .environment(ghosttyShortcuts)
           .environment(commandKeyObserver)
           .environment(\.resolvedKeybindings, store.resolvedKeybindings)
+          .environment(askAgentHelp)
+          .sheet(
+            isPresented: Binding(
+              get: { askAgentHelp.isPresented },
+              set: { askAgentHelp.isPresented = $0 }
+            )
+          ) {
+            AskAgentHelpView { askAgentHelp.dismiss() }
+          }
       }
       .registersMainWindowOpener()
       .onAppear {
@@ -822,6 +832,11 @@ struct SupacodeApp: App {
         }
       #endif
       CommandGroup(replacing: .help) {
+        Button("Ask Agent About Prowl…", systemImage: "sparkles") {
+          askAgentHelp.present()
+        }
+        .help("Copy a prompt that points your AI agent at Prowl's bundled docs")
+        Divider()
         Button("Homepage", systemImage: "house") {
           if let url = URL(string: "https://prowl.onev.cat/") {
             NSWorkspace.shared.open(url)

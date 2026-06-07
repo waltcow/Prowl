@@ -6,10 +6,16 @@ struct SidebarFooterView: View {
   @Environment(\.surfaceBottomChromeBackgroundOpacity) private var surfaceBottomChromeBackgroundOpacity
   @Environment(\.openURL) private var openURL
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
+  @Environment(AskAgentHelpPresenter.self) private var askAgentHelp
 
   var body: some View {
     HStack {
       Menu {
+        Button("Ask Agent About Prowl", systemImage: "sparkles") {
+          askAgentHelp.present()
+        }
+        .help("Copy a prompt that points your AI agent at Prowl's bundled docs")
+        Divider()
         Button("Homepage", systemImage: "house") {
           if let url = URL(string: "https://prowl.onev.cat/") {
             openURL(url)
