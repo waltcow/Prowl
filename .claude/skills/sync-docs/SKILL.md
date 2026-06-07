@@ -39,8 +39,8 @@ The goal is to keep facts correct with **low churn**, not to perfect the prose.
 
 ## Steps
 
-1. **Read the baseline.** Open `.claude/skills/sync-docs/baseline.md` and extract
-   the **last-synced commit** hash.
+1. **Read the baseline.** Open `docs/.sync-meta.json` and read the
+   `last_synced_commit` field (the **last-synced commit** hash).
 
 2. **Diff the implementation since the baseline.** List source files that changed:
    ```bash
@@ -92,9 +92,9 @@ The goal is to keep facts correct with **low churn**, not to perfect the prose.
 5. **Check internal links if files moved.** If you renamed/added/removed any doc
    file, re-run a quick relative-link check so nothing in `docs/` is broken.
 
-6. **Bump the baseline.** Update `.claude/skills/sync-docs/baseline.md` to the
-   current `HEAD` (hash + date + one-line note). This file is **committed to git**
-   so the baseline persists across sessions and machines — never leave it
+6. **Bump the baseline.** Set `last_synced_commit` (and `last_synced_date`, `note`)
+   in `docs/.sync-meta.json` to the current `HEAD`. This file is **committed to
+   git** so the baseline persists across sessions and machines — never leave it
    uncommitted.
 
 7. **Report.** Output a short summary:
@@ -115,11 +115,11 @@ The goal is to keep facts correct with **low churn**, not to perfect the prose.
 
 ## Committing
 
-- **Standalone run:** stage and commit only `docs/**` and
-  `.claude/skills/sync-docs/baseline.md` (never `git add .`). If anything in
-  `docs/` changed and you're not on `main`, open a PR targeting `onevcat/Prowl`.
-- **As part of release prep:** leave the doc + baseline edits staged so they ride
-  along in the release commit (this is the intended integration point — a docs
-  freshness check before cutting a release).
-- Always bump and commit the baseline even when no doc edits were needed, so the
-  next run starts from a tight diff range.
+- **Standalone run:** stage and commit only `docs/**` (which includes
+  `docs/.sync-meta.json`); never `git add .`. If anything in `docs/` changed and
+  you're not on `main`, open a PR targeting `onevcat/Prowl`.
+- **As part of release prep:** leave the doc + `docs/.sync-meta.json` edits staged
+  so they ride along in the release commit (this is the intended integration
+  point — a docs freshness check before cutting a release).
+- Always bump and commit `docs/.sync-meta.json` even when no doc edits were
+  needed, so the next run starts from a tight diff range.
