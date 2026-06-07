@@ -10,13 +10,13 @@ Use `prowl` only when the task is to inspect or control the running Prowl GUI ap
 
 ## Safe Default Workflow
 
-Always resolve a concrete pane UUID before `read`, `send`, `key`, or `focus`.
+Always resolve a concrete pane UUID before `read`, `send`, `key`, `focus`, or destructive close commands.
 
 ```bash
 prowl list --json
 ```
 
-Pick the target by `pane.id`, `worktree.path`, `pane.cwd`, and `pane.focused`. Do not trust tab titles: they are free-form and can lag or lie.
+Pick the target by `pane.id`, `tab.id`, `worktree.id`, `worktree.path`, `pane.cwd`, and `pane.focused`. Do not trust tab titles: they are free-form and can lag or lie.
 
 If your session was launched from a Prowl pane, the focused pane is often you. Treat focused pane IDs as something to identify and avoid unless you intentionally want to operate on yourself.
 
@@ -35,12 +35,20 @@ prowl key --pane "$pane" enter --json
 
 ## Common Recipes
 
-Create a fresh tab for the current project, then verify it is not yourself:
+Create a fresh tab for a listed worktree, then verify it is not yourself:
 
 ```bash
-pane="$(prowl tab create --worktree /path/to/project --json | jq -r '.data.target.pane.id')"
+project="/path/to/project"
+worktree="$(prowl list --json | jq -r --arg project "$project" '
+  .data.items[]
+  | select((.worktree.path | rtrimstr("/")) == ($project | rtrimstr("/")))
+  | .worktree.id
+' | head -n 1)"
+pane="$(prowl tab create --worktree "$worktree" --json | jq -r '.data.target.pane.id')"
 test "$pane" != "$self_pane"
 ```
+
+Prefer a `worktree.id` or `worktree.name` returned by `prowl list` over a hand-typed path; list preserves normalization such as trailing slashes. Use `--path` only for the new tab's working directory inside the selected worktree.
 
 `prowl open /path` opens or focuses a matching project/path and may create a tab when needed. It is not guaranteed to create a new pane. Use `prowl tab create` for deterministic new terminal sessions.
 
@@ -78,7 +86,7 @@ prowl pane close --pane "$pane" --json
 prowl tab close --tab "$tab" --json
 ```
 
-`tab close` and `pane close` require an explicit `--tab`, `--pane`, `--worktree`, or `--target`; they intentionally do not default to the currently focused pane. If the target has protected agent work or a long-running command, Prowl may ask for GUI confirmation. Use `--force` only after you have positively identified the target:
+`tab close` and `pane close` require an explicit `--tab`, `--pane`, `--worktree`, or `--target`; they intentionally do not default to the currently focused pane. For automation-created tabs, prefer the `tab.id` or `pane.id` returned by `tab create`. If the target has protected agent work or a long-running command, Prowl may ask for GUI confirmation. Use `--force` only after you have positively identified the target:
 
 ```bash
 prowl pane close --pane "$pane" --force --json
