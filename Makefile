@@ -29,7 +29,7 @@ PROWL_POSTHOG_API_KEY ?=
 PROWL_POSTHOG_HOST ?=
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _check-ghostty-hash _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration bump-version bump-and-release log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _check-ghostty-hash _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration bump-version bump-and-release log-stream
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -91,7 +91,15 @@ sync-ghostty: # Force sync GhosttyKit to current submodule HEAD (always rebuilds
 	rm -rf ~/Library/Developer/Xcode/DerivedData/supacode-*
 	@echo "Done. Xcode module cache cleared for fresh compilation."
 
-build-app: ensure-ghostty embed-cli-debug # Build the macOS app (Debug)
+embed-docs: # Stage docs/ into Resources for bundling into the app (.app/Contents/Resources/docs)
+	@set -euo pipefail; \
+	src="$(CURRENT_MAKEFILE_DIR)/docs"; \
+	dst="$(CURRENT_MAKEFILE_DIR)/Resources/docs"; \
+	mkdir -p "$$dst"; \
+	rsync -a --delete --exclude '.sync-meta.json' "$$src/" "$$dst/"; \
+	echo "embedded docs at $$dst"
+
+build-app: ensure-ghostty embed-cli-debug embed-docs # Build the macOS app (Debug)
 	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) 2>&1 | mise exec -- xcsift -w --format toon'
 
 sync-cli-version: # Sync app MARKETING_VERSION into ProwlCLIShared/ProwlVersion.swift
@@ -271,13 +279,13 @@ install-release: build-ghostty-xcframework # Build Release, sign locally, instal
 	ditto "$$APP_PATH" "$$DST"; \
 	echo "installed $$DST (Release build, locally signed)"
 
-archive: build-ghostty-xcframework embed-cli # Archive Release build for distribution
+archive: build-ghostty-xcframework embed-cli embed-docs # Archive Release build for distribution
 	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Release -archivePath build/supacode.xcarchive archive CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$$APPLE_TEAM_ID" CODE_SIGN_IDENTITY="$$DEVELOPER_ID_IDENTITY_SHA" OTHER_CODE_SIGN_FLAGS="--timestamp" PROWL_SENTRY_DSN="$(PROWL_SENTRY_DSN)" PROWL_POSTHOG_API_KEY="$(PROWL_POSTHOG_API_KEY)" PROWL_POSTHOG_HOST="$(PROWL_POSTHOG_HOST)" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) $(XCODEBUILD_FLAGS) 2>&1 | mise exec -- xcsift -qw --format toon'
 
 export-archive: # Export xarchive
 	bash -o pipefail -c 'xcodebuild -exportArchive -archivePath build/supacode.xcarchive -exportPath build/export -exportOptionsPlist build/ExportOptions.plist 2>&1 | mise exec -- xcsift -qw --format toon'
 
-test: ensure-ghostty embed-cli-debug test-app
+test: ensure-ghostty embed-cli-debug embed-docs test-app
 
 test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	@set -euo pipefail; \

@@ -32,6 +32,27 @@ nonisolated enum SupacodePaths {
     appSupportDirectory.appending(path: "cache", directoryHint: .isDirectory)
   }
 
+  /// The agent-facing documentation set bundled inside the app
+  /// (`Prowl.app/Contents/Resources/docs`). Shipped so users and their
+  /// AI agents can read the manual straight from the installed app.
+  static var bundledDocsURL: URL? {
+    Bundle.main.resourceURL?.appending(path: "docs", directoryHint: .isDirectory)
+  }
+
+  /// On-disk path to the bundled docs index (`docs/README.md`), e.g.
+  /// `/Applications/Prowl.app/Contents/Resources/docs/README.md`. `nil` only
+  /// if the bundle has no resource directory (should not happen at runtime).
+  static var bundledDocsReadmePath: String? {
+    bundledDocsURL?
+      .appending(path: "README.md", directoryHint: .notDirectory)
+      .path(percentEncoded: false)
+  }
+
+  /// On-disk path to the bundled docs directory itself.
+  static var bundledDocsDirectoryPath: String? {
+    bundledDocsURL?.path(percentEncoded: false)
+  }
+
   static var reposDirectory: URL {
     baseDirectory.appending(path: "repos", directoryHint: .isDirectory)
   }

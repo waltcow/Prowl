@@ -25,6 +25,26 @@
 
 ---
 
+## 🐾 Meet Prowl through your agent
+
+Prefer to learn the agentic way instead of scrolling? Hand this prompt to your coding agent (Claude Code, Codex, …) or any AI assistant — it reads Prowl's full documentation and gives you a tailored introduction:
+
+```text
+Read Prowl's documentation and introduce it to me.
+
+Prowl is a native macOS command center for running many AI coding agents in parallel. Its full manual lives here:
+https://raw.githubusercontent.com/onevcat/Prowl/refs/heads/main/docs/README.md
+
+Fetch that index and read it (it links to an overview and per-feature manuals in the same docs/ folder — read the relevant ones). Then:
+1. Briefly tell me what Prowl is and why it's worth my time.
+2. Based on what you know about how I work, suggest 3–4 Prowl features that would genuinely help me, each with a one-line "how".
+3. Then answer my follow-up questions, consulting the matching doc.
+
+Reply in my preferred language.
+```
+
+> Already installed Prowl? Your agent can read the same docs straight from the app bundle — choose **Help → Ask Agent About Prowl** in the app to copy a version localized to your language.
+
 ## Why Prowl?
 
 You're not just typing commands anymore — you're orchestrating Claude Code, Codex, and friends across repos, branches, and ideas. Prowl is the terminal built for that.
