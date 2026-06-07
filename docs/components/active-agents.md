@@ -36,22 +36,21 @@ Command Palette → "Toggle Active Agents Panel".
 | **Done** | finished, not yet seen | blue |
 | **Idle** | nothing running / seen | grey |
 
-The list is sorted by urgency: **Blocked → Working → Done → Idle**, then by most
-recently changed. (See [agent-detection](agent-detection.md) for how these states
-are determined.)
+Rows appear in the order agents are first detected. (See
+[agent-detection](agent-detection.md) for how these states are determined.)
 
 ## Interactions
 
 - **Click a row** → focuses that worktree + tab + pane and brings Prowl forward. A
   **Done** row downgrades to **Idle** once focused.
-- **Keyboard navigation:** `⌃⌥↓` next agent, `⌃⌥↑` previous agent (wraps).
+- **Keyboard navigation:** `⌥⌃↓` next agent, `⌥⌃↑` previous agent (wraps).
 - **Resize** the panel by dragging its top edge (height is remembered).
 - **Auto-show:** if `autoShowActiveAgentsPanel` is on and the panel is hidden, a
   newly detected agent opens it automatically.
 
 ## Empty state
 
-When nothing is running: "New agents will appear here."
+When nothing is running: "New agents will appear here".
 
 ## Settings
 
@@ -62,10 +61,11 @@ When nothing is running: "New agents will appear here."
 ## Relationship to other features
 
 - **Agent detection** ([agent-detection](agent-detection.md)) feeds this panel.
-- **Notifications** ([notifications](notifications.md)) fire on the same
-  transitions (e.g. an agent finishing → Done).
+- **Notifications** ([notifications](notifications.md)) are driven by a separate
+  signal — terminal bell / OSC desktop notifications and command-finished
+  events — which usually coincides with, but is not the same as, a detected finish.
 - **Canvas** ([canvas](canvas.md)) is the spatial counterpart — cards light up on
-  the same completion signal.
+  that same notification/unread signal, not on the detected status itself.
 
 ## Gotchas for agents
 

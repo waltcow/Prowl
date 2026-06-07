@@ -107,8 +107,9 @@ The **main worktree cannot be archived.**
 Deleting removes the worktree directory (and optionally its branch).
 
 - **Right-click** the row → "Delete Worktree", or **`⌘⇧⌫`**.
-- A confirmation dialog offers **"Delete the local branch (`git branch -d`)"**.
-  Default behavior comes from `deleteBranchOnDeleteWorktree`.
+- A confirmation dialog offers an **"Also delete local branch"** toggle (its
+  tooltip notes `git branch -d`). Default behavior comes from
+  `deleteBranchOnDeleteWorktree`.
 - Prowl removes the worktree (relocating + `git worktree prune` if needed). If
   branch deletion is rejected because the branch isn't merged, it offers a
   **force delete** (`git branch -D`).
@@ -123,15 +124,19 @@ it from Prowl (closing its open terminals); it does **not** delete files on disk
 
 ## Opening a worktree in another app
 
-`⌘O` opens the worktree (Finder by default). Right-click → submenu, or per-repo
-default (`openActionID`) / global default (`defaultEditorID`), pick from any
-installed app Prowl detects: Finder, Terminal, `$EDITOR`, VS Code (+ Insiders),
-Cursor, Zed, Windsurf, Xcode, JetBrains IDEs, GitHub Desktop / Fork / GitKraken /
-Sourcetree / Sublime Merge / SmartGit / GitUp, and terminals (Alacritty, Ghostty,
-Kitty, Warp, WezTerm). If the chosen app isn't installed, Prowl shows an alert.
+`⌘O` opens the worktree with the auto-detected default app — your first installed
+editor (Cursor → Zed → VS Code → Windsurf → …), falling through to Xcode and then
+**Finder only when no preferred app is found**. Use the **Open** dropdown in the
+worktree's detail toolbar to pick a different app, or set a per-repo default
+(`openActionID`) / global default (`defaultEditorID`). Prowl detects: Finder,
+Terminal, `$EDITOR`, VS Code (+ Insiders), VSCodium, Cursor, Zed, Windsurf,
+Antigravity, Xcode, Android Studio, JetBrains IDEs, GitHub Desktop / Fork /
+GitKraken / Sourcetree / Sublime Merge / SmartGit / GitUp, and terminals
+(Alacritty, Ghostty, Kitty, Warp, WezTerm). If the chosen app isn't installed,
+Prowl shows an alert.
 
-Other per-row context-menu items: **Copy Path**, **Reveal in Finder**,
-**Repo Settings**.
+Other per-row context-menu items: **Copy Path**, **Reveal in Finder**. (Repo
+Settings lives on the repository **header** menu, not the worktree row.)
 
 ## Repository appearance (icon & color)
 

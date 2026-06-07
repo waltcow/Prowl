@@ -18,9 +18,9 @@
 ## How to switch
 
 - **Canvas:** `⌘⌥↩` (`toggle_canvas`), the sidebar Canvas button, or Command
-  Palette → "Canvas".
+  Palette → "Toggle Canvas".
 - **Shelf:** `⌘⇧↩` (`toggle_shelf`), the sidebar Shelf button, or Command Palette →
-  "Shelf".
+  "Toggle Shelf".
 - **Back to Normal:** toggle the active mode off, or select a worktree in the
   sidebar.
 
@@ -29,7 +29,7 @@ Toggling Canvas or Shelf with **no open worktrees** does nothing.
 ## What's preserved across switches
 
 - Your running terminals, tabs, and panes are untouched.
-- Canvas remembers card positions/sizes/z-order for the session.
+- Canvas persists card positions/sizes/z-order across launches.
 - Entering Shelf keeps your current worktree open (or jumps to the first available
   one if you were on Canvas / archived / nothing).
 - Exiting Canvas returns you to the focused card's worktree, the worktree you had

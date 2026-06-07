@@ -123,8 +123,9 @@ the command's output to a file and `cat` it.
 Send a keystroke.
 
 - `--repeat <1–100>` — repeat the key.
-- Tokens: named keys (`enter`/`return`, `esc`, `tab`, `backspace`, `delete`,
-  `space`, arrows `up`/`down`/`left`/`right`, `pageup`/`pagedown`, `home`/`end`,
+- Tokens: named keys (`enter`/`return`, `esc`, `tab`, `backspace` — `delete` is an
+  alias for backspace; use `delete-forward` for a forward delete — `space`, arrows
+  `up`/`down`/`left`/`right`, `pageup`/`pagedown`, `home`/`end`,
   `f1`–`f12`, punctuation), single characters (`a`–`z`, `0`–`9`, etc.), and
   modifier combos joined with `-`: `cmd`/`command`, `shift`, `opt`/`option`/`alt`,
   `ctrl`/`control` — e.g. `ctrl-c`, `cmd-k`, `shift-tab`, `cmd-shift-p`.

@@ -20,14 +20,17 @@ Prowl uses the **Sparkle** framework for auto-updates. Releases are notarized.
 
 ## Channels
 
-`updateChannel` selects the release track: **Stable** (default) or **Tip**. Choose
-in Settings → Updates. (Day-to-day, Stable is the published track.)
+`updateChannel` offers **Stable** (default) and **Tip** in Settings → Updates.
+Tip is **no longer published separately** and currently resolves to the same feed
+as Stable, so the two behave identically today.
 
 ## Settings
 
-- `updateChannel` — `stable` or `tip`.
+- `updateChannel` — `stable` or `tip` (Tip currently resolves to Stable).
 - `updatesAutomaticallyCheckForUpdates` — background checks (default on).
-- `updatesAutomaticallyDownloadUpdates` — auto-download in the background.
+- `updatesAutomaticallyDownloadUpdates` — present in settings but **not currently
+  wired** to Sparkle or exposed in the UI; the background-download preference is
+  chosen via Sparkle's own permission dialog.
 
 ## Install via Homebrew
 

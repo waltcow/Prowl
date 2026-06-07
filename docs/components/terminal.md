@@ -63,8 +63,8 @@ A tab's displayed title is, in order of precedence:
 2. the **live shell title** the running program emits (OSC 2), else
 3. an auto-generated default like `project 1`, `project 2`.
 
-Tabs created for a Run Script show the command and are **title-locked** until it
-finishes. Prowl also "learns" your shell's idle prompt so it doesn't mistake it
+The Run Script tab is labeled **RUN SCRIPT** and is **title-locked** for its
+lifetime. Prowl also "learns" your shell's idle prompt so it doesn't mistake it
 for a meaningful title.
 
 > **Titles are free-form and can lie or lag.** Any program can set any title.

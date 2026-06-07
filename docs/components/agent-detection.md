@@ -56,8 +56,8 @@ A **Done** pane becomes **Idle** the moment you focus it.
 - ~**300 ms** when an agent is present or you're typing (active).
 - ~**2 s** when idle.
 
-The heavier process probe is throttled (≈ every few seconds unless something
-changes) so many panes don't add up to high CPU. Status indicators redraw on a
+The heavier process probe is throttled (cached ≈ 0.75 s per process group unless
+something changes) so many panes don't add up to high CPU. Status indicators redraw on a
 coarse tick rather than every frame for the same reason.
 
 ## The indicator

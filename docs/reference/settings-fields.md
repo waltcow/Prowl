@@ -58,7 +58,7 @@ JSON is pretty-printed with sorted keys. Legacy `~/.supacode` is migrated to
 | `windowTintCustomColor` | color | default | The custom tint color (when `windowTintMode = custom`). |
 | `showRunButtonInToolbar` | Bool | `true` | Show the Run Script button in the toolbar. |
 | `showDefaultEditorInToolbar` | Bool | `true` | Show the open-in-editor button in the toolbar. |
-| `dockBounceMode` | enum (`off`/`once`/`continuously`) | `off` | Dock bounce on notification. |
+| `dockBounceMode` | enum (`off`/`once`/`continuous`) | `off` | Dock bounce on notification. |
 | `showNotificationDotOnDock` | Bool | `false` | Numeric unread badge on the Dock icon. |
 | `shelfSpineTintFallback` | enum (`neutral`/`systemTint`) | `neutral` | Shelf spine color when a repo has no color. |
 | `shelfSpineTintFollowsRepositoryColor` | Bool | `true` | Tint shelf spines by repo color. |

@@ -24,7 +24,7 @@ otherwise it's a no-op.
 |--------|-----|
 | Flip to **next book** (worktree) | `⌘⌃→` |
 | Flip to **previous book** | `⌘⌃←` |
-| Jump to **book 1–9** | `⌃⌥1` … `⌃⌥9` |
+| Jump to **book 1–9** | `⌥⌃1` … `⌥⌃9` |
 | Cycle the open book's **tabs** | `⌘⌃↓` (next) / `⌘⌃↑` (previous) |
 | Select the open book's **tab 1–9** | `⌘1` … `⌘9` |
 

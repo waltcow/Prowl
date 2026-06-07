@@ -32,9 +32,11 @@ Canvas lets you **type a command once and send it to many agents at once**:
 
 Selection controls:
 - `⌘`-click a card body → toggle it in/out of the selection.
-- `⌘`-click an already-selected card → make it the **primary** (the one you type
-  into) without deselecting the rest.
-- Click empty canvas, or press **Esc** → clear the selection.
+- **Click (without `⌘`)** an already-selected card → make it the **primary** (the
+  one you type into) without deselecting the rest. (`⌘`-clicking a selected card
+  instead *removes* it from the selection.)
+- Click empty canvas → clear the selection. **Esc** also clears it while
+  broadcasting (two or more cards selected).
 
 ## Working with cards
 
@@ -74,7 +76,8 @@ explaining pan/zoom/expand.
 - Default card size adapts to screen width (roughly 800×550 on a 14", larger on a
   27"). Cards have generous min/max bounds and snap-animate on resize.
 - On first entry, cards auto-arrange into a balanced grid. Positions, sizes, and
-  z-order are remembered for the session and restored when you return to Canvas.
+  z-order are persisted across launches (in `UserDefaults`) and restored when you
+  return to Canvas.
 - Closing a card's last tab prunes it; focus advances to a neighbor.
 
 ## Many agents at once

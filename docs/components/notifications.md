@@ -12,8 +12,9 @@
 Prowl watches your panes and surfaces three kinds of alerts so you can leave the
 screen and come back exactly when you're needed:
 
-1. **Agent reminders** — when an agent in an unfocused worktree produces output or
-   finishes, Prowl flags that worktree (bell/unread) and can notify.
+1. **Agent reminders** — when an agent in an unfocused worktree rings the bell or
+   emits a desktop notification (e.g. on finishing), Prowl flags that worktree
+   (bell/unread) and can notify.
 2. **Command-finished notifications** — when a long-running command completes.
 3. **Terminal bell / desktop notifications** — bell (BEL) and explicit terminal
    notifications increment unread indicators.
@@ -30,8 +31,10 @@ screen and come back exactly when you're needed:
 Custom commands also post a success toast when they exit 0.
 
 Whether these become **macOS system banners** depends on
-`systemNotificationsEnabled`; in-app alerts depend on `inAppNotificationsEnabled`;
-sound depends on `notificationSoundEnabled`.
+`systemNotificationsEnabled`; in-app alerts depend on `inAppNotificationsEnabled`.
+A standalone sound (`notificationSoundEnabled`) plays only when system
+notifications are **disabled** — when banners are on, the banner carries its own
+sound.
 
 ## Where unread shows up
 
@@ -52,7 +55,7 @@ top of its section. **Jump to Latest Unread** (`⌘⌥U`) takes you straight to 
 - **Badge:** `showNotificationDotOnDock` shows an unread count on the Dock icon.
   Requires macOS notification permission + "Badge app icon" enabled; Prowl
   disables the toggle if the system doesn't allow it.
-- **Bounce:** `dockBounceMode` — `off`, `once` (single bounce), or `continuously`
+- **Bounce:** `dockBounceMode` — `off`, `once` (single bounce), or `continuous`
   (bounces until you bring Prowl forward).
 
 ## Settings (Settings → Notifications)
