@@ -13,7 +13,7 @@ struct GhosttySurfaceProgressBar: View {
       default: .accentColor
       }
     let progress: Int? =
-      progressValue ?? (progressState == GHOSTTY_PROGRESS_STATE_PAUSE ? 100 : nil)
+      progressValue.map(Self.bucketedPercent) ?? (progressState == GHOSTTY_PROGRESS_STATE_PAUSE ? 100 : nil)
     let accessibilityLabel: String =
       switch progressState {
       case GHOSTTY_PROGRESS_STATE_ERROR: "Terminal progress - Error"
@@ -33,17 +33,15 @@ struct GhosttySurfaceProgressBar: View {
         }
       }
 
-    GeometryReader { geometry in
-      ZStack(alignment: .leading) {
-        if let progress {
-          Rectangle()
-            .fill(color)
-            .frame(
-              width: geometry.size.width * CGFloat(progress) / 100,
-              height: geometry.size.height
-            )
-            .animation(.easeInOut(duration: 0.2), value: progress)
-        } else {
+    Group {
+      if let progress {
+        // Leading-anchored scaleEffect composites a percent step instead of
+        // relaying out a GeometryReader frame width on every OSC-9 tick.
+        Rectangle()
+          .fill(color)
+          .scaleEffect(x: CGFloat(progress) / 100, y: 1, anchor: .leading)
+      } else {
+        GeometryReader { geometry in
           ZStack(alignment: .leading) {
             Rectangle()
               .fill(color.opacity(0.3))
@@ -66,5 +64,15 @@ struct GhosttySurfaceProgressBar: View {
     .accessibilityAddTraits(.updatesFrequently)
     .accessibilityLabel(accessibilityLabel)
     .accessibilityValue(accessibilityValue)
+  }
+
+  /// Quantize a determinate percent to 5% steps so a 0->100 sweep collapses to
+  /// ~20 distinct values that mostly no-op at the view's equality gates. 0 and
+  /// the >=100 terminus pass through unchanged so the bar still empties and tops
+  /// out exactly.
+  static func bucketedPercent(_ percent: Int) -> Int {
+    guard percent > 0 else { return 0 }
+    guard percent < 100 else { return 100 }
+    return (percent / 5) * 5
   }
 }

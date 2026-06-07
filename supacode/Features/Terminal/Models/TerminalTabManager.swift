@@ -38,6 +38,9 @@ final class TerminalTabManager {
   func updateTitle(_ id: TerminalTabID, title: String) -> Bool {
     guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
     guard !tabs[index].isTitleLocked else { return false }
+    // A TUI re-emits the same title constantly; skip the no-op write so it
+    // doesn't invalidate the tab bar while an agent streams output.
+    guard tabs[index].title != title else { return false }
     let previousDisplayTitle = tabs[index].displayTitle
     tabs[index].title = title
     return tabs[index].displayTitle != previousDisplayTitle
@@ -98,6 +101,9 @@ final class TerminalTabManager {
 
   func updateDirty(_ id: TerminalTabID, isDirty: Bool) {
     guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+    // OSC-9 drives this on every progress tick; skip the no-op write so an
+    // unchanged dirty flag doesn't re-render the tab bar during agent activity.
+    guard tabs[index].isDirty != isDirty else { return }
     tabs[index].isDirty = isDirty
   }
 
