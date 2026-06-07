@@ -1,5 +1,27 @@
 # Changelog
 
+## [2026.6.7](https://github.com/onevcat/Prowl/releases/tag/v2026.6.7)
+
+This release focuses on Canvas improvements, CLI automation additions, and a new in-app help feature for agent-assisted onboarding.
+
+### New
+
+- **Canvas expand-in-place**: cards now expand to fill the viewport with a smooth animation instead of switching to Normal view. Press **⌥⌘E** to expand or restore the focused card; a blurred scrim freezes the background while it is open. The shortcut and Expand/Restore commands are also available in the Command Palette.
+- **Canvas adaptive card size**: the default card size now scales to the host screen width, so cards on a 14" MacBook Pro are appropriately smaller and stay legible after Organize/Arrange.
+- **CLI tab and pane management**: `prowl tab create`, `prowl tab close`, and `prowl pane close` are now available for scripting and agent automation.
+- **"Ask Agent About Prowl"**: a new action in the sidebar Help menu (and macOS Help menu) generates a ready-to-paste prompt that points your coding agent at the bundled documentation and asks it to suggest features tailored to how you work. The docs are also available directly inside the app bundle at `Prowl.app/Contents/Resources/docs/`.
+
+### Fixed
+
+- Deleting a worktree created outside Prowl under a symlinked path (e.g. `/tmp`) now works correctly; previously the row would disappear and immediately reappear after the next refresh.
+- Collapsed-then-expanded sidebar sections no longer cause a layout spin that made scrolling unresponsive.
+- Background update downloads are now handled correctly: Sparkle manages the preference, and a toolbar badge appears when an update is ready to install.
+
+### Improved
+
+- Canvas card terminal content and title bar now resize together during Organize/Arrange transitions instead of snapping to the final size.
+- The CLI socket is now restricted to owner-only permissions and rejects connections from other users on the same machine.
+
 ## [2026.6.6](https://github.com/onevcat/Prowl/releases/tag/v2026.6.6)
 
 This release focuses on Canvas mode: keyboard shortcuts, smoother focus navigation, and consistent behavior across sidebar, command palette, and new-tab actions.
