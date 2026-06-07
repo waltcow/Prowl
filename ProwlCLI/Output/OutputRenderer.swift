@@ -81,6 +81,22 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "tab",
+         let data = response.data,
+         let payload = try? data.decode(as: TabCommandPayload.self)
+      {
+        print(renderTab(payload))
+        return
+      }
+
+      if response.command == "pane",
+         let data = response.data,
+         let payload = try? data.decode(as: PaneCommandPayload.self)
+      {
+        print(renderPane(payload))
+        return
+      }
+
       if response.command == "open" {
         return
       }
@@ -176,6 +192,49 @@ enum OutputRenderer {
       }
     }
 
+    return lines.joined(separator: "\n")
+  }
+
+  private static func renderTab(_ payload: TabCommandPayload) -> String {
+    let wt = payload.target.worktree
+    let tab = payload.target.tab
+    let pane = payload.target.pane
+    let projectName = projectName(from: wt.path)
+    let verb =
+      switch payload.action {
+      case .create: "Created tab"
+      case .close: "Closed tab"
+      }
+
+    var lines: [String] = []
+    lines.append(
+      "\(verb) \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(tab.title.yellow)"
+      + "  \(tab.id.dim)"
+    )
+    lines.append("  \("pane:".dim) \(pane.title.green)  \(pane.id.dim)")
+    if let cwd = pane.cwd {
+      lines.append("  \("cwd:".dim) \(cwd)")
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  private static func renderPane(_ payload: PaneCommandPayload) -> String {
+    let wt = payload.target.worktree
+    let pane = payload.target.pane
+    let projectName = projectName(from: wt.path)
+    let verb =
+      switch payload.action {
+      case .close: "Closed pane"
+      }
+
+    var lines: [String] = []
+    lines.append(
+      "\(verb) \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(pane.title.green)"
+      + "  \(pane.id.dim)"
+    )
+    if let cwd = pane.cwd {
+      lines.append("  \("cwd:".dim) \(cwd)")
+    }
     return lines.joined(separator: "\n")
   }
 

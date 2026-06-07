@@ -35,14 +35,14 @@ prowl key --pane "$pane" enter --json
 
 ## Common Recipes
 
-Open a fresh pane for a project, then verify it is not yourself:
+Create a fresh tab for the current project, then verify it is not yourself:
 
 ```bash
-pane="$(prowl open /path/to/project --json | jq -r '.data.target.pane.id')"
+pane="$(prowl tab create --worktree /path/to/project --json | jq -r '.data.target.pane.id')"
 test "$pane" != "$self_pane"
 ```
 
-`open` always creates a new tab/pane for a path and brings Prowl forward. To select an already-open pane, use `focus`, not `open`.
+`prowl open /path` opens or focuses a matching project/path and may create a tab when needed. It is not guaranteed to create a new pane. Use `prowl tab create` for deterministic new terminal sessions.
 
 Run a command and capture its result:
 
@@ -71,10 +71,11 @@ Send multiline input from stdin:
 printf '%s\n' 'echo first' 'echo second' | prowl send --pane "$pane" --capture --timeout 30 --json
 ```
 
-Close a temporary tab/pane when done. There is no `prowl close` command:
+Close a temporary tab/pane when done:
 
 ```bash
-prowl key --pane "$pane" cmd-w --json
+prowl pane close --pane "$pane" --json
+prowl tab close --tab "$tab" --json
 ```
 
 ## Reading Agent Output
@@ -169,7 +170,8 @@ Avoid outer double quotes around payloads containing `$PWD`, `$VAR`, backticks, 
 
 - Never target by tab title alone; use `pane.id` plus path/cwd.
 - Never omit `--pane` for `send`, `key`, `read`, or `focus` in automation.
-- `open /path` creates a new tab/pane. It is not a refocus command.
+- `open /path` is a project/path navigation command. It may refocus an existing pane and is not a deterministic create command.
+- Use `tab create` when automation needs a fresh shell, and capture the returned `pane.id` before sending input.
 - Focused pane is not stable; `open` and `focus` change it.
 - `read --wait-stable` sees rendered screen only. It cannot recover content folded by a TUI.
 - `read` returning fewer lines than `--last` requested is normally `truncated: false` — the pane simply has less history and you already have it all, so do not retry for more. `truncated: true` flags a possibly-incomplete result (the full scrollback could not be read).
@@ -203,4 +205,4 @@ Always check the exit code before piping output into `jq`; parser-level errors p
 
 ## Command Set
 
-Current commands: `list`, `read`, `send`, `key`, `focus`, and `open` (default). There is no CLI `close` or `quit`; use key shortcuts such as `cmd-w` only after explicit target verification.
+Current commands: `list`, `read`, `send`, `key`, `focus`, `tab create`, `tab close`, `pane close`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with explicit `tab close` / `pane close` targets.

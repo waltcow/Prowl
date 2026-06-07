@@ -128,6 +128,37 @@ struct CLICommandEnvelopeTests {
     }
   }
 
+  @Test func envelopeTabCreateRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .tab(TabInput(action: .create, selector: .worktree("wt-main"), path: "/Projects/App"))
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+    if case .tab(let input) = decoded.command {
+      #expect(input.action == .create)
+      #expect(input.selector == .worktree("wt-main"))
+      #expect(input.path == "/Projects/App")
+    } else {
+      Issue.record("Expected .tab command")
+    }
+  }
+
+  @Test func envelopePaneCloseRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .text,
+      command: .pane(PaneInput(action: .close, selector: .pane("pane-1")))
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+    if case .pane(let input) = decoded.command {
+      #expect(input.action == .close)
+      #expect(input.selector == .pane("pane-1"))
+    } else {
+      Issue.record("Expected .pane command")
+    }
+  }
+
   // MARK: - Command name
 
   @Test func commandNameReturnsCorrectStrings() {
@@ -138,6 +169,8 @@ struct CLICommandEnvelopeTests {
       (.send(SendInput(text: "x")), "send"),
       (.key(KeyInput(rawToken: "tab", token: "tab")), "key"),
       (.read(ReadInput()), "read"),
+      (.tab(TabInput(action: .create)), "tab"),
+      (.pane(PaneInput(action: .close)), "pane"),
     ]
     for (command, expected) in commands {
       #expect(command.name == expected)
@@ -154,6 +187,8 @@ struct CLICommandEnvelopeTests {
       .send(SendInput(text: "test")),
       .key(KeyInput(rawToken: "enter", token: "enter")),
       .read(ReadInput()),
+      .tab(TabInput(action: .create)),
+      .pane(PaneInput(action: .close)),
     ]
     for cmd in commands {
       let envelope = CommandEnvelope(output: .json, command: cmd)

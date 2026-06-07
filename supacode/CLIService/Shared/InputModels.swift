@@ -133,3 +133,34 @@ public struct ReadInput: Codable, Sendable {
     self.waitTimeoutSeconds = waitTimeoutSeconds
   }
 }
+
+public enum TabAction: String, Codable, Sendable {
+  case create
+  case close
+}
+
+public struct TabInput: Codable, Sendable {
+  public let action: TabAction
+  public let selector: TargetSelector
+  public let path: String?
+
+  public init(action: TabAction, selector: TargetSelector = .none, path: String? = nil) {
+    self.action = action
+    self.selector = selector
+    self.path = path
+  }
+}
+
+public enum PaneAction: String, Codable, Sendable {
+  case close
+}
+
+public struct PaneInput: Codable, Sendable {
+  public let action: PaneAction
+  public let selector: TargetSelector
+
+  public init(action: PaneAction, selector: TargetSelector = .none) {
+    self.action = action
+    self.selector = selector
+  }
+}

@@ -20,6 +20,8 @@ public enum Command: Codable, Sendable {
   case send(SendInput)
   case key(KeyInput)
   case read(ReadInput)
+  case tab(TabInput)
+  case pane(PaneInput)
 
   public var name: String {
     switch self {
@@ -29,6 +31,8 @@ public enum Command: Codable, Sendable {
     case .send: "send"
     case .key: "key"
     case .read: "read"
+    case .tab: "tab"
+    case .pane: "pane"
     }
   }
 }

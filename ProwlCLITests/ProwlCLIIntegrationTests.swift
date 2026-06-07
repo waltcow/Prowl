@@ -155,6 +155,83 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     }
   }
 
+  func testTabCreateCommandRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "tab-create")
+    let response = try CommandResponse(
+      ok: true,
+      command: "tab",
+      schemaVersion: "prowl.cli.tab.v1",
+      data: RawJSON(encoding: makeTabPayload(action: .create))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["tab", "create", "--worktree", "App", "--path", "/Projects/App", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .tab(let input) = envelope.command {
+      XCTAssertEqual(input.action, .create)
+      XCTAssertEqual(input.selector, .worktree("App"))
+      XCTAssertEqual(input.path, "/Projects/App")
+    } else {
+      XCTFail("Expected tab command envelope")
+    }
+  }
+
+  func testTabCloseCommandRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "tab-close")
+    let response = try CommandResponse(
+      ok: true,
+      command: "tab",
+      schemaVersion: "prowl.cli.tab.v1",
+      data: RawJSON(encoding: makeTabPayload(action: .close))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["tab", "close", "--tab", "tab-123", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .tab(let input) = envelope.command {
+      XCTAssertEqual(input.action, .close)
+      XCTAssertEqual(input.selector, .tab("tab-123"))
+      XCTAssertNil(input.path)
+    } else {
+      XCTFail("Expected tab command envelope")
+    }
+  }
+
+  func testPaneCloseCommandRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "pane-close")
+    let response = try CommandResponse(
+      ok: true,
+      command: "pane",
+      schemaVersion: "prowl.cli.pane.v1",
+      data: RawJSON(encoding: makePanePayload(action: .close))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["pane", "close", "--pane", "pane-123", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .pane(let input) = envelope.command {
+      XCTAssertEqual(input.action, .close)
+      XCTAssertEqual(input.selector, .pane("pane-123"))
+    } else {
+      XCTFail("Expected pane command envelope")
+    }
+  }
+
   func testFocusRejectsMultipleSelectorsBeforeTransport() throws {
     let result = try runProwl(args: ["focus", "--worktree", "Prowl", "--pane", "pane-123", "--json"])
 
@@ -1238,6 +1315,28 @@ final class ProwlCLIIntegrationTests: XCTestCase {
 
     let requestData = try XCTUnwrap(server.waitForRequest(timeout: 2.0), "No request received by mock server")
     return (requestData, result)
+  }
+
+  private func makeTabPayload(action: TabAction) -> TabCommandPayload {
+    TabCommandPayload(action: action, target: makeTabTarget())
+  }
+
+  private func makePanePayload(action: PaneAction) -> PaneCommandPayload {
+    PaneCommandPayload(action: action, target: makeTabTarget())
+  }
+
+  private func makeTabTarget() -> TabTarget {
+    TabTarget(
+      worktree: TabTargetWorktree(
+        id: "App:/Projects/App",
+        name: "App",
+        path: "/Projects/App",
+        rootPath: "/Projects/App",
+        kind: "git"
+      ),
+      tab: TabTargetTab(id: "tab-123", title: "App 1", selected: true),
+      pane: TabTargetPane(id: "pane-123", title: "zsh", cwd: "/Projects/App", focused: true)
+    )
   }
 
   private func runProwl(

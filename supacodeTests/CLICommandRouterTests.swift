@@ -77,6 +77,28 @@ struct CLICommandRouterTests {
     #expect(response.command == "read")
   }
 
+  @MainActor
+  @Test func routerDispatchesTabToTabHandler() async {
+    let router = CLICommandRouter()
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .tab(TabInput(action: .create))
+    )
+    let response = await router.route(envelope)
+    #expect(response.command == "tab")
+  }
+
+  @MainActor
+  @Test func routerDispatchesPaneToPaneHandler() async {
+    let router = CLICommandRouter()
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .pane(PaneInput(action: .close))
+    )
+    let response = await router.route(envelope)
+    #expect(response.command == "pane")
+  }
+
   // MARK: - Custom handler injection
 
   @MainActor
@@ -106,6 +128,8 @@ struct CLICommandRouterTests {
       .send(SendInput(text: "x")),
       .key(KeyInput(rawToken: "tab", token: "tab")),
       .read(ReadInput()),
+      .tab(TabInput(action: .create)),
+      .pane(PaneInput(action: .close)),
     ]
     let router = CLICommandRouter()
     for cmd in commands {

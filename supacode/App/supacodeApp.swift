@@ -464,13 +464,77 @@ struct SupacodeApp: App {
         return KeyDeliveryResult(attempted: repeatCount, delivered: delivered)
       }
     )
+    let tabHandler = TabCommandHandler(
+      resolveProvider: { selector in
+        let resolver = TargetResolver {
+          TargetResolutionSnapshotBuilder.makeSnapshot(
+            repositoriesState: appStore.state.repositories,
+            terminalManager: terminalManager
+          )
+        }
+        return resolver.resolve(selector).map { TabResolvedTarget(from: $0) }
+      },
+      createTab: { target, path in
+        let repositories = Array(appStore.state.repositories.repositories)
+        guard let worktree = resolveCLITerminalWorktree(id: target.worktreeID, repositories: repositories) else {
+          return nil
+        }
+        selectCLIWorktreeContext(
+          worktreeID: target.worktreeID,
+          appStore: appStore,
+          terminalManager: terminalManager
+        )
+        let state = terminalManager.state(for: worktree)
+        let directory = path.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        guard let tabID = state.createTab(workingDirectoryOverride: directory) else {
+          return nil
+        }
+        let resolver = makeTargetResolver(appStore: appStore, terminalManager: terminalManager)
+        switch resolver.resolve(.tab(tabID.rawValue.uuidString)) {
+        case .success(let resolved):
+          return TabResolvedTarget(from: resolved)
+        case .failure:
+          return nil
+        }
+      },
+      closeTab: { target in
+        guard let tabUUID = UUID(uuidString: target.tabID),
+          let state = terminalManager.stateIfExists(for: target.worktreeID)
+        else {
+          return false
+        }
+        return state.closeTab(TerminalTabID(rawValue: tabUUID))
+      }
+    )
+    let paneHandler = PaneCommandHandler(
+      resolveProvider: { selector in
+        let resolver = TargetResolver {
+          TargetResolutionSnapshotBuilder.makeSnapshot(
+            repositoriesState: appStore.state.repositories,
+            terminalManager: terminalManager
+          )
+        }
+        return resolver.resolve(selector).map { TabResolvedTarget(from: $0) }
+      },
+      closePane: { target in
+        guard let paneID = UUID(uuidString: target.paneID),
+          let state = terminalManager.stateIfExists(for: target.worktreeID)
+        else {
+          return false
+        }
+        guard state.focusSurface(id: paneID) else { return false }
+        return state.closeFocusedSurface()
+      }
+    )
     return CLICommandRouter(
       openHandler: openHandler,
       listHandler: listHandler,
       focusHandler: focusHandler,
       sendHandler: sendHandler,
       keyHandler: keyHandler,
-      readHandler: readHandler
+      readHandler: readHandler,
+      tabHandler: tabHandler,
+      paneHandler: paneHandler
     )
   }
 

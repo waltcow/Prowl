@@ -38,6 +38,12 @@ public enum CLIErrorCode {
   // Read
   public static let readFailed = "READ_FAILED"
 
+  // Tab
+  public static let tabFailed = "TAB_FAILED"
+
+  // Pane
+  public static let paneFailed = "PANE_FAILED"
+
   // Transport
   public static let transportFailed = "TRANSPORT_FAILED"
   public static let timeout = "TIMEOUT"

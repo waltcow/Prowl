@@ -17,6 +17,8 @@ struct ProwlCommand: ParsableCommand {
       SendCommand.self,
       KeyCommand.self,
       ReadCommand.self,
+      TabCommand.self,
+      PaneCommand.self,
     ],
     defaultSubcommand: OpenCommand.self
   )
