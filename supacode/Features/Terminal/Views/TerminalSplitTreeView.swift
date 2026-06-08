@@ -391,15 +391,17 @@ struct TerminalSplitTreeAXContainer: NSViewRepresentable {
 
   func updateNSView(_ nsView: TerminalSplitAXContainerView, context: Context) {
     nsView.update(
-      rootView: AnyView(
-        TerminalSplitTreeView(
-          tree: tree,
-          activeSurfaceID: activeSurfaceID,
-          unfocusedSplitOverlay: unfocusedSplitOverlay,
-          splitDivider: splitDivider,
-          hasNotification: hasNotification,
-          action: action
-        )
+      // Concrete type (not `AnyView`): erasing the type defeats SwiftUI's
+      // diffing, forcing a full re-render of the split tree on every assignment
+      // — e.g. once per terminal notification. The concrete root lets the host
+      // skip unchanged content.
+      rootView: TerminalSplitTreeView(
+        tree: tree,
+        activeSurfaceID: activeSurfaceID,
+        unfocusedSplitOverlay: unfocusedSplitOverlay,
+        splitDivider: splitDivider,
+        hasNotification: hasNotification,
+        action: action
       ),
       panes: tree.visibleLeaves()
     )
@@ -408,12 +410,12 @@ struct TerminalSplitTreeAXContainer: NSViewRepresentable {
 
 @MainActor
 final class TerminalSplitAXContainerView: NSView {
-  private var hostingView: NSHostingView<AnyView>?
+  private var hostingView: NSHostingView<TerminalSplitTreeView>?
   private var panes: [GhosttySurfaceView] = []
   private var panesLabel: String = "Terminal split: 0 panes"
   private var lastPaneIDs: [UUID] = []
 
-  func update(rootView: AnyView, panes: [GhosttySurfaceView]) {
+  func update(rootView: TerminalSplitTreeView, panes: [GhosttySurfaceView]) {
     if let hostingView {
       hostingView.rootView = rootView
     } else {
