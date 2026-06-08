@@ -315,7 +315,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     }
     registerForDraggedTypes(Array(Self.dropTypes))
 
-    eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyUp, .leftMouseDown]) {
+    eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyUp, .leftMouseDown, .flagsChanged]) {
       [weak self] event in
       self?.localEventHandler(event)
     }

@@ -6,6 +6,11 @@ extension GhosttySurfaceView {
   func translationState(_ event: NSEvent, surface: ghostty_surface_t) -> (
     NSEvent, NSEvent.ModifierFlags
   ) {
+    // `characters`-family APIs throw on non-key events, so skip translation for a
+    // modifier-only event (otherwise a bare Cmd aborts the send before Ghostty sees it).
+    guard event.type == .keyDown || event.type == .keyUp else {
+      return (event, event.modifierFlags)
+    }
     let translatedModsGhostty = ghostty_surface_key_translation_mods(
       surface, ghosttyMods(event.modifierFlags))
     let translatedMods = appKitMods(translatedModsGhostty)

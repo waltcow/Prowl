@@ -148,6 +148,8 @@ extension GhosttySurfaceView {
       localEventKeyUp(event)
     case .leftMouseDown:
       localEventLeftMouseDown(event)
+    case .flagsChanged:
+      localEventFlagsChanged(event)
     default:
       event
     }
@@ -158,6 +160,15 @@ extension GhosttySurfaceView {
     guard focused else { return event }
     keyUp(with: event)
     return nil
+  }
+
+  // The responder chain delivers flagsChanged only to the first responder, so forward it to
+  // every other surface; a hovered but unfocused terminal still needs to refresh its links
+  // (e.g. holding Cmd over a link in a non-focused split, without moving the mouse).
+  func localEventFlagsChanged(_ event: NSEvent) -> NSEvent? {
+    guard window != nil, window?.firstResponder !== self else { return event }
+    flagsChanged(with: event)
+    return event
   }
 
   func localEventLeftMouseDown(_ event: NSEvent) -> NSEvent? {
