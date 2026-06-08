@@ -697,6 +697,11 @@ private struct CommandPaletteRowView: View {
         }
       }
       .padding(8)
+      // The selected row paints an accent background; force a dark color scheme
+      // for its content so the label and symbols stay legible in light mode.
+      .transformEnvironment(\.colorScheme) { colorScheme in
+        if isSelected { colorScheme = .dark }
+      }
       .background(rowBackground)
       .clipShape(.rect(cornerRadius: 14))
     }
