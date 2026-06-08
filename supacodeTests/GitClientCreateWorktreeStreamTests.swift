@@ -36,6 +36,27 @@ nonisolated final class GitShellInvocationRecorder: @unchecked Sendable {
 }
 
 struct GitClientCreateWorktreeStreamTests {
+  private func makeRequest(
+    name: String = "new-wt",
+    repoRoot: URL,
+    baseDirectory: URL? = nil,
+    copyFiles: GitWorktreeCreateRequest.CopyFiles = GitWorktreeCreateRequest.CopyFiles(
+      ignored: false,
+      untracked: false
+    ),
+    baseRef: String = "",
+    directoryOverride: URL? = nil
+  ) -> GitWorktreeCreateRequest {
+    GitWorktreeCreateRequest(
+      name: name,
+      repoRoot: repoRoot,
+      baseDirectory: baseDirectory ?? URL(fileURLWithPath: "/tmp/repo/.worktrees"),
+      copyFiles: copyFiles,
+      baseRef: baseRef,
+      directoryOverride: directoryOverride
+    )
+  }
+
   @Test func createWorktreeStreamAddsVerboseWhenCopyingFiles() async throws {
     let recorder = GitShellInvocationRecorder()
     let shell = ShellClient(
@@ -64,11 +85,12 @@ struct GitClientCreateWorktreeStreamTests {
     let repoRoot = URL(fileURLWithPath: "/tmp/repo")
 
     for try await _ in client.createWorktreeStream(
-      named: "swift-otter",
-      in: repoRoot,
-      baseDirectory: URL(fileURLWithPath: "/tmp/repo/.worktrees"),
-      copyFiles: (ignored: true, untracked: false),
-      baseRef: "origin/main"
+      makeRequest(
+        name: "swift-otter",
+        repoRoot: repoRoot,
+        copyFiles: GitWorktreeCreateRequest.CopyFiles(ignored: true, untracked: false),
+        baseRef: "origin/main"
+      )
     ) {}
 
     let snapshot = recorder.snapshot()
@@ -112,11 +134,11 @@ struct GitClientCreateWorktreeStreamTests {
     var outputLines: [ShellStreamLine] = []
     var finishedWorktree: Worktree?
     for try await event in client.createWorktreeStream(
-      named: "swift-otter",
-      in: repoRoot,
-      baseDirectory: URL(fileURLWithPath: "/tmp/repo/.worktrees"),
-      copyFiles: (ignored: true, untracked: true),
-      baseRef: ""
+      makeRequest(
+        name: "swift-otter",
+        repoRoot: repoRoot,
+        copyFiles: GitWorktreeCreateRequest.CopyFiles(ignored: true, untracked: true)
+      )
     ) {
       switch event {
       case .outputLine(let line):
@@ -157,11 +179,7 @@ struct GitClientCreateWorktreeStreamTests {
     let repoRoot = URL(fileURLWithPath: "/tmp/repo")
     var finishedWorktree: Worktree?
     for try await event in client.createWorktreeStream(
-      named: "new-wt",
-      in: repoRoot,
-      baseDirectory: URL(fileURLWithPath: "/tmp/repo/.worktrees"),
-      copyFiles: (ignored: false, untracked: false),
-      baseRef: ""
+      makeRequest(repoRoot: repoRoot)
     ) {
       if case .finished(let worktree) = event {
         finishedWorktree = worktree
@@ -188,11 +206,7 @@ struct GitClientCreateWorktreeStreamTests {
     var outputLines: [ShellStreamLine] = []
     var finishedWorktree: Worktree?
     for try await event in client.createWorktreeStream(
-      named: "new-wt",
-      in: repoRoot,
-      baseDirectory: URL(fileURLWithPath: "/tmp/repo/.worktrees"),
-      copyFiles: (ignored: false, untracked: false),
-      baseRef: ""
+      makeRequest(repoRoot: repoRoot)
     ) {
       switch event {
       case .outputLine(let line):
@@ -230,11 +244,7 @@ struct GitClientCreateWorktreeStreamTests {
 
     do {
       for try await _ in client.createWorktreeStream(
-        named: "new-wt",
-        in: repoRoot,
-        baseDirectory: URL(fileURLWithPath: "/tmp/repo/.worktrees"),
-        copyFiles: (ignored: false, untracked: false),
-        baseRef: ""
+        makeRequest(repoRoot: repoRoot)
       ) {}
       Issue.record("Expected createWorktreeStream to throw when stdout path is missing")
     } catch let error as GitClientError {
