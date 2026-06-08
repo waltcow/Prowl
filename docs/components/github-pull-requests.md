@@ -23,6 +23,10 @@ itself.
   expected / skipped) with failing/success counts and per-check detail URLs.
 - **Merge readiness:** Prowl evaluates blockers in order — merge conflicts,
   changes requested, failed checks, other non-mergeable states.
+- **Merge queue:** for repos that use GitHub merge queues, an open PR waiting in
+  the queue shows a brown **Queued** state in the sidebar and badges, and the PR
+  checks popover adds an "In merge queue" row with its position and estimated
+  time remaining.
 
 PR status can surface as a badge on the worktree and as a summary in the command
 palette.

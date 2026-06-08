@@ -35,6 +35,7 @@ struct WorktreeRow: View {
     let displayAddedLines = info?.addedLines
     let displayRemovedLines = info?.removedLines
     let mergeReadiness = pullRequestMergeReadiness(for: display.pullRequest)
+    let isQueued = display.pullRequest.flatMap(PullRequestMergeQueueStatus.init(pullRequest:)) != nil
     let hasChangeCounts = displayAddedLines != nil && displayRemovedLines != nil
     let showsPullRequestTag = display.pullRequest != nil && display.pullRequestBadgeStyle != nil
     let nameColor = colorScheme == .dark ? Color.white : Color.primary
@@ -129,6 +130,7 @@ struct WorktreeRow: View {
         pullRequestNumber: display.pullRequest?.number,
         pullRequestState: display.pullRequestState,
         mergeReadiness: mergeReadiness,
+        isQueued: isQueued,
         shortcutHint: shortcutHint,
         showsShortcutHint: showsShortcutHint
       )
@@ -179,6 +181,7 @@ private struct WorktreeRowInfoView: View {
   let pullRequestNumber: Int?
   let pullRequestState: String?
   let mergeReadiness: PullRequestMergeReadiness?
+  let isQueued: Bool
   let shortcutHint: String?
   let showsShortcutHint: Bool
 
@@ -224,6 +227,13 @@ private struct WorktreeRowInfoView: View {
       appendSeparator()
       var segment = AttributedString("Merged")
       segment.foregroundColor = PullRequestBadgeStyle.mergedColor
+      result.append(segment)
+    } else if isQueued {
+      // A queued PR is mid-merge, so the queue state takes priority over the
+      // merge-readiness label.
+      appendSeparator()
+      var segment = AttributedString("Queued")
+      segment.foregroundColor = PullRequestBadgeStyle.queuedColor
       result.append(segment)
     } else if let mergeReadiness {
       appendSeparator()

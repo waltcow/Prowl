@@ -537,6 +537,11 @@ nonisolated private func makeCrossRepoBatchQuery(
                 name
                 owner { login }
               }
+              mergeQueueEntry {
+                position
+                estimatedTimeToMerge
+                state
+              }
               statusCheckRollup {
                 contexts(first: 100) {
                   nodes {
@@ -954,6 +959,11 @@ nonisolated private func makeBatchPullRequestsQuery(
           headRepository {
             name
             owner { login }
+          }
+          mergeQueueEntry {
+            position
+            estimatedTimeToMerge
+            state
           }
           statusCheckRollup {
             contexts(first: 100) {
