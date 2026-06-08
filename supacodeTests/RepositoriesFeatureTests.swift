@@ -1916,7 +1916,7 @@ struct RepositoriesFeatureTests {
       $0.gitClient.automaticWorktreeBaseRef = { _ in "origin/main" }
       $0.gitClient.ignoredFileCount = { _ in 2 }
       $0.gitClient.untrackedFileCount = { _ in 1 }
-      $0.gitClient.createWorktreeStream = { _, _, _, _, _, _, _ in
+      $0.gitClient.createWorktreeStream = { _ in
         AsyncThrowingStream { continuation in
           continuation.yield(.outputLine(ShellStreamLine(source: .stderr, text: "[1/2] copy .env")))
           continuation.yield(.outputLine(ShellStreamLine(source: .stderr, text: "[2/2] copy .cache")))
@@ -1964,7 +1964,7 @@ struct RepositoriesFeatureTests {
       }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, _, _, _, _, _ in
+      $0.gitClient.createWorktreeStream = { _ in
         events.withValue { $0.append("create") }
         return AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
@@ -2015,7 +2015,7 @@ struct RepositoriesFeatureTests {
       }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, _, _, _, _, _ in
+      $0.gitClient.createWorktreeStream = { _ in
         AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
           continuation.finish()
@@ -2060,7 +2060,7 @@ struct RepositoriesFeatureTests {
       }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, _, _, _, _, _ in
+      $0.gitClient.createWorktreeStream = { _ in
         AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
           continuation.finish()
@@ -2105,7 +2105,7 @@ struct RepositoriesFeatureTests {
       }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, _, _, _, _, _ in
+      $0.gitClient.createWorktreeStream = { _ in
         AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
           continuation.finish()
@@ -2157,8 +2157,8 @@ struct RepositoriesFeatureTests {
       $0.gitClient.automaticWorktreeBaseRef = { _ in "origin/main" }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, baseDirectory, _, _, _, _ in
-        observedBaseDirectory.withValue { $0 = baseDirectory }
+      $0.gitClient.createWorktreeStream = { request in
+        observedBaseDirectory.withValue { $0 = request.baseDirectory }
         return AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
           continuation.finish()
@@ -2209,8 +2209,8 @@ struct RepositoriesFeatureTests {
       $0.gitClient.automaticWorktreeBaseRef = { _ in "origin/main" }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, baseDirectory, _, _, _, _ in
-        observedBaseDirectory.withValue { $0 = baseDirectory }
+      $0.gitClient.createWorktreeStream = { request in
+        observedBaseDirectory.withValue { $0 = request.baseDirectory }
         return AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
           continuation.finish()
@@ -2262,8 +2262,8 @@ struct RepositoriesFeatureTests {
       $0.gitClient.automaticWorktreeBaseRef = { _ in "origin/main" }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, _, copyIgnored, copyUntracked, _, _ in
-        observedCopyFlags.withValue { $0 = (copyIgnored, copyUntracked) }
+      $0.gitClient.createWorktreeStream = { request in
+        observedCopyFlags.withValue { $0 = (request.copyFiles.ignored, request.copyFiles.untracked) }
         return AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
           continuation.finish()
@@ -2311,8 +2311,8 @@ struct RepositoriesFeatureTests {
       $0.gitClient.automaticWorktreeBaseRef = { _ in "origin/main" }
       $0.gitClient.ignoredFileCount = { _ in 0 }
       $0.gitClient.untrackedFileCount = { _ in 0 }
-      $0.gitClient.createWorktreeStream = { _, _, _, copyIgnored, copyUntracked, _, _ in
-        observedCopyFlags.withValue { $0 = (copyIgnored, copyUntracked) }
+      $0.gitClient.createWorktreeStream = { request in
+        observedCopyFlags.withValue { $0 = (request.copyFiles.ignored, request.copyFiles.untracked) }
         return AsyncThrowingStream { continuation in
           continuation.yield(.finished(createdWorktree))
           continuation.finish()
@@ -2348,7 +2348,7 @@ struct RepositoriesFeatureTests {
       $0.gitClient.automaticWorktreeBaseRef = { _ in "origin/main" }
       $0.gitClient.ignoredFileCount = { _ in 2 }
       $0.gitClient.untrackedFileCount = { _ in 1 }
-      $0.gitClient.createWorktreeStream = { _, _, _, _, _, _, _ in
+      $0.gitClient.createWorktreeStream = { _ in
         AsyncThrowingStream { continuation in
           continuation.yield(.outputLine(ShellStreamLine(source: .stderr, text: "[1/2] copy .env")))
           continuation.finish(throwing: GitClientError.commandFailed(command: "wt sw", message: "boom"))

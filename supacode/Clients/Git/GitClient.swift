@@ -209,11 +209,13 @@ struct GitClient {
   ) async throws -> Worktree {
     var createdWorktree: Worktree?
     for try await event in createWorktreeStream(
-      named: name,
-      in: repoRoot,
-      baseDirectory: baseDirectory,
-      copyFiles: copyFiles,
-      baseRef: baseRef
+      GitWorktreeCreateRequest(
+        name: name,
+        repoRoot: repoRoot,
+        baseDirectory: baseDirectory,
+        copyFiles: GitWorktreeCreateRequest.CopyFiles(ignored: copyFiles.ignored, untracked: copyFiles.untracked),
+        baseRef: baseRef
+      )
     ) {
       if case .finished(let worktree) = event {
         createdWorktree = worktree
@@ -236,25 +238,20 @@ struct GitClient {
   }
 
   nonisolated func createWorktreeStream(
-    named name: String,
-    in repoRoot: URL,
-    baseDirectory: URL,
-    copyFiles: (ignored: Bool, untracked: Bool),
-    baseRef: String,
-    directoryOverride: URL? = nil
+    _ request: GitWorktreeCreateRequest
   ) -> AsyncThrowingStream<GitWorktreeCreateEvent, Error> {
     AsyncThrowingStream { continuation in
       Task {
-        let repositoryRootURL = repoRoot.standardizedFileURL
+        let repositoryRootURL = request.repoRoot.standardizedFileURL
         do {
           let wtURL = try wtScriptURL()
           let arguments = createWorktreeArguments(
-            baseDirectory: baseDirectory,
-            name: name,
-            copyIgnored: copyFiles.ignored,
-            copyUntracked: copyFiles.untracked,
-            baseRef: baseRef,
-            directoryOverride: directoryOverride
+            baseDirectory: request.baseDirectory,
+            name: request.name,
+            copyIgnored: request.copyFiles.ignored,
+            copyUntracked: request.copyFiles.untracked,
+            baseRef: request.baseRef,
+            directoryOverride: request.directoryOverride
           )
           let envURL = URL(fileURLWithPath: "/usr/bin/env")
           let localeArguments = ["LANG=C", "LC_ALL=C", "LC_MESSAGES=C"]
@@ -265,7 +262,7 @@ struct GitClient {
             for try await streamEvent in shell.runLoginStream(
               envURL,
               invocationArguments,
-              repoRoot
+              request.repoRoot
             ) {
               switch streamEvent {
               case .line(let line):
@@ -292,7 +289,7 @@ struct GitClient {
                 let createdAt = resourceValues?.creationDate ?? resourceValues?.contentModificationDate
                 let worktree = Worktree(
                   id: id,
-                  name: name,
+                  name: request.name,
                   detail: detail,
                   workingDirectory: worktreeURL,
                   repositoryRootURL: repositoryRootURL,

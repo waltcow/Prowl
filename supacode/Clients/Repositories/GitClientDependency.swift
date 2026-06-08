@@ -22,16 +22,7 @@ struct GitClientDependency: Sendable {
       _ baseRef: String
     ) async throws
       -> Worktree
-  var createWorktreeStream:
-    @Sendable (
-      _ name: String,
-      _ repoRoot: URL,
-      _ baseDirectory: URL,
-      _ copyIgnored: Bool,
-      _ copyUntracked: Bool,
-      _ baseRef: String,
-      _ directoryOverride: URL?
-    ) -> AsyncThrowingStream<GitWorktreeCreateEvent, Error>
+  var createWorktreeStream: @Sendable (GitWorktreeCreateRequest) -> AsyncThrowingStream<GitWorktreeCreateEvent, Error>
   var removeWorktree: @Sendable (_ worktree: Worktree, _ deleteBranch: Bool) async throws -> URL
   var deleteLocalBranch:
     @Sendable (_ branchName: String, _ repoRoot: URL, _ force: Bool) async throws
@@ -69,15 +60,8 @@ extension GitClientDependency: DependencyKey {
         baseRef: baseRef
       )
     },
-    createWorktreeStream: { name, repoRoot, baseDirectory, copyIgnored, copyUntracked, baseRef, directoryOverride in
-      GitClient().createWorktreeStream(
-        named: name,
-        in: repoRoot,
-        baseDirectory: baseDirectory,
-        copyFiles: (ignored: copyIgnored, untracked: copyUntracked),
-        baseRef: baseRef,
-        directoryOverride: directoryOverride
-      )
+    createWorktreeStream: { request in
+      GitClient().createWorktreeStream(request)
     },
     removeWorktree: { worktree, deleteBranch in
       try await GitClient().removeWorktree(worktree, deleteBranch: deleteBranch)

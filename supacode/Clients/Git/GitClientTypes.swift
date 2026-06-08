@@ -39,6 +39,36 @@ enum GitClientError: LocalizedError {
   }
 }
 
+nonisolated struct GitWorktreeCreateRequest: Equatable, Sendable {
+  struct CopyFiles: Equatable, Sendable {
+    var ignored: Bool
+    var untracked: Bool
+  }
+
+  var name: String
+  var repoRoot: URL
+  var baseDirectory: URL
+  var copyFiles: CopyFiles
+  var baseRef: String
+  var directoryOverride: URL?
+
+  init(
+    name: String,
+    repoRoot: URL,
+    baseDirectory: URL,
+    copyFiles: CopyFiles,
+    baseRef: String,
+    directoryOverride: URL? = nil
+  ) {
+    self.name = name
+    self.repoRoot = repoRoot
+    self.baseDirectory = baseDirectory
+    self.copyFiles = copyFiles
+    self.baseRef = baseRef
+    self.directoryOverride = directoryOverride
+  }
+}
+
 enum GitWorktreeCreateEvent: Equatable, Sendable {
   case outputLine(ShellStreamLine)
   case finished(Worktree)

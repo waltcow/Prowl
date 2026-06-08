@@ -487,13 +487,14 @@ extension RepositoriesFeature {
             )
           )
           let stream = createWorktreeStream(
-            name,
-            repository.rootURL,
-            worktreeBaseDirectory,
-            copyIgnored,
-            copyUntracked,
-            resolvedBaseRef,
-            directoryOverride
+            GitWorktreeCreateRequest(
+              name: name,
+              repoRoot: repository.rootURL,
+              baseDirectory: worktreeBaseDirectory,
+              copyFiles: GitWorktreeCreateRequest.CopyFiles(ignored: copyIgnored, untracked: copyUntracked),
+              baseRef: resolvedBaseRef,
+              directoryOverride: directoryOverride
+            )
           )
           for try await event in stream {
             switch event {
