@@ -302,12 +302,11 @@ private struct ShelfSwipeEventMonitor: NSViewRepresentable {
     private var accumulatedDeltaX: CGFloat = 0
     private var accumulatedDeltaY: CGFloat = 0
     private var lastEventTimestamp: TimeInterval = 0
-    private var cooldownUntil: TimeInterval = 0
+    private var didTriggerCurrentGesture = false
 
     private let swipeThreshold: CGFloat = 80
     private let horizontalDominanceRatio: CGFloat = 1.6
     private let eventGapResetInterval: TimeInterval = 0.25
-    private let triggerCooldown: TimeInterval = 0.35
 
     func installIfNeeded() {
       guard monitor == nil else { return }
@@ -329,22 +328,34 @@ private struct ShelfSwipeEventMonitor: NSViewRepresentable {
         event.window === window,
         view.bounds.contains(view.convert(event.locationInWindow, from: nil))
       else {
-        resetAccumulatedDeltas()
+        resetGesture()
         return event
       }
 
       if event.phase.contains(.began)
         || event.timestamp - lastEventTimestamp > eventGapResetInterval
       {
-        resetAccumulatedDeltas()
+        resetGesture()
       }
       lastEventTimestamp = event.timestamp
+
+      if didTriggerCurrentGesture {
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled)
+          || event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
+        {
+          resetGesture()
+        }
+        return isHorizontallyDominant(event) ? nil : event
+      }
+
+      guard event.momentumPhase.isEmpty else {
+        return event
+      }
 
       accumulatedDeltaX += event.scrollingDeltaX
       accumulatedDeltaY += event.scrollingDeltaY
 
-      guard event.timestamp >= cooldownUntil,
-        abs(accumulatedDeltaX) >= swipeThreshold,
+      guard abs(accumulatedDeltaX) >= swipeThreshold,
         abs(accumulatedDeltaX) > abs(accumulatedDeltaY) * horizontalDominanceRatio
       else {
         return event
@@ -352,9 +363,20 @@ private struct ShelfSwipeEventMonitor: NSViewRepresentable {
 
       let direction: ShelfSwipeDirection = accumulatedDeltaX > 0 ? .next : .previous
       resetAccumulatedDeltas()
-      cooldownUntil = event.timestamp + triggerCooldown
+      didTriggerCurrentGesture = true
       onSwipe(direction)
       return nil
+    }
+
+    private func isHorizontallyDominant(_ event: NSEvent) -> Bool {
+      let absDeltaX = abs(event.scrollingDeltaX)
+      let absDeltaY = abs(event.scrollingDeltaY)
+      return absDeltaX > 0 && absDeltaX > absDeltaY * horizontalDominanceRatio
+    }
+
+    private func resetGesture() {
+      resetAccumulatedDeltas()
+      didTriggerCurrentGesture = false
     }
 
     private func resetAccumulatedDeltas() {
