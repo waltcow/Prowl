@@ -51,4 +51,26 @@ struct WindowSurfacingTests {
     #expect(MainWindowSurface.visibleMainWindowCount(in: snapshots) == 1)
     #expect(MainWindowSurface.visibleWindowCount(in: snapshots) == 3)
   }
+
+  @MainActor
+  @Test func windowlessStallReportRequiresActiveAppWithoutVisibleMainWindow() {
+    #expect(
+      WindowLifecycleDiagnostics.windowlessStallReportDecision(
+        appIsActive: false,
+        snapshots: []
+      ) == .suppress
+    )
+    #expect(
+      WindowLifecycleDiagnostics.windowlessStallReportDecision(
+        appIsActive: true,
+        snapshots: [MainWindowSurface.Snapshot(identifier: WindowID.main, isVisible: true)]
+      ) == .resolveVisibleMainWindow
+    )
+    #expect(
+      WindowLifecycleDiagnostics.windowlessStallReportDecision(
+        appIsActive: true,
+        snapshots: [MainWindowSurface.Snapshot(identifier: WindowID.main, isVisible: false)]
+      ) == .report
+    )
+  }
 }

@@ -54,26 +54,30 @@ enum MainWindowSurface {
     let isVisible: Bool
   }
 
+  static func snapshots(in windows: [NSWindow]) -> [Snapshot] {
+    windows.map(snapshot(for:))
+  }
+
   static func mainWindowCandidate(in windows: [NSWindow]) -> NSWindow? {
-    let snapshots = windows.map(snapshot(for:))
+    let snapshots = snapshots(in: windows)
     guard let index = mainWindowIndex(in: snapshots) else { return nil }
     return windows[index]
   }
 
   static func hasVisibleMainWindow(in windows: [NSWindow]) -> Bool {
-    hasVisibleMainWindow(in: windows.map(snapshot(for:)))
+    hasVisibleMainWindow(in: snapshots(in: windows))
   }
 
   static func mainWindowCount(in windows: [NSWindow]) -> Int {
-    mainWindowCount(in: windows.map(snapshot(for:)))
+    mainWindowCount(in: snapshots(in: windows))
   }
 
   static func visibleMainWindowCount(in windows: [NSWindow]) -> Int {
-    visibleMainWindowCount(in: windows.map(snapshot(for:)))
+    visibleMainWindowCount(in: snapshots(in: windows))
   }
 
   static func visibleWindowCount(in windows: [NSWindow]) -> Int {
-    visibleWindowCount(in: windows.map(snapshot(for:)))
+    visibleWindowCount(in: snapshots(in: windows))
   }
 
   static func mainWindowIndex(in snapshots: [Snapshot]) -> Int? {
@@ -107,6 +111,12 @@ enum MainWindowSurface {
 
 @MainActor
 enum WindowLifecycleDiagnostics {
+  enum WindowlessStallReportDecision: Equatable {
+    case report
+    case suppress
+    case resolveVisibleMainWindow
+  }
+
   private static let logger = SupaLogger("WindowLifecycle")
   private static let heartbeatInterval: TimeInterval = 1.0
   private static let stallThreshold: TimeInterval = 0.3
@@ -237,9 +247,33 @@ enum WindowLifecycleDiagnostics {
 
   private static func reportWindowlessStallIfNeeded(lag: TimeInterval) {
     guard !didReportWindowlessStall else { return }
+    let windows = NSApplication.shared.windows
+    switch Self.windowlessStallReportDecision(
+      appIsActive: NSApp.isActive,
+      snapshots: MainWindowSurface.snapshots(in: windows)
+    ) {
+    case .report:
+      break
+    case .suppress:
+      return
+    case .resolveVisibleMainWindow:
+      noteMainWindowAppeared()
+      return
+    }
     didReportWindowlessStall = true
     let elapsed = windowlessSince.map { Date.now.timeIntervalSince($0) } ?? 0
     captureSentryEvent(kind: "windowless_main_thread_stall", elapsed: elapsed, lag: lag)
+  }
+
+  static func windowlessStallReportDecision(
+    appIsActive: Bool,
+    snapshots: [MainWindowSurface.Snapshot]
+  ) -> WindowlessStallReportDecision {
+    if MainWindowSurface.hasVisibleMainWindow(in: snapshots) {
+      return .resolveVisibleMainWindow
+    }
+    guard appIsActive else { return .suppress }
+    return .report
   }
 
   private static func captureSentryEvent(kind: String, elapsed: TimeInterval, lag: TimeInterval?) {
