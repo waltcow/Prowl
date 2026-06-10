@@ -219,12 +219,12 @@ extension RepositoriesFeature {
       state.alert = nil
       state.loadFailuresByID.removeValue(forKey: repositoryID)
       state.repositoryRoots.removeAll {
-        $0.standardizedFileURL.path(percentEncoded: false) == repositoryID
+        isSameRepositoryPath($0.standardizedFileURL.path(percentEncoded: false), repositoryID)
       }
       let remainingRoots = state.repositoryRoots
       return .run { send in
         let loadedEntries = await loadPersistedRepositoryEntries(fallbackRoots: remainingRoots)
-        let remainingEntries = loadedEntries.filter { $0.path != repositoryID }
+        let remainingEntries = loadedEntries.filter { !isSameRepositoryPath($0.path, repositoryID) }
         await repositoryPersistence.saveRepositoryEntries(remainingEntries)
         let roots = remainingEntries.map { URL(fileURLWithPath: $0.path) }
         let (repositories, failures) = await loadRepositoriesData(remainingEntries)
@@ -252,7 +252,7 @@ extension RepositoriesFeature {
         .send(.delegate(.selectedWorktreeChanged(selectedWorktree))),
         .run { send in
           let loadedEntries = await loadPersistedRepositoryEntries(fallbackRoots: remainingRoots)
-          let remainingEntries = loadedEntries.filter { $0.path != repositoryID }
+          let remainingEntries = loadedEntries.filter { !isSameRepositoryPath($0.path, repositoryID) }
           await repositoryPersistence.saveRepositoryEntries(remainingEntries)
           let roots = remainingEntries.map { URL(fileURLWithPath: $0.path) }
           let (repositories, failures) = await loadRepositoriesData(remainingEntries)
@@ -281,4 +281,19 @@ extension RepositoriesFeature {
       return reduceRepositoryManagement(state: &state, action: action)
     }
   }
+}
+
+// Path-based URL APIs append a trailing slash only while the directory exists
+// on disk, so an ID captured before a deletion may not equal the re-normalized
+// entry path afterwards.
+nonisolated private func isSameRepositoryPath(_ lhs: String, _ rhs: String) -> Bool {
+  comparableRepositoryPath(lhs) == comparableRepositoryPath(rhs)
+}
+
+nonisolated private func comparableRepositoryPath(_ path: String) -> String {
+  var path = path
+  while path.count > 1, path.hasSuffix("/") {
+    path.removeLast()
+  }
+  return path
 }

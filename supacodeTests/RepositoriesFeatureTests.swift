@@ -1161,6 +1161,37 @@ struct RepositoriesFeatureTests {
     await store.finish()
   }
 
+  @Test func repositoryRemovedDropsEntryDespiteTrailingSlashMismatch() async {
+    let repository = makeRepository(
+      id: "/tmp/ws/",
+      name: "WS",
+      kind: .plain,
+      worktrees: [],
+      workspace: ProjectWorkspace(title: "WS")
+    )
+    let savedEntries = LockIsolated<[[PersistedRepositoryEntry]]>([])
+    let store = TestStore(initialState: makeState(repositories: [repository])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.repositoryPersistence.loadRepositoryEntries = {
+        [PersistedRepositoryEntry(path: "/tmp/ws", kind: .plain)]
+      }
+      $0.repositoryPersistence.saveRepositoryEntries = { entries in
+        savedEntries.withValue { $0.append(entries) }
+      }
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+      $0.gitClient.repoRoot = { _ in
+        throw GitClientError.commandFailed(command: "git", message: "not a git repository")
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.repositoryManagement(.repositoryRemoved("/tmp/ws/", selectionWasRemoved: false)))
+    await store.finish()
+
+    #expect(savedEntries.value.last == [])
+  }
+
   @Test func workspaceCreationCancelWhileCreatingShowsToast() async {
     var initialState = RepositoriesFeature.State()
     initialState.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
