@@ -535,9 +535,10 @@ struct RepositoriesFeatureTests {
     .write(to: ProjectWorkspace.metadataURL(for: rootURL))
 
     let rootPath = rootURL.path(percentEncoded: false)
-    let workspace = try #require(ProjectWorkspace.load(from: rootURL))
+    let loadedRootURL = URL(fileURLWithPath: rootPath).standardizedFileURL
+    let workspace = try #require(ProjectWorkspace.load(from: loadedRootURL))
     let repository = makeRepository(
-      id: rootPath,
+      id: loadedRootURL.path(percentEncoded: false),
       name: "Multi Repo Workspace",
       kind: .plain,
       worktrees: [],
@@ -564,7 +565,7 @@ struct RepositoriesFeatureTests {
     await store.send(.loadPersistedRepositories)
     await store.receive(\.repositoriesLoaded) {
       $0.repositories = [repository]
-      $0.repositoryRoots = [rootURL]
+      $0.repositoryRoots = [URL(fileURLWithPath: rootPath)]
       $0.isInitialLoadComplete = true
       $0.snapshotPersistencePhase = .active
     }
@@ -588,7 +589,6 @@ struct RepositoriesFeatureTests {
         repositories: [],
         title: title,
         rootPath: expectedRootPath,
-        selectedRepositoryIDs: [],
         openedRepositoryCandidates: [
           ProjectWorkspaceCreationRepository(
             id: "/tmp/repo-a",
@@ -612,7 +612,6 @@ struct RepositoriesFeatureTests {
         repositories: [],
         title: "Workspace",
         rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: [],
         openedRepositoryCandidates: [candidate]
       )
     ) {
@@ -621,7 +620,6 @@ struct RepositoriesFeatureTests {
 
     await store.send(.addOpenedRepository(repoRootA)) {
       $0.repositories = [candidate]
-      $0.selectedRepositoryIDs = [repoRootA]
     }
     await store.receive(.delegate(.baseRefSourceChanged(repoRootA)))
   }
@@ -638,7 +636,6 @@ struct RepositoriesFeatureTests {
         repositories: [candidate],
         title: "Workspace",
         rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: [repoRootA],
         openedRepositoryCandidates: [candidate]
       )
     ) {
@@ -671,13 +668,11 @@ struct RepositoriesFeatureTests {
         repositories: [],
         title: title,
         rootPath: expectedRootPath,
-        selectedRepositoryIDs: [],
         openedRepositoryCandidates: [
           ProjectWorkspaceCreationRepository(
             id: repoRootA,
             name: "Repo A",
-            rootURL: URL(fileURLWithPath: repoRootA),
-            branchName: "main"
+            rootURL: URL(fileURLWithPath: repoRootA)
           ),
           ProjectWorkspaceCreationRepository(
             id: repoRootB,
@@ -728,13 +723,11 @@ struct RepositoriesFeatureTests {
         repositories: [],
         title: title,
         rootPath: expectedRootPath,
-        selectedRepositoryIDs: [],
         openedRepositoryCandidates: [
           ProjectWorkspaceCreationRepository(
             id: repoRootA,
             name: "Repo A",
-            rootURL: URL(fileURLWithPath: repoRootA),
-            branchName: "main"
+            rootURL: URL(fileURLWithPath: repoRootA)
           ),
           ProjectWorkspaceCreationRepository(
             id: repoRootB,
@@ -749,12 +742,11 @@ struct RepositoriesFeatureTests {
         ProjectWorkspaceCreationRepository(
           id: repoRootA,
           name: "Repo A",
-          rootURL: URL(fileURLWithPath: repoRootA),
-          branchName: "main"
+          rootURL: URL(fileURLWithPath: repoRootA)
         )
       )
-      $0.workspaceCreationPrompt?.selectedRepositoryIDs = [repoRootA]
     }
+    await store.receive(\.workspaceCreationPrompt.presented.delegate.baseRefSourceChanged)
     await store.receive(\.workspaceCreation.refreshBaseRefs)
     await store.receive(\.workspaceCreation.baseRefsLoaded) {
       $0.workspaceCreationPrompt?.repositories[id: repoRootA]?.baseRef = "main"
@@ -772,8 +764,7 @@ struct RepositoriesFeatureTests {
       ProjectWorkspaceCreationRepository(
         id: repoRootA,
         name: "Repo A",
-        rootURL: URL(fileURLWithPath: repoRootA),
-        branchName: "main"
+        rootURL: URL(fileURLWithPath: repoRootA)
       ),
       ProjectWorkspaceCreationRepository(
         id: repoRootB,
@@ -781,13 +772,11 @@ struct RepositoriesFeatureTests {
         rootURL: URL(fileURLWithPath: repoRootB)
       ),
     ]
-    let rootURL = URL(fileURLWithPath: "/tmp/multi-repo-workspace")
     let store = TestStore(
       initialState: WorkspaceCreationPromptFeature.State(
         repositories: repositories,
         title: " Multi Repo ",
-        rootPath: " /tmp/multi-repo-workspace ",
-        selectedRepositoryIDs: [repoRootA, repoRootB]
+        rootPath: " /tmp/multi-repo-workspace "
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -799,8 +788,25 @@ struct RepositoriesFeatureTests {
         .submit(
           ProjectWorkspaceCreationDraft(
             title: "Multi Repo",
-            rootURL: rootURL,
-            repositories: repositories
+            rootURL: URL(filePath: "/tmp/multi-repo-workspace", directoryHint: .isDirectory),
+            repositories: [
+              ProjectWorkspaceRepositoryPlan(
+                id: repoRootA,
+                name: "Repo A",
+                path: nil,
+                sourceKind: .existingPath,
+                sourceLocation: repoRootA,
+                checkout: .link
+              ),
+              ProjectWorkspaceRepositoryPlan(
+                id: repoRootB,
+                name: "Repo B",
+                path: nil,
+                sourceKind: .existingPath,
+                sourceLocation: repoRootB,
+                checkout: .link
+              ),
+            ]
           )
         )
       )
@@ -816,8 +822,7 @@ struct RepositoriesFeatureTests {
       initialState: WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: []
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -860,7 +865,6 @@ struct RepositoriesFeatureTests {
           baseRefOptions: options
         )
       )
-      $0.selectedRepositoryIDs = [UUID(0).uuidString]
       $0.remoteRepositoryPrompt = nil
     }
   }
@@ -870,8 +874,7 @@ struct RepositoriesFeatureTests {
       initialState: WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: []
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -904,8 +907,7 @@ struct RepositoriesFeatureTests {
       initialState: WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: []
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -922,7 +924,6 @@ struct RepositoriesFeatureTests {
           sourceLocation: "/tmp/local-api"
         )
       )
-      $0.selectedRepositoryIDs = [UUID(0).uuidString]
     }
     await store.receive(.delegate(.baseRefSourceChanged(UUID(0).uuidString)))
   }
@@ -943,8 +944,7 @@ struct RepositoriesFeatureTests {
           )
         ],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: [repositoryID]
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -974,8 +974,7 @@ struct RepositoriesFeatureTests {
           )
         ],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: [repositoryID]
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -1008,8 +1007,7 @@ struct RepositoriesFeatureTests {
           ),
         ],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: [repoRootA, repoRootB]
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -1041,8 +1039,7 @@ struct RepositoriesFeatureTests {
           ),
         ],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: [repoRootA, repoRootB]
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -1067,6 +1064,7 @@ struct RepositoriesFeatureTests {
             name: "Remote",
             sourceKind: .remote,
             sourceLocation: "git@github.com:onevcat/app.git",
+            checkoutMode: .createBranch,
             baseRef: "origin/main",
             baseRefOptions: [GitBranchRefOption(ref: "origin/main", kind: .fetchedRemote)]
           ),
@@ -1077,8 +1075,7 @@ struct RepositoriesFeatureTests {
           ),
         ],
         title: "Workspace",
-        rootPath: "/tmp/workspace",
-        selectedRepositoryIDs: ["remote", repoRootB]
+        rootPath: "/tmp/workspace"
       )
     ) {
       WorkspaceCreationPromptFeature()
@@ -1090,6 +1087,84 @@ struct RepositoriesFeatureTests {
     await store.send(.repositoryBranchNameChanged("remote", "codex/app")) {
       $0.repositories[id: "remote"]?.branchName = "codex/app"
       $0.validationMessage = nil
+    }
+  }
+
+  @Test func workspaceCreationPromptResetsLinkModeWhenSwitchingToBare() async {
+    let repositoryID = "repo"
+    let store = TestStore(
+      initialState: WorkspaceCreationPromptFeature.State(
+        repositories: [
+          ProjectWorkspaceCreationRepository(
+            id: repositoryID,
+            name: "Repo",
+            rootURL: URL(fileURLWithPath: "/tmp/repo")
+          )
+        ],
+        title: "Workspace",
+        rootPath: "/tmp/workspace"
+      )
+    ) {
+      WorkspaceCreationPromptFeature()
+    }
+
+    await store.send(.repositorySourceKindChanged(repositoryID, .bareRepository)) {
+      $0.repositories[id: repositoryID]?.sourceKind = .bareRepository
+      $0.repositories[id: repositoryID]?.checkoutMode = .createBranch
+    }
+    await store.receive(.delegate(.baseRefSourceChanged(repositoryID)))
+  }
+
+  @Test func workspaceCreationCancelWhileCreatingShowsToast() async {
+    var initialState = RepositoriesFeature.State()
+    initialState.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
+      repositories: [],
+      title: "Workspace",
+      rootPath: "/tmp/workspace"
+    )
+    initialState.workspaceCreationPrompt?.isCreating = true
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.workspaceCreation(.promptCanceled)) {
+      $0.workspaceCreationPrompt = nil
+    }
+    await store.receive(\.showToast, .warning("Workspace creation canceled"))
+  }
+
+  @Test func workspaceBaseRefsLoadErrorSurfacesValidationMessage() async {
+    let repositoryID = "/tmp/repo"
+    var initialState = RepositoriesFeature.State()
+    initialState.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
+      repositories: [
+        ProjectWorkspaceCreationRepository(
+          id: repositoryID,
+          name: "Repo",
+          rootURL: URL(fileURLWithPath: repositoryID)
+        )
+      ],
+      title: "Workspace",
+      rootPath: "/tmp/workspace"
+    )
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    }
+
+    await store.send(
+      .workspaceCreation(
+        .baseRefsLoaded(
+          repositoryID: repositoryID,
+          sourceKind: .existingPath,
+          sourceLocation: repositoryID,
+          options: [],
+          defaultBaseRef: nil,
+          errorMessage: "Could not read branches for Repo: boom"
+        )
+      )
+    ) {
+      $0.workspaceCreationPrompt?.validationMessage = "Could not read branches for Repo: boom"
     }
   }
 

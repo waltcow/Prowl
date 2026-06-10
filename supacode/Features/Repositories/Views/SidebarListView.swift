@@ -201,7 +201,6 @@ struct SidebarListView: View {
             Label("New Workspace", systemImage: "folder.badge.person.crop")
           }
           .help("New Workspace")
-          .disabled(!state.canCreateWorkspace)
           Button {
             store.send(.setOpenPanelPresented(true))
           } label: {

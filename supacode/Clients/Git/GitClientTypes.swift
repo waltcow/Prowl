@@ -126,6 +126,21 @@ nonisolated struct GitRemoteBranchRefs: Equatable, Sendable {
   var defaultBaseRef: String?
 }
 
+nonisolated enum GitRemoteNaming {
+  static func repositoryName(fromRemoteURL remoteURL: String) -> String {
+    let trimmed = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+      .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard !trimmed.isEmpty else {
+      return ""
+    }
+    let separatorIndex = trimmed.lastIndex { $0 == "/" || $0 == ":" }
+    let component =
+      separatorIndex.map { String(trimmed[trimmed.index(after: $0)...]) }
+      ?? trimmed
+    return component.hasSuffix(".git") ? String(component.dropLast(4)) : component
+  }
+}
+
 struct GitWtWorktreeEntry: Decodable, Equatable {
   let branch: String
   let path: String

@@ -23,6 +23,24 @@ struct ProjectWorkspaceTests {
       ])
   }
 
+  @Test func preferredBaseRefMatchesTrimmedAutomaticBaseRef() {
+    let preferred = ProjectWorkspaceCreationRepository.preferredBaseRef(
+      automaticBaseRef: " develop \n",
+      options: [
+        GitBranchRefOption(ref: "develop", kind: .local),
+        GitBranchRefOption(ref: "main", kind: .local),
+      ]
+    )
+
+    #expect(preferred == "develop")
+  }
+
+  @Test func remoteNamingStripsOnlyTrailingGitSuffix() {
+    #expect(GitRemoteNaming.repositoryName(fromRemoteURL: "git@github.com:onevcat/x.github.io.git") == "x.github.io")
+    #expect(GitRemoteNaming.repositoryName(fromRemoteURL: "https://github.com/onevcat/app.git") == "app")
+    #expect(GitRemoteNaming.repositoryName(fromRemoteURL: "https://github.com/onevcat/app") == "app")
+  }
+
   @Test func loadsWorkspaceMetadataWithDefaultsAndSnakeCaseSources() throws {
     let rootURL = try makeTemporaryWorkspaceRoot()
     defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -90,6 +108,14 @@ struct ProjectWorkspaceTests {
     #expect(shared.id == "shared")
     #expect(shared.name == "Shared")
     #expect(shared.sourceKind == .existingPath)
+  }
+
+  @Test func loadReturnsNilForMalformedWorkspaceMetadata() throws {
+    let rootURL = try makeTemporaryWorkspaceRoot()
+    defer { try? FileManager.default.removeItem(at: rootURL) }
+    try writeWorkspaceJSON("{ not json", to: rootURL)
+
+    #expect(ProjectWorkspace.load(from: rootURL) == nil)
   }
 
   @Test func normalizesEmptyWorkspaceAndRepositoryFields() throws {
@@ -161,17 +187,21 @@ struct ProjectWorkspaceTests {
           title: "Checkout Flow",
           rootURL: rootURL,
           repositories: [
-            ProjectWorkspaceCreationRepository(
+            ProjectWorkspaceRepositoryPlan(
               id: "app",
               name: "App Repo",
-              rootURL: appURL,
-              branchName: "main"
+              path: nil,
+              sourceKind: .existingPath,
+              sourceLocation: appURL.path(percentEncoded: false),
+              checkout: .link
             ),
-            ProjectWorkspaceCreationRepository(
+            ProjectWorkspaceRepositoryPlan(
               id: "api",
               name: "App Repo",
-              rootURL: apiURL,
-              branchName: "feature/api"
+              path: nil,
+              sourceKind: .existingPath,
+              sourceLocation: apiURL.path(percentEncoded: false),
+              checkout: .link
             ),
           ]
         ),
@@ -194,7 +224,7 @@ struct ProjectWorkspaceTests {
         appPath,
         apiPath,
       ])
-    #expect(loaded.repositories.map(\.branchName) == ["main", "feature/api"])
+    #expect(loaded.repositories.map(\.branchName) == [nil, nil])
 
     let appLinkPath = rootURL.appending(path: "App-Repo").path(percentEncoded: false)
     let apiLinkPath = rootURL.appending(path: "App-Repo-2").path(percentEncoded: false)
@@ -218,23 +248,21 @@ struct ProjectWorkspaceTests {
           title: "Materialized",
           rootURL: rootURL,
           repositories: [
-            ProjectWorkspaceCreationRepository(
+            ProjectWorkspaceRepositoryPlan(
               id: "app",
               name: "App",
+              path: "app",
               sourceKind: .remote,
               sourceLocation: "git@github.com:onevcat/app.git",
-              branchName: "codex/app",
-              baseRef: "origin/main",
-              path: "app"
+              checkout: .createBranch(branchName: "codex/app", baseRef: "origin/main")
             ),
-            ProjectWorkspaceCreationRepository(
+            ProjectWorkspaceRepositoryPlan(
               id: "api",
               name: "API",
+              path: "api",
               sourceKind: .bareRepository,
               sourceLocation: bareURL.path(percentEncoded: false),
-              branchName: "codex/api",
-              baseRef: "main",
-              path: "api"
+              checkout: .createBranch(branchName: "codex/api", baseRef: "main")
             ),
           ]
         ),
@@ -251,9 +279,9 @@ struct ProjectWorkspaceTests {
     let barePath = normalizedTestPath(bareURL)
     #expect(
       commands.value.map(\.arguments) == [
-        ["clone", "git@github.com:onevcat/app.git", "\(rootPath)/app"],
-        ["-C", "\(rootPath)/app", "checkout", "-B", "codex/app", "origin/main"],
-        ["-C", barePath, "worktree", "add", "-b", "codex/api", "\(rootPath)/api", "main"],
+        ["clone", "--end-of-options", "git@github.com:onevcat/app.git", "\(rootPath)/app"],
+        ["-C", "\(rootPath)/app", "checkout", "-B", "codex/app", "--end-of-options", "origin/main"],
+        ["-C", barePath, "worktree", "add", "-b", "codex/api", "\(rootPath)/api", "--end-of-options", "main"],
       ])
 
     let loaded = try #require(ProjectWorkspace.load(from: rootURL))
@@ -278,25 +306,21 @@ struct ProjectWorkspaceTests {
           title: "Existing Refs",
           rootURL: rootURL,
           repositories: [
-            ProjectWorkspaceCreationRepository(
+            ProjectWorkspaceRepositoryPlan(
               id: "app",
               name: "App",
+              path: "app",
               sourceKind: .remote,
               sourceLocation: "git@github.com:onevcat/app.git",
-              checkoutMode: .useExistingRef,
-              branchName: "codex/app",
-              baseRef: "origin/feature/login",
-              path: "app"
+              checkout: .useExistingRef("origin/feature/login")
             ),
-            ProjectWorkspaceCreationRepository(
+            ProjectWorkspaceRepositoryPlan(
               id: "api",
               name: "API",
+              path: "api",
               sourceKind: .bareRepository,
               sourceLocation: bareURL.path(percentEncoded: false),
-              checkoutMode: .useExistingRef,
-              branchName: "codex/api",
-              baseRef: "main",
-              path: "api"
+              checkout: .useExistingRef("main")
             ),
           ]
         ),
@@ -311,14 +335,257 @@ struct ProjectWorkspaceTests {
     let barePath = normalizedTestPath(bareURL)
     #expect(
       commands.value.map(\.arguments) == [
-        ["clone", "git@github.com:onevcat/app.git", "\(rootPath)/app"],
-        ["-C", "\(rootPath)/app", "checkout", "feature/login"],
-        ["-C", barePath, "worktree", "add", "\(rootPath)/api", "main"],
+        ["clone", "--end-of-options", "git@github.com:onevcat/app.git", "\(rootPath)/app"],
+        ["-C", "\(rootPath)/app", "checkout", "--end-of-options", "feature/login"],
+        ["-C", barePath, "worktree", "add", "\(rootPath)/api", "--end-of-options", "main"],
       ])
 
     let loaded = try #require(ProjectWorkspace.load(from: rootURL))
     #expect(loaded.repositories.map(\.branchName) == [nil, nil])
     #expect(loaded.repositories.map(\.baseRef) == ["origin/feature/login", "main"])
+  }
+
+  @Test func createWorkspaceMaterializesLocalRepositoriesAsWorktrees() async throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-local-worktree-workspace-\(UUID().uuidString)")
+      .standardizedFileURL
+    let appURL = try makeTemporaryWorkspaceRoot()
+    let apiURL = try makeTemporaryWorkspaceRoot()
+    defer {
+      try? FileManager.default.removeItem(at: rootURL)
+      try? FileManager.default.removeItem(at: appURL)
+      try? FileManager.default.removeItem(at: apiURL)
+    }
+    let commands = LockIsolated<[ProjectWorkspaceGitCommand]>([])
+    let workspace = try await ProjectWorkspace.create(
+      ProjectWorkspaceCreationRequest(
+        draft: ProjectWorkspaceCreationDraft(
+          title: "Local Worktrees",
+          rootURL: rootURL,
+          repositories: [
+            ProjectWorkspaceRepositoryPlan(
+              id: "app",
+              name: "App",
+              path: "app",
+              sourceKind: .localRepository,
+              sourceLocation: appURL.path(percentEncoded: false),
+              checkout: .createBranch(branchName: "codex/app", baseRef: "main")
+            ),
+            ProjectWorkspaceRepositoryPlan(
+              id: "api",
+              name: "API",
+              path: "api",
+              sourceKind: .existingPath,
+              sourceLocation: apiURL.path(percentEncoded: false),
+              checkout: .useExistingRef("origin/main")
+            ),
+          ]
+        ),
+        createdAt: Date(timeIntervalSince1970: 4_567_890)
+      ),
+      gitRunner: ProjectWorkspaceGitRunner { command in
+        commands.withValue { $0.append(command) }
+      }
+    )
+
+    let rootPath = rootURL.path(percentEncoded: false)
+    let appPath = normalizedTestPath(appURL)
+    let apiPath = normalizedTestPath(apiURL)
+    #expect(
+      commands.value.map(\.arguments) == [
+        ["-C", appPath, "worktree", "add", "-b", "codex/app", "\(rootPath)/app", "--end-of-options", "main"],
+        ["-C", apiPath, "worktree", "add", "\(rootPath)/api", "--end-of-options", "origin/main"],
+      ])
+    #expect(workspace.repositories.map(\.branchName) == ["codex/app", nil])
+    #expect(workspace.repositories.map(\.baseRef) == ["main", "origin/main"])
+  }
+
+  @Test func createWorkspaceRollsBackCloneWhenCheckoutFails() async throws {
+    let rootURL = try makeTemporaryWorkspaceRoot()
+    let bareURL = try makeTemporaryWorkspaceRoot()
+    defer {
+      try? FileManager.default.removeItem(at: rootURL)
+      try? FileManager.default.removeItem(at: bareURL)
+    }
+    let commands = LockIsolated<[ProjectWorkspaceGitCommand]>([])
+    let cloneDestination = rootURL.appending(path: "app", directoryHint: .isDirectory)
+    await #expect(throws: ProjectWorkspaceCreationError.self) {
+      try await ProjectWorkspace.create(
+        ProjectWorkspaceCreationRequest(
+          draft: ProjectWorkspaceCreationDraft(
+            title: "Half Done",
+            rootURL: rootURL,
+            repositories: [
+              ProjectWorkspaceRepositoryPlan(
+                id: "api",
+                name: "API",
+                path: "api",
+                sourceKind: .bareRepository,
+                sourceLocation: bareURL.path(percentEncoded: false),
+                checkout: .createBranch(branchName: "codex/api", baseRef: "main")
+              ),
+              ProjectWorkspaceRepositoryPlan(
+                id: "app",
+                name: "App",
+                path: "app",
+                sourceKind: .remote,
+                sourceLocation: "git@github.com:onevcat/app.git",
+                checkout: .createBranch(branchName: "codex/app", baseRef: "origin/main")
+              ),
+            ]
+          ),
+          createdAt: Date(timeIntervalSince1970: 5_678_901)
+        ),
+        gitRunner: ProjectWorkspaceGitRunner { command in
+          commands.withValue { $0.append(command) }
+          if command.arguments.first == "clone" {
+            try FileManager.default.createDirectory(at: cloneDestination, withIntermediateDirectories: true)
+          }
+          if command.arguments.contains("checkout") {
+            throw ProjectWorkspaceCreationError.gitCommandFailed(
+              command: command.displayCommand,
+              message: "boom"
+            )
+          }
+        }
+      )
+    }
+
+    let rootPath = rootURL.path(percentEncoded: false)
+    let barePath = normalizedTestPath(bareURL)
+    #expect(
+      commands.value.map(\.arguments).contains(
+        ["-C", barePath, "worktree", "remove", "--force", "\(rootPath)/api"]
+      )
+    )
+    #expect(!FileManager.default.fileExists(atPath: cloneDestination.path(percentEncoded: false)))
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: ProjectWorkspace.metadataURL(for: rootURL).path(percentEncoded: false)
+      )
+    )
+    #expect(FileManager.default.fileExists(atPath: rootPath))
+  }
+
+  @Test func createWorkspaceRejectsCreateBranchWithoutName() async throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-invalid-workspace-\(UUID().uuidString)")
+    let appURL = try makeTemporaryWorkspaceRoot()
+    defer {
+      try? FileManager.default.removeItem(at: rootURL)
+      try? FileManager.default.removeItem(at: appURL)
+    }
+    await #expect(throws: ProjectWorkspaceCreationError.missingBranchName("App")) {
+      try await ProjectWorkspace.create(
+        ProjectWorkspaceCreationRequest(
+          draft: ProjectWorkspaceCreationDraft(
+            title: "Invalid",
+            rootURL: rootURL,
+            repositories: [
+              ProjectWorkspaceRepositoryPlan(
+                id: "app",
+                name: "App",
+                path: "app",
+                sourceKind: .localRepository,
+                sourceLocation: appURL.path(percentEncoded: false),
+                checkout: .createBranch(branchName: " ", baseRef: nil)
+              ),
+              ProjectWorkspaceRepositoryPlan(
+                id: "api",
+                name: "API",
+                path: "api",
+                sourceKind: .existingPath,
+                sourceLocation: appURL.path(percentEncoded: false),
+                checkout: .link
+              ),
+            ]
+          ),
+          createdAt: Date(timeIntervalSince1970: 6_789_012)
+        ),
+        gitRunner: ProjectWorkspaceGitRunner { _ in }
+      )
+    }
+    #expect(!FileManager.default.fileExists(atPath: rootURL.path(percentEncoded: false)))
+  }
+
+  @Test func createWorkspaceRejectsLinkForBareRepository() async throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-invalid-link-workspace-\(UUID().uuidString)")
+    let bareURL = try makeTemporaryWorkspaceRoot()
+    defer {
+      try? FileManager.default.removeItem(at: rootURL)
+      try? FileManager.default.removeItem(at: bareURL)
+    }
+    await #expect(throws: ProjectWorkspaceCreationError.linkCheckoutUnsupported("API")) {
+      try await ProjectWorkspace.create(
+        ProjectWorkspaceCreationRequest(
+          draft: ProjectWorkspaceCreationDraft(
+            title: "Invalid Link",
+            rootURL: rootURL,
+            repositories: [
+              ProjectWorkspaceRepositoryPlan(
+                id: "api",
+                name: "API",
+                path: "api",
+                sourceKind: .bareRepository,
+                sourceLocation: bareURL.path(percentEncoded: false),
+                checkout: .link
+              ),
+              ProjectWorkspaceRepositoryPlan(
+                id: "app",
+                name: "App",
+                path: "app",
+                sourceKind: .existingPath,
+                sourceLocation: bareURL.path(percentEncoded: false),
+                checkout: .link
+              ),
+            ]
+          ),
+          createdAt: Date(timeIntervalSince1970: 7_890_123)
+        ),
+        gitRunner: ProjectWorkspaceGitRunner { _ in }
+      )
+    }
+  }
+
+  @Test func planRequiresBranchNameForCreateBranchOnLocalSources() {
+    let repository = ProjectWorkspaceCreationRepository(
+      id: "app",
+      name: "App",
+      rootURL: URL(fileURLWithPath: "/tmp/app"),
+      checkoutMode: .createBranch
+    )
+
+    #expect(
+      WorkspaceCreationPromptFeature.plan(for: repository)
+        == .failure(.missingBranchName("App"))
+    )
+  }
+
+  @Test func planMapsLinkAndExistingRefModes() throws {
+    let linked = ProjectWorkspaceCreationRepository(
+      id: "app",
+      name: "App",
+      rootURL: URL(fileURLWithPath: "/tmp/app")
+    )
+    #expect(WorkspaceCreationPromptFeature.plan(for: linked).map(\.checkout) == .success(.link))
+
+    var existing = ProjectWorkspaceCreationRepository(
+      id: "api",
+      name: "API",
+      sourceKind: .bareRepository,
+      sourceLocation: "/tmp/api.git",
+      checkoutMode: .useExistingRef
+    )
+    #expect(
+      WorkspaceCreationPromptFeature.plan(for: existing)
+        == .failure(.missingExistingRef("API"))
+    )
+    existing.baseRef = "main"
+    #expect(
+      WorkspaceCreationPromptFeature.plan(for: existing).map(\.checkout)
+        == .success(.useExistingRef("main"))
+    )
   }
 
   @Test func listRuntimeContextsReportWorkspaceKind() {
@@ -339,6 +606,21 @@ struct ProjectWorkspaceTests {
 
     #expect(contexts.map(\.kind) == [.workspace])
     #expect(contexts.first?.id == repository.id)
+  }
+
+  @Test func repositoryWithWorkspaceIsAlwaysPlain() {
+    let rootURL = URL(fileURLWithPath: "/tmp/workspace")
+    let repository = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: "Workspace",
+      kind: .git,
+      worktrees: [],
+      workspace: ProjectWorkspace(title: "Workspace")
+    )
+
+    #expect(repository.kind == .plain)
+    #expect(repository.isWorkspace)
   }
 
   private func makeTemporaryWorkspaceRoot() throws -> URL {

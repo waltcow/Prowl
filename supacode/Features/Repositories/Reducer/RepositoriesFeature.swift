@@ -224,7 +224,8 @@ struct RepositoriesFeature {
       sourceKind: ProjectWorkspaceRepositorySourceKind,
       sourceLocation: String,
       options: [GitBranchRefOption],
-      defaultBaseRef: String?
+      defaultBaseRef: String?,
+      errorMessage: String?
     )
     case createWorkspace(ProjectWorkspaceCreationDraft)
     case workspaceCreated(URL)

@@ -384,8 +384,7 @@ struct AppFeatureCommandPaletteTests {
       $0.repositories.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: title,
-        rootPath: expectedRootPath,
-        selectedRepositoryIDs: []
+        rootPath: expectedRootPath
       )
     }
   }

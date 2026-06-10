@@ -58,7 +58,8 @@ nonisolated struct Repository: Identifiable, Hashable, Sendable {
     self.id = id
     self.rootURL = rootURL
     self.name = name
-    self.kind = kind
+    // A workspace is always a plain runnable folder; git capabilities stay per-repository.
+    self.kind = workspace == nil ? kind : .plain
     self.worktrees = worktrees
     self.workspace = workspace
   }

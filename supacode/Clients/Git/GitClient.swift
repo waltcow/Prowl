@@ -172,7 +172,7 @@ struct GitClient {
   nonisolated func remoteBranchRefs(for remoteURL: String) async throws -> GitRemoteBranchRefs {
     let output = try await runGit(
       operation: .remoteBranchRefs,
-      arguments: ["ls-remote", "--symref", remoteURL, "HEAD", "refs/heads/*"]
+      arguments: ["ls-remote", "--symref", "--end-of-options", remoteURL, "HEAD", "refs/heads/*"]
     )
     let parsed = parseRemoteBranchRefs(output)
     let options = parsed.refs

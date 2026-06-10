@@ -133,8 +133,7 @@ struct WorkspaceCreationPromptView: View {
           store.send(.cancelButtonTapped)
         }
         .keyboardShortcut(.cancelAction)
-        .help("Cancel (Esc)")
-        .disabled(store.isCreating)
+        .help(store.isCreating ? "Cancel creation and roll back (Esc)" : "Cancel (Esc)")
         Button("Create") {
           store.send(.createButtonTapped)
         }
@@ -190,7 +189,7 @@ struct WorkspaceCreationPromptView: View {
           set: { store.send(.repositorySourceKindChanged(repository.id, $0)) }
         )
       ) {
-        ForEach(sourceKinds, id: \.self) { kind in
+        ForEach(sourceKinds(for: repository), id: \.self) { kind in
           Text(sourceKindTitle(kind)).tag(kind)
         }
       }
@@ -272,6 +271,9 @@ struct WorkspaceCreationPromptView: View {
           set: { store.send(.repositoryCheckoutModeChanged(repository.id, $0)) }
         )
       ) {
+        if repository.sourceKind.supportsLinkCheckout {
+          Text("Link").tag(ProjectWorkspaceRepositoryCheckoutMode.link)
+        }
         Text("Create Branch").tag(ProjectWorkspaceRepositoryCheckoutMode.createBranch)
         Text("Use Existing").tag(ProjectWorkspaceRepositoryCheckoutMode.useExistingRef)
       }
@@ -293,16 +295,30 @@ struct WorkspaceCreationPromptView: View {
         .disabled(store.isCreating)
       }
 
-      WorkspaceBranchRefPickerView(
-        title: repository.checkoutMode == .createBranch ? "Base ref" : "Existing branch",
-        selection: repository.baseRef,
-        options: repository.baseRefOptions,
-        isDisabled: store.isCreating || repository.baseRefOptions.isEmpty
-      ) { ref in
-        store.send(.repositoryBaseRefChanged(repository.id, ref))
+      if repository.checkoutMode == .link {
+        Text("Symlink to the repository as it is on disk")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      } else {
+        WorkspaceBranchRefPickerView(
+          title: repository.checkoutMode == .createBranch ? "Base ref" : "Existing branch",
+          selection: repository.baseRef,
+          options: repository.baseRefOptions,
+          isDisabled: store.isCreating || repository.baseRefOptions.isEmpty
+        ) { ref in
+          store.send(.repositoryBaseRefChanged(repository.id, ref))
+        }
+        .disabled(store.isCreating || repository.baseRefOptions.isEmpty)
       }
-      .disabled(store.isCreating || repository.baseRefOptions.isEmpty)
     }
+  }
+
+  private func sourceKinds(
+    for repository: ProjectWorkspaceCreationRepository
+  ) -> [ProjectWorkspaceRepositorySourceKind] {
+    repository.sourceKind == .remote
+      ? sourceKinds
+      : sourceKinds.filter { $0 != .remote }
   }
 
   @ViewBuilder

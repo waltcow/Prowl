@@ -90,7 +90,6 @@ struct WorktreeCommands: Commands {
         store.send(.repositories(.workspaceCreation(.promptRequested)))
       }
       .help("New Workspace")
-      .disabled(!repositories.canCreateWorkspace)
       Button("Open Worktree") {
         openSelectedWorktreeAction?()
       }

@@ -119,6 +119,7 @@ struct GitClientBranchRefsTests {
             "git",
             "ls-remote",
             "--symref",
+            "--end-of-options",
             "git@github.com:onevcat/app.git",
             "HEAD",
             "refs/heads/*",

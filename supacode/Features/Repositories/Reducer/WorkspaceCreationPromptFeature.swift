@@ -10,18 +10,9 @@ struct WorkspaceCreationPromptFeature {
     var openedRepositoryCandidates: IdentifiedArrayOf<ProjectWorkspaceCreationRepository>
     var title: String
     var rootPath: String
-    var selectedRepositoryIDs: Set<Repository.ID>
     var validationMessage: String?
     var isCreating = false
     var remoteRepositoryPrompt: RemoteRepositoryPromptState?
-
-    var selectedRepositoryCount: Int {
-      repositories.count
-    }
-
-    var selectedRepositories: [ProjectWorkspaceCreationRepository] {
-      Array(repositories)
-    }
 
     var availableOpenedRepositories: [ProjectWorkspaceCreationRepository] {
       openedRepositoryCandidates.filter { repositories[id: $0.id] == nil }
@@ -35,7 +26,6 @@ struct WorkspaceCreationPromptFeature {
       repositories: [ProjectWorkspaceCreationRepository],
       title: String,
       rootPath: String,
-      selectedRepositoryIDs: Set<Repository.ID>,
       openedRepositoryCandidates: [ProjectWorkspaceCreationRepository] = []
     ) {
       self.repositories = IdentifiedArray(repositories, uniquingIDsWith: { current, _ in current })
@@ -45,7 +35,6 @@ struct WorkspaceCreationPromptFeature {
       )
       self.title = title
       self.rootPath = rootPath
-      self.selectedRepositoryIDs = selectedRepositoryIDs
     }
   }
 
@@ -66,7 +55,6 @@ struct WorkspaceCreationPromptFeature {
 
   enum Action: BindableAction, Equatable {
     case binding(BindingAction<State>)
-    case addBlankRepository(ProjectWorkspaceRepositorySourceKind)
     case addOpenedRepository(Repository.ID)
     case addRepositoryFromURL(ProjectWorkspaceRepositorySourceKind, String)
     case addRemoteButtonTapped
@@ -78,7 +66,6 @@ struct WorkspaceCreationPromptFeature {
     case remoteRepositoryPromptAddButtonTapped
     case remoteRepositoryPromptDismissed
     case removeRepository(Repository.ID)
-    case repositorySelectionChanged(Repository.ID, Bool)
     case repositorySourceKindChanged(Repository.ID, ProjectWorkspaceRepositorySourceKind)
     case repositoryCheckoutModeChanged(Repository.ID, ProjectWorkspaceRepositoryCheckoutMode)
     case repositoryNameChanged(Repository.ID, String)
@@ -90,8 +77,6 @@ struct WorkspaceCreationPromptFeature {
     case rootPathChosen(String)
     case cancelButtonTapped
     case createButtonTapped
-    case setCreating(Bool)
-    case setValidationMessage(String?)
     case delegate(Delegate)
   }
 
@@ -113,20 +98,6 @@ struct WorkspaceCreationPromptFeature {
         state.validationMessage = nil
         return .none
 
-      case .addBlankRepository(let sourceKind):
-        let id = uuid().uuidString
-        state.repositories.append(
-          ProjectWorkspaceCreationRepository(
-            id: id,
-            name: "",
-            sourceKind: sourceKind,
-            sourceLocation: ""
-          )
-        )
-        state.selectedRepositoryIDs.insert(id)
-        state.validationMessage = nil
-        return .none
-
       case .addOpenedRepository(let repositoryID):
         guard let repository = state.openedRepositoryCandidates[id: repositoryID],
           state.repositories[id: repositoryID] == nil
@@ -134,7 +105,6 @@ struct WorkspaceCreationPromptFeature {
           return .none
         }
         state.repositories.append(repository)
-        state.selectedRepositoryIDs.insert(repositoryID)
         state.validationMessage = nil
         return .send(.delegate(.baseRefSourceChanged(repositoryID)))
 
@@ -149,7 +119,7 @@ struct WorkspaceCreationPromptFeature {
         state.remoteRepositoryPrompt?.branchOptions = []
         state.remoteRepositoryPrompt?.defaultBaseRef = nil
         if state.remoteRepositoryPrompt?.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
-          state.remoteRepositoryPrompt?.name = Self.remoteRepositoryName(for: url)
+          state.remoteRepositoryPrompt?.name = GitRemoteNaming.repositoryName(fromRemoteURL: url)
         }
         return .none
 
@@ -170,7 +140,7 @@ struct WorkspaceCreationPromptFeature {
         }
         prompt.url = url
         if prompt.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          prompt.name = Self.remoteRepositoryName(for: url)
+          prompt.name = GitRemoteNaming.repositoryName(fromRemoteURL: url)
         }
         prompt.isLoading = true
         prompt.validationMessage = nil
@@ -232,7 +202,6 @@ struct WorkspaceCreationPromptFeature {
             baseRefOptions: prompt.branchOptions
           )
         )
-        state.selectedRepositoryIDs.insert(id)
         state.remoteRepositoryPrompt = nil
         state.validationMessage = nil
         return .none
@@ -257,27 +226,19 @@ struct WorkspaceCreationPromptFeature {
             sourceLocation: rootPath
           )
         )
-        state.selectedRepositoryIDs.insert(id)
         state.validationMessage = nil
         return .send(.delegate(.baseRefSourceChanged(id)))
 
       case .removeRepository(let repositoryID):
         state.repositories.remove(id: repositoryID)
-        state.selectedRepositoryIDs.remove(repositoryID)
-        state.validationMessage = nil
-        return .none
-
-      case .repositorySelectionChanged(let repositoryID, let isSelected):
-        if isSelected {
-          state.selectedRepositoryIDs.insert(repositoryID)
-        } else {
-          state.selectedRepositoryIDs.remove(repositoryID)
-        }
         state.validationMessage = nil
         return .none
 
       case .repositoryCheckoutModeChanged(let repositoryID, let checkoutMode):
         guard var repository = state.repositories[id: repositoryID] else {
+          return .none
+        }
+        guard checkoutMode != .link || repository.sourceKind.supportsLinkCheckout else {
           return .none
         }
         repository.checkoutMode = checkoutMode
@@ -292,6 +253,9 @@ struct WorkspaceCreationPromptFeature {
         repository.sourceKind = sourceKind
         repository.baseRef = nil
         repository.baseRefOptions = []
+        if repository.checkoutMode == .link, !sourceKind.supportsLinkCheckout {
+          repository.checkoutMode = sourceKind.defaultCheckoutMode
+        }
         if sourceKind == .remote {
           repository.sourceLocation = ""
         }
@@ -384,33 +348,17 @@ struct WorkspaceCreationPromptFeature {
           state.validationMessage = ProjectWorkspaceCreationError.missingPath.localizedDescription
           return .none
         }
-        let repositories = state.selectedRepositories
-        guard repositories.count >= 2 else {
+        guard state.repositories.count >= 2 else {
           state.validationMessage = ProjectWorkspaceCreationError.notEnoughRepositories.localizedDescription
           return .none
         }
-        for repository in repositories {
-          let name = repository.name.trimmingCharacters(in: .whitespacesAndNewlines)
-          let sourceLocation = repository.sourceLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !sourceLocation.isEmpty else {
-            let displayName = name.isEmpty ? "repository" : name
-            state.validationMessage =
-              ProjectWorkspaceCreationError.missingRepositorySource(displayName).localizedDescription
-            return .none
-          }
-          if repository.checkoutMode == .createBranch,
-            repository.sourceKind == .remote || repository.sourceKind == .bareRepository,
-            repository.branchName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
-          {
-            let displayName = name.isEmpty ? "repository" : name
-            state.validationMessage = "Branch name required for \(displayName)."
-            return .none
-          }
-          if repository.checkoutMode == .useExistingRef,
-            repository.baseRef?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
-          {
-            let displayName = name.isEmpty ? "repository" : name
-            state.validationMessage = "Choose an existing branch for \(displayName)."
+        var plans: [ProjectWorkspaceRepositoryPlan] = []
+        for repository in state.repositories {
+          switch Self.plan(for: repository) {
+          case .success(let plan):
+            plans.append(plan)
+          case .failure(let error):
+            state.validationMessage = error.localizedDescription
             return .none
           }
         }
@@ -421,19 +369,11 @@ struct WorkspaceCreationPromptFeature {
               ProjectWorkspaceCreationDraft(
                 title: title,
                 rootURL: URL(filePath: rootPath, directoryHint: .isDirectory),
-                repositories: repositories
+                repositories: plans
               )
             )
           )
         )
-
-      case .setCreating(let isCreating):
-        state.isCreating = isCreating
-        return .none
-
-      case .setValidationMessage(let message):
-        state.validationMessage = message
-        return .none
 
       case .delegate:
         return .none
@@ -441,16 +381,50 @@ struct WorkspaceCreationPromptFeature {
     }
   }
 
-  private static func remoteRepositoryName(for remoteURL: String) -> String {
-    let trimmed = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
-      .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    guard !trimmed.isEmpty else {
-      return ""
+  static func plan(
+    for repository: ProjectWorkspaceCreationRepository
+  ) -> Result<ProjectWorkspaceRepositoryPlan, ProjectWorkspaceCreationError> {
+    let name = repository.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let displayName = name.isEmpty ? "repository" : name
+    let sourceLocation = repository.sourceLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !sourceLocation.isEmpty else {
+      return .failure(.missingRepositorySource(displayName))
     }
-    let separatorIndex = trimmed.lastIndex { $0 == "/" || $0 == ":" }
-    let component =
-      separatorIndex.map { String(trimmed[trimmed.index(after: $0)...]) }
-      ?? trimmed
-    return component.hasSuffix(".git") ? String(component.dropLast(4)) : component
+    let checkout: ProjectWorkspaceRepositoryCheckout
+    switch repository.checkoutMode {
+    case .link:
+      guard repository.sourceKind.supportsLinkCheckout else {
+        return .failure(.linkCheckoutUnsupported(displayName))
+      }
+      checkout = .link
+    case .createBranch:
+      guard let branchName = repository.branchName?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !branchName.isEmpty
+      else {
+        return .failure(.missingBranchName(displayName))
+      }
+      let trimmedBase = repository.baseRef?.trimmingCharacters(in: .whitespacesAndNewlines)
+      checkout = .createBranch(
+        branchName: branchName,
+        baseRef: trimmedBase?.isEmpty == false ? trimmedBase : nil
+      )
+    case .useExistingRef:
+      guard let baseRef = repository.baseRef?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !baseRef.isEmpty
+      else {
+        return .failure(.missingExistingRef(displayName))
+      }
+      checkout = .useExistingRef(baseRef)
+    }
+    return .success(
+      ProjectWorkspaceRepositoryPlan(
+        id: repository.id,
+        name: repository.name,
+        path: repository.path,
+        sourceKind: repository.sourceKind,
+        sourceLocation: sourceLocation,
+        checkout: checkout
+      )
+    )
   }
 }

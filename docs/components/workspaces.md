@@ -21,7 +21,11 @@ When you open a workspace in Prowl:
 Use **New Workspace** from the sidebar toolbar, Worktrees menu, or command
 palette to create a workspace. Prowl creates the shared folder, materializes the
 selected repositories, writes `.prowl/workspace.json`, and opens the workspace
-as a runnable folder.
+as a runnable folder. A workspace needs at least two repositories.
+
+While a workspace is being created the prompt shows a spinner. **Cancel** stops
+the creation and rolls back everything created so far: cloned folders, created
+worktrees, and the workspace folder itself when Prowl created it.
 
 ```text
 my-feature-workspace/
@@ -34,10 +38,10 @@ my-feature-workspace/
 
 Repository sources can be mixed in one workspace:
 
-- Already opened repositories can be inserted from the **Add Opened** menu. They
-  are added as symlinks with `source_kind: existing_path`.
-- Local repository folders selected from disk are added as symlinks with
-  `source_kind: local_repository`.
+- Already opened repositories can be inserted from the **Add Opened** menu
+  (`source_kind: existing_path`).
+- Local repository folders are selected from disk
+  (`source_kind: local_repository`).
 - Remote repositories are added through a URL prompt that loads remote heads
   before inserting the row. They are cloned into the workspace folder with
   `source_kind: remote`. The inserted row defaults to **Use Existing** on the
@@ -45,6 +49,18 @@ Repository sources can be mixed in one workspace:
 - Bare repositories are materialized with `git worktree add` and recorded with
   `source_kind: bare_repository`. If both branch and base ref are supplied,
   Prowl creates the worktree branch from that base ref.
+
+For already opened and local repositories, the branch action decides how the
+folder is materialized:
+
+- **Link** (the default) adds a symlink to the repository as it is on disk, so
+  the workspace shares the live checkout.
+- **Create Branch** runs `git worktree add -b` against the source repository:
+  the workspace gets an isolated checkout on a new branch created from the
+  selected base ref, without touching the source repository's own checkout. The
+  new worktree also appears in the source repository's worktree list.
+- **Use Existing** runs `git worktree add` with the selected ref. Git rejects a
+  local branch that is already checked out elsewhere.
 
 The creation prompt detects base-ref candidates for already opened, local, and
 bare repositories by reading local git refs, preferring the detected default
@@ -57,8 +73,8 @@ does not try to checkout an arbitrary, nonexistent branch.
 Branch behavior is explicit:
 
 - **Create Branch** uses `branch_name` plus the selected base ref to create a
-  new branch or worktree branch. Remote and bare sources require a branch name
-  in this mode.
+  new branch or worktree branch. A branch name is required in this mode for
+  every source kind.
 - **Use Existing** uses the selected ref directly. For remote clones, Prowl
   checks out the selected remote branch after clone; Git creates the normal
   local tracking branch for refs such as `origin/feature`. For bare
