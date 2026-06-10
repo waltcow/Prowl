@@ -109,12 +109,20 @@ struct GitClientBranchRefsTests {
     let output = """
       ref: refs/heads/main\tHEAD
       abc123\tHEAD
+      def456\trefs/heads/develop
       abc123\trefs/heads/main
-      def456\trefs/heads/feature/login
       """
     let shell = ShellClient(
       run: { _, arguments, _ in
-        #expect(arguments.contains("ls-remote"))
+        #expect(
+          arguments == [
+            "git",
+            "ls-remote",
+            "--symref",
+            "git@github.com:onevcat/app.git",
+            "HEAD",
+            "refs/heads/*",
+          ])
         return ShellOutput(stdout: output, stderr: "", exitCode: 0)
       },
       runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
@@ -126,7 +134,7 @@ struct GitClientBranchRefsTests {
     #expect(refs.defaultBaseRef == "origin/main")
     #expect(
       refs.options == [
-        GitBranchRefOption(ref: "origin/feature/login", kind: .fetchedRemote),
+        GitBranchRefOption(ref: "origin/develop", kind: .fetchedRemote),
         GitBranchRefOption(ref: "origin/main", kind: .fetchedRemote),
       ])
   }

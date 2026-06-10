@@ -332,9 +332,21 @@ struct WorkspaceCreationPromptFeature {
         return .send(.delegate(.baseRefSourceChanged(repositoryID)))
 
       case .repositorySourceLocationChanged(let repositoryID, let sourceLocation):
-        state.repositories[id: repositoryID]?.sourceLocation = sourceLocation
+        guard var repository = state.repositories[id: repositoryID] else {
+          return .none
+        }
+        let sourceLocationChanged = repository.sourceLocation != sourceLocation
+        repository.sourceLocation = sourceLocation
+        if sourceLocationChanged {
+          repository.baseRef = nil
+          repository.baseRefOptions = []
+        }
+        state.repositories[id: repositoryID] = repository
         state.validationMessage = nil
-        return .none
+        guard sourceLocationChanged, repository.sourceKind != .remote, repository.localSourceURL != nil else {
+          return .none
+        }
+        return .send(.delegate(.baseRefSourceChanged(repositoryID)))
 
       case .repositoryBranchNameChanged(let repositoryID, let branchName):
         state.repositories[id: repositoryID]?.branchName = branchName

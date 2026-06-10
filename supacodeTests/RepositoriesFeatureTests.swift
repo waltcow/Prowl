@@ -927,6 +927,67 @@ struct RepositoriesFeatureTests {
     await store.receive(.delegate(.baseRefSourceChanged(UUID(0).uuidString)))
   }
 
+  @Test func workspaceCreationPromptClearsAndReloadsBaseRefsWhenSourceLocationChanges() async {
+    let repositoryID = "repo"
+    let store = TestStore(
+      initialState: WorkspaceCreationPromptFeature.State(
+        repositories: [
+          ProjectWorkspaceCreationRepository(
+            id: repositoryID,
+            name: "Repo",
+            sourceKind: .bareRepository,
+            sourceLocation: "/tmp/repo-a.git",
+            checkoutMode: .useExistingRef,
+            baseRef: "origin/main",
+            baseRefOptions: [GitBranchRefOption(ref: "origin/main", kind: .remoteTracking)]
+          )
+        ],
+        title: "Workspace",
+        rootPath: "/tmp/workspace",
+        selectedRepositoryIDs: [repositoryID]
+      )
+    ) {
+      WorkspaceCreationPromptFeature()
+    }
+
+    await store.send(.repositorySourceLocationChanged(repositoryID, "/tmp/repo-b.git")) {
+      $0.repositories[id: repositoryID]?.sourceLocation = "/tmp/repo-b.git"
+      $0.repositories[id: repositoryID]?.baseRef = nil
+      $0.repositories[id: repositoryID]?.baseRefOptions = []
+    }
+    await store.receive(.delegate(.baseRefSourceChanged(repositoryID)))
+  }
+
+  @Test func workspaceCreationPromptClearsBaseRefsWhenRemoteSourceLocationChanges() async {
+    let repositoryID = "remote"
+    let store = TestStore(
+      initialState: WorkspaceCreationPromptFeature.State(
+        repositories: [
+          ProjectWorkspaceCreationRepository(
+            id: repositoryID,
+            name: "Remote",
+            sourceKind: .remote,
+            sourceLocation: "git@github.com:onevcat/app.git",
+            checkoutMode: .useExistingRef,
+            baseRef: "origin/main",
+            baseRefOptions: [GitBranchRefOption(ref: "origin/main", kind: .fetchedRemote)]
+          )
+        ],
+        title: "Workspace",
+        rootPath: "/tmp/workspace",
+        selectedRepositoryIDs: [repositoryID]
+      )
+    ) {
+      WorkspaceCreationPromptFeature()
+    }
+
+    await store.send(.repositorySourceLocationChanged(repositoryID, "git@github.com:onevcat/other.git")) {
+      $0.repositories[id: repositoryID]?.sourceLocation = "git@github.com:onevcat/other.git"
+      $0.repositories[id: repositoryID]?.baseRef = nil
+      $0.repositories[id: repositoryID]?.baseRefOptions = []
+    }
+  }
+
   @Test func workspaceCreationPromptRejectsUnknownBaseRef() async {
     let repoRootA = "/tmp/repo-a"
     let repoRootB = "/tmp/repo-b"
