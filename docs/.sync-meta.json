@@ -1,6 +1,6 @@
 {
   "_comment": "Metadata for the docs/ manual. The last_synced_commit is the commit at which docs/ was last verified against the implementation; the sync-docs skill (.claude/skills/sync-docs/SKILL.md) diffs HEAD against it and updates this file. Committed to git on purpose so the baseline persists across sessions and machines. A dotfile + .json so a future docs website does not render it as a page.",
-  "last_synced_commit": "2948302ef96b03c17be1ff929e3753743ac39e7a",
-  "last_synced_date": "2026-06-09",
-  "note": "No doc edits needed: the two user-facing features in range — GitHub merge-queue status in the PR popover/sidebar/badges (#425) and per-worktree custom name/parent-folder override (#424) — were already documented in their feature PRs (github-pull-requests.md merge-queue note, repositories-and-worktrees.md Advanced section), and verified against PullRequestMergeQueueStatus.swift. Remaining changes are perf/polish/bug-fixes (event coalescing, sheet/palette flicker fixes, window-position persistence, focus-after-nav) that don't change documented behavior. Baseline bump only."
+  "last_synced_commit": "6da2ba4a0b2f88923aaa1b72282b5fa41a83706d",
+  "last_synced_date": "2026-06-11",
+  "note": "No doc edits needed: the two user-facing features in range — split zoom with cmd+opt+shift+F and per-pane zoom buttons (#435), and Shelf agent status badges + cmd-held trackpad book/tab swiping (#434) — were already documented in their feature PRs (terminal.md, keyboard-shortcuts.md, shelf.md, active-agents.md, settings-fields.md showActiveAgentStatusInShelf row), verified against AppShortcuts.swift and GlobalSettings.swift. Remaining changes are internal fixes (windowless stall diagnostics, Sentry HTTP filtering, detection resync, worktree Advanced field labels). Baseline bump only."
 }
