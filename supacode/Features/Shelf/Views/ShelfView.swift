@@ -303,7 +303,6 @@ private struct ShelfSwipeEventMonitor: NSViewRepresentable {
 
   func makeNSView(context: Context) -> NSView {
     let view = NSView()
-    view.postsFrameChangedNotifications = true
     context.coordinator.view = view
     context.coordinator.installIfNeeded()
     return view

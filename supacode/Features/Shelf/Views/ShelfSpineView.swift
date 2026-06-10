@@ -231,31 +231,29 @@ struct ShelfSpineView: View {
     // caller sequences `selectWorktree` → `newTerminal`). Splits only
     // make sense against a focused surface, so they stay scoped to the
     // open book.
-    if hasBottomControls {
-      if let onNewTab {
-        ShelfSpineControlButton(
-          systemImage: "plus",
-          label: "New Tab",
-          shortcut: ghosttyShortcuts.display(for: "new_tab"),
-          action: onNewTab
-        )
-      }
-      if let onSplitVertical {
-        ShelfSpineControlButton(
-          systemImage: "square.split.2x1",
-          label: "Split Vertically",
-          shortcut: ghosttyShortcuts.display(for: "new_split:right"),
-          action: onSplitVertical
-        )
-      }
-      if let onSplitHorizontal {
-        ShelfSpineControlButton(
-          systemImage: "square.split.1x2",
-          label: "Split Horizontally",
-          shortcut: ghosttyShortcuts.display(for: "new_split:down"),
-          action: onSplitHorizontal
-        )
-      }
+    if let onNewTab {
+      ShelfSpineControlButton(
+        systemImage: "plus",
+        label: "New Tab",
+        shortcut: ghosttyShortcuts.display(for: "new_tab"),
+        action: onNewTab
+      )
+    }
+    if let onSplitVertical {
+      ShelfSpineControlButton(
+        systemImage: "square.split.2x1",
+        label: "Split Vertically",
+        shortcut: ghosttyShortcuts.display(for: "new_split:right"),
+        action: onSplitVertical
+      )
+    }
+    if let onSplitHorizontal {
+      ShelfSpineControlButton(
+        systemImage: "square.split.1x2",
+        label: "Split Horizontally",
+        shortcut: ghosttyShortcuts.display(for: "new_split:down"),
+        action: onSplitHorizontal
+      )
     }
   }
 
