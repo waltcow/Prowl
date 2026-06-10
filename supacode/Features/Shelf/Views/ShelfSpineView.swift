@@ -602,14 +602,18 @@ private struct ShelfSpineTabSlot: View {
 
   @ViewBuilder
   private func statusMarker(for entry: ActiveAgentEntry) -> some View {
-    Image(systemName: entry.displayState.shelfSpineStatusSymbol)
-      .font(.caption2.weight(.bold))
-      .foregroundStyle(entry.displayState.foregroundStyle)
-      .frame(
-        width: ShelfMetrics.agentStatusMarkerSize,
-        height: ShelfMetrics.agentStatusMarkerSize
-      )
-      .accessibilityHidden(true)
+    if let symbol = entry.displayState.shelfSpineStatusSymbol {
+      Image(systemName: symbol)
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(entry.displayState.foregroundStyle)
+        // Thin halo so the bare glyph stays legible over the tab icon's strokes.
+        .shadow(color: .black.opacity(0.4), radius: 1)
+        .frame(
+          width: ShelfMetrics.agentStatusMarkerSize,
+          height: ShelfMetrics.agentStatusMarkerSize
+        )
+        .accessibilityHidden(true)
+    }
   }
 
   private var helpText: String {
@@ -686,12 +690,14 @@ extension AgentDisplayState {
     }
   }
 
-  fileprivate var shelfSpineStatusSymbol: String {
+  /// `nil` hides the marker: idle is the steady state, so badging it would
+  /// keep a permanent glyph on every agent tab and dilute the actionable ones.
+  fileprivate var shelfSpineStatusSymbol: String? {
     switch self {
     case .working: return "bolt.fill"
     case .blocked: return "exclamationmark"
     case .done: return "checkmark"
-    case .idle: return "circle.fill"
+    case .idle: return nil
     }
   }
 }

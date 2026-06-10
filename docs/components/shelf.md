@@ -66,10 +66,10 @@ selection.
 - **Unread notification:** a tab slot highlights orange; the spine header shows an
   orange dot.
 - **Detected agents:** status markers appear on the owning tab slot. Marker
-  color/status follows the Active Agents states (Working, Blocked, Done, Idle);
-  blocked agents are prioritized first when a split tab contains multiple agents.
-  Shelf keeps agent detection active while visible, even if the Active Agents
-  panel is hidden.
+  color/status follows the Active Agents states (Working, Blocked, Done); idle
+  agents tint the slot but show no corner glyph. Blocked agents are prioritized
+  first when a split tab contains multiple agents. Shelf keeps agent detection
+  active while visible, even if the Active Agents panel is hidden.
 - Spine tint follows the **repository color** when set (toggle
   `shelfSpineTintFollowsRepositoryColor`); otherwise a fallback
   (`shelfSpineTintFallback`: neutral or system tint) is used.
