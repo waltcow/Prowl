@@ -545,6 +545,7 @@ struct RepositoriesFeatureTests {
       workspace: workspace
     )
 
+    let childID = repository.rootURL.appending(path: "app").standardizedFileURL.path(percentEncoded: false)
     let store = TestStore(initialState: RepositoriesFeature.State()) {
       RepositoriesFeature()
     } withDependencies: {
@@ -560,6 +561,11 @@ struct RepositoriesFeatureTests {
         Issue.record("workspace should not load git worktrees: \(url.path(percentEncoded: false))")
         return []
       }
+      // The workspace's child repository is refreshed via the child pipeline
+      // (live branch + diff), distinct from the worktree probing above.
+      $0.gitClient.branchName = { _ in "main" }
+      $0.gitClient.lineChanges = { _ in nil }
+      $0.gitClient.remoteInfo = { _ in nil }
     }
 
     await store.send(.loadPersistedRepositories)
@@ -570,6 +576,9 @@ struct RepositoriesFeatureTests {
       $0.snapshotPersistencePhase = .active
     }
     await store.receive(\.delegate.repositoriesChanged)
+    await store.receive(\.workspaceChildrenInfoLoaded) {
+      $0.workspaceChildBranchByID = [childID: "main"]
+    }
     await store.finish()
   }
 
@@ -6054,6 +6063,118 @@ struct RepositoriesFeatureTests {
 
     #expect(!store.state.canNavigateWorktreeHistoryForward)
     #expect(store.state.canNavigateWorktreeHistoryBackward)
+  }
+
+  // MARK: - Workspace child rows
+
+  private func makeWorkspaceRepository(
+    id: String,
+    children: [ProjectWorkspace.RepositoryEntry]
+  ) -> Repository {
+    makeRepository(
+      id: id,
+      name: "Workspace",
+      kind: .plain,
+      worktrees: [],
+      workspace: ProjectWorkspace(title: "Workspace", repositories: children)
+    )
+  }
+
+  @Test func applyWorkspaceChildrenInfoWritesBranchDiffAndPR() {
+    var state = RepositoriesFeature.State()
+    let pullRequest = makePullRequest(state: "OPEN", headRefName: "feature")
+    applyWorkspaceChildrenInfo(
+      [
+        WorkspaceChildInfoUpdate(id: "/ws/app", branch: "feature", added: 7, removed: 2, pullRequest: pullRequest),
+        WorkspaceChildInfoUpdate(id: "/ws/api", branch: "  ", added: 0, removed: 0, pullRequest: nil),
+      ],
+      state: &state
+    )
+
+    #expect(state.workspaceChildBranchByID["/ws/app"] == "feature")
+    #expect(state.workspaceChildInfoByID["/ws/app"]?.addedLines == 7)
+    #expect(state.workspaceChildInfoByID["/ws/app"]?.removedLines == 2)
+    #expect(state.workspaceChildInfoByID["/ws/app"]?.pullRequest == pullRequest)
+    // Blank branch + empty diff + no PR → no entries.
+    #expect(state.workspaceChildBranchByID["/ws/api"] == nil)
+    #expect(state.workspaceChildInfoByID["/ws/api"] == nil)
+  }
+
+  @Test func workspaceChildRowsMergesLiveBranchAndInfo() {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath,
+      branchName: "metadata-branch"
+    )
+    let repository = makeWorkspaceRepository(id: "/tmp/ws", children: [entry])
+    var state = makeState(repositories: [repository])
+    let childID = entry.resolvedURL(relativeTo: repository.rootURL).path(percentEncoded: false)
+    state.workspaceChildBranchByID[childID] = "live-branch"
+    state.workspaceChildInfoByID[childID] = WorktreeInfoEntry(addedLines: 3, removedLines: 1, pullRequest: nil)
+
+    let rows = state.workspaceChildRows(in: repository)
+
+    #expect(rows.count == 1)
+    #expect(rows.first?.repositoryName == "App")
+    // Live branch wins over the metadata branch.
+    #expect(rows.first?.branchName == "live-branch")
+    #expect(rows.first?.info?.addedLines == 3)
+  }
+
+  @Test func workspaceChildRowsFallsBackToMetadataBranch() {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .bareRepository,
+      branchName: "metadata-branch"
+    )
+    let repository = makeWorkspaceRepository(id: "/tmp/ws2", children: [entry])
+    let state = makeState(repositories: [repository])
+
+    let rows = state.workspaceChildRows(in: repository)
+    #expect(rows.first?.branchName == "metadata-branch")
+    #expect(rows.first?.info == nil)
+  }
+
+  @Test func repositoriesLoadedRefreshesAndPrunesWorkspaceChildren() async {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath,
+      branchName: "metadata"
+    )
+    let repository = makeWorkspaceRepository(id: "/tmp/ws-refresh", children: [entry])
+    let childID = entry.resolvedURL(relativeTo: repository.rootURL).path(percentEncoded: false)
+    var initialState = makeState(repositories: [repository])
+    // A stale child entry from a workspace that no longer exists must be pruned.
+    initialState.workspaceChildInfoByID["/tmp/gone/app"] = WorktreeInfoEntry(
+      addedLines: 1,
+      removedLines: 1,
+      pullRequest: nil
+    )
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.branchName = { _ in "feature/live" }
+      $0.gitClient.lineChanges = { _ in (7, 2) }
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+    }
+    store.exhaustivity = .off
+
+    await store.send(
+      .repositoriesLoaded([repository], failures: [], roots: [repository.rootURL], animated: false)
+    )
+    await store.receive(\.workspaceChildrenInfoLoaded)
+    await store.finish()
+
+    #expect(store.state.workspaceChildInfoByID["/tmp/gone/app"] == nil)
+    #expect(store.state.workspaceChildBranchByID[childID] == "feature/live")
+    #expect(store.state.workspaceChildInfoByID[childID]?.addedLines == 7)
+    #expect(store.state.workspaceChildInfoByID[childID]?.removedLines == 2)
   }
 
   private func makeWorktree(

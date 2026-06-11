@@ -79,7 +79,19 @@ struct SidebarRepositoryContainerModel: Equatable, Identifiable {
   var kind: Repository.Kind
   var isExpanded: Bool
   var isRemoving: Bool
+  var isWorkspace: Bool
   var worktreeSections: WorktreeRowSections
+  var workspaceChildRows: [WorkspaceChildRowModel]
+}
+
+/// A display-only sidebar row for one workspace child repository. `branchName`
+/// is the live current branch (falling back to metadata); `info` carries the
+/// uncommitted diff counts and PR, mirroring a worktree row's badges.
+struct WorkspaceChildRowModel: Equatable, Identifiable {
+  let id: String
+  let repositoryName: String
+  let branchName: String?
+  let info: WorktreeInfoEntry?
 }
 
 struct FailedRepositoryModel: Equatable, Identifiable {
@@ -157,7 +169,11 @@ extension RepositoriesFeature.State {
               kind: repository.kind,
               isExpanded: isExpanded,
               isRemoving: isRemovingRepository(repository),
-              worktreeSections: isExpanded ? worktreeRowSections(in: repository) : .empty
+              isWorkspace: repository.isWorkspace,
+              worktreeSections: isExpanded ? worktreeRowSections(in: repository) : .empty,
+              workspaceChildRows: isExpanded && repository.isWorkspace
+                ? workspaceChildRows(in: repository)
+                : []
             )
           )
         )

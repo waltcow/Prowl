@@ -148,6 +148,43 @@ extension RepositoriesFeature.State {
     return worktrees.filter { !archivedSet.contains($0.id) }
   }
 
+  /// Child repositories materialized inside every workspace, resolved to their
+  /// on-disk working directory. Used both to refresh their live status and to
+  /// render their sidebar rows. Child id is the working-directory path string.
+  func resolvedWorkspaceChildren(in repository: Repository) -> [ResolvedWorkspaceChild] {
+    guard let workspace = repository.workspace else {
+      return []
+    }
+    return workspace.repositories.map { entry in
+      let url = entry.resolvedURL(relativeTo: repository.rootURL)
+      return ResolvedWorkspaceChild(
+        id: url.path(percentEncoded: false),
+        workspaceID: repository.id,
+        repositoryName: entry.name,
+        metadataBranch: entry.branchName,
+        workingDirectory: url
+      )
+    }
+  }
+
+  func allResolvedWorkspaceChildren() -> [ResolvedWorkspaceChild] {
+    repositories.filter(\.isWorkspace).flatMap { resolvedWorkspaceChildren(in: $0) }
+  }
+
+  /// Sidebar display rows for one workspace's children, merging the resolved
+  /// metadata with live branch (`workspaceChildBranchByID`) and diff/PR info
+  /// (`workspaceChildInfoByID`). Live branch falls back to the metadata branch.
+  func workspaceChildRows(in repository: Repository) -> [WorkspaceChildRowModel] {
+    resolvedWorkspaceChildren(in: repository).map { child in
+      WorkspaceChildRowModel(
+        id: child.id,
+        repositoryName: child.repositoryName,
+        branchName: workspaceChildBranchByID[child.id] ?? child.metadataBranch,
+        info: workspaceChildInfoByID[child.id]
+      )
+    }
+  }
+
   struct ArchivedWorktreeGroup: Equatable {
     var repository: Repository
     var worktrees: [Worktree]

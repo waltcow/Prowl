@@ -324,6 +324,7 @@ extension RepositoriesFeature {
         .map(SidebarSelection.worktree)
       state.shouldSelectFirstAfterReload = false
     }
+    pruneWorkspaceChildInfo(state: &state)
     return ApplyRepositoriesResult(
       didPrunePinned: didPrunePinned,
       didPruneRepositoryOrder: didPruneRepositoryOrder,

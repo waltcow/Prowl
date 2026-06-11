@@ -284,6 +284,7 @@ extension RepositoriesFeature {
       {
         allEffects.append(effect)
       }
+      allEffects.append(refreshWorkspaceChildrenEffect(state: state))
       return .merge(allEffects)
 
     case .refreshAllCustomTitles:
@@ -846,6 +847,10 @@ extension RepositoriesFeature {
         removed: removed,
         state: &state
       )
+      return .none
+
+    case .workspaceChildrenInfoLoaded(let updates):
+      applyWorkspaceChildrenInfo(updates, state: &state)
       return .none
 
     case .alert(.dismiss):

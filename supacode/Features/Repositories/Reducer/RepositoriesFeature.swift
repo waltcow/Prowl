@@ -69,6 +69,17 @@ struct ForceDeleteBranchRequest: Equatable {
   let errorMessage: String
 }
 
+// Result of refreshing one workspace child repository's live status: current
+// branch, uncommitted diff counts, and (when GitHub integration is available)
+// the PR for that branch.
+struct WorkspaceChildInfoUpdate: Equatable, Sendable {
+  let id: String
+  let branch: String?
+  let added: Int?
+  let removed: Int?
+  let pullRequest: GithubPullRequest?
+}
+
 struct RemoveWorkspaceConfirmation: Equatable {
   struct BranchOption: Equatable, Identifiable {
     let id: String
@@ -94,6 +105,7 @@ struct RepositoriesFeature {
     static let worktreePromptLoad = "repositories.worktreePromptLoad"
     static let worktreePromptValidation = "repositories.worktreePromptValidation"
     static let workspaceCreation = "repositories.workspaceCreation"
+    static let workspaceChildrenRefresh = "repositories.workspaceChildrenRefresh"
     static func archiveScript(_ worktreeID: Worktree.ID) -> String {
       "repositories.archiveScript.\(worktreeID)"
     }
@@ -266,6 +278,13 @@ struct RepositoriesFeature {
     var repositoryCustomTitles: [Repository.ID: String] = [:]
     var selection: SidebarSelection?
     var worktreeInfoByID: [Worktree.ID: WorktreeInfoEntry] = [:]
+    // Live status for workspace child repositories, keyed by the child's
+    // working-directory path. Kept separate from `worktreeInfoByID` (which is
+    // pruned to tracked worktrees) because workspace children are not tracked
+    // worktrees — they are metadata entries materialized inside the workspace
+    // folder. Refreshed by `refreshWorkspaceChildrenEffect` on each repo reload.
+    var workspaceChildInfoByID: [String: WorktreeInfoEntry] = [:]
+    var workspaceChildBranchByID: [String: String] = [:]
     var worktreeOrderByRepository: [Repository.ID: [Worktree.ID]] = [:]
     var isOpenPanelPresented = false
     var isInitialLoadComplete = false
@@ -412,6 +431,7 @@ struct RepositoriesFeature {
     case worktreeInfoEvent(WorktreeInfoWatcherClient.Event)
     case worktreeBranchNameLoaded(worktreeID: Worktree.ID, name: String)
     case worktreeLineChangesLoaded(worktreeID: Worktree.ID, added: Int, removed: Int)
+    case workspaceChildrenInfoLoaded([WorkspaceChildInfoUpdate])
     case showToast(StatusToast)
     case dismissToast
     case worktreeCreationPrompt(PresentationAction<WorktreeCreationPromptFeature.Action>)
