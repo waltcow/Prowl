@@ -7,6 +7,16 @@ import Testing
 
 @MainActor
 struct RepositorySettingsFeatureTests {
+  @Test func githubAccountOverrideRoundTripsThroughRepositorySettings() throws {
+    var settings = RepositorySettings.default
+    settings.githubAccountOverride = GithubAccountOverride(host: "github.com", login: "work")
+
+    let data = try JSONEncoder().encode(settings)
+    let decoded = try JSONDecoder().decode(RepositorySettings.self, from: data)
+
+    #expect(decoded.githubAccountOverride == GithubAccountOverride(host: "github.com", login: "work"))
+  }
+
   @Test(.dependencies) func plainFolderTaskLoadsWithoutGitRequests() async throws {
     let rootURL = URL(fileURLWithPath: "/tmp/folder-\(UUID().uuidString)")
     let settingsStorage = SettingsTestStorage()

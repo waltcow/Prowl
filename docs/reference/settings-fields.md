@@ -80,6 +80,7 @@ Stored at `~/.prowl/repo/<repo-name>/prowl.json` (schema v2). For the tri-state
 | `copyIgnoredOnWorktreeCreate` | Bool? | `nil` | Copy ignored files; `nil` = use global. |
 | `copyUntrackedOnWorktreeCreate` | Bool? | `nil` | Copy untracked files; `nil` = use global. |
 | `pullRequestMergeStrategy` | enum? | `nil` | PR merge strategy; `nil` = use global. |
+| `githubAccountOverride` | object? | `nil` | Optional `{ "host": "...", "login": "..." }`; Prowl temporarily switches `gh` to this account for GitHub operations in this repo. |
 | `customTitle` | String? | `nil` | Display name override for the repository. |
 | `observeLineDiffsAutomatically` | Bool? | `nil` (= on) | Keep worktree line-change badges updated; set `false` for large repos. |
 | `fetchPullRequestState` | Bool? | `nil` (= on) | Background-fetch PR state; set `false` to save GitHub rate limit. |

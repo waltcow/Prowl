@@ -3941,7 +3941,7 @@ struct RepositoriesFeatureTests {
     } withDependencies: {
       $0.githubIntegration.isAvailable = { true }
       $0.githubCLI.resolveRemoteInfo = { _ in upstreamRemoteInfo }
-      $0.githubCLI.mergePullRequest = { _, _, number, _ in
+      $0.githubCLI.mergePullRequest = { _, _, number, _, _ in
         mergedNumbers.withValue { $0.append(number) }
       }
     }
@@ -3993,7 +3993,7 @@ struct RepositoriesFeatureTests {
     } withDependencies: {
       $0.githubIntegration.isAvailable = { true }
       $0.githubCLI.resolveRemoteInfo = { _ in upstreamRemoteInfo }
-      $0.githubCLI.mergePullRequest = { _, _, _, strategy in
+      $0.githubCLI.mergePullRequest = { _, _, _, strategy, _ in
         mergedStrategies.withValue { $0.append(strategy) }
       }
     }
@@ -4042,7 +4042,7 @@ struct RepositoriesFeatureTests {
         Issue.record("gh resolveRemoteInfo should not run when git remote resolves")
         return nil
       }
-      $0.githubCLI.mergePullRequest = { root, remoteInfo, number, _ in
+      $0.githubCLI.mergePullRequest = { root, remoteInfo, number, _, _ in
         #expect(root == featureWorktree.workingDirectory)
         #expect(number == 12)
         mutationRemoteInfos.withValue { $0.append(remoteInfo) }
@@ -4086,7 +4086,7 @@ struct RepositoriesFeatureTests {
       $0.githubIntegration.isAvailable = { true }
       $0.githubCLI.resolveRemoteInfo = { _ in nil }
       $0.gitClient.remoteInfo = { _ in nil }
-      $0.githubCLI.mergePullRequest = { _, _, _, _ in
+      $0.githubCLI.mergePullRequest = { _, _, _, _, _ in
         mergeAttempts.withValue { $0 += 1 }
       }
     }
@@ -4141,7 +4141,7 @@ struct RepositoriesFeatureTests {
     } withDependencies: {
       $0.githubIntegration.isAvailable = { true }
       $0.githubCLI.resolveRemoteInfo = { _ in upstreamRemoteInfo }
-      $0.githubCLI.closePullRequest = { _, _, number in
+      $0.githubCLI.closePullRequest = { _, _, number, _ in
         closedNumbers.withValue { $0.append(number) }
       }
     }
@@ -4311,7 +4311,7 @@ struct RepositoriesFeatureTests {
       RepositoriesFeature()
     } withDependencies: {
       $0.gitClient.remoteInfo = { _ in nil }
-      $0.githubCLI.batchPullRequests = { _, _, _, _ in
+      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
         Issue.record("batchPullRequests should not run when remoteInfo is unavailable")
         return [:]
       }
@@ -4351,7 +4351,7 @@ struct RepositoriesFeatureTests {
         Issue.record("remoteInfo should not be requested when GitHub integration is unavailable")
         return nil
       }
-      $0.githubCLI.batchPullRequests = { _, _, _, _ in
+      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
         Issue.record("batchPullRequests should not run when GitHub integration is unavailable")
         return [:]
       }
@@ -4439,7 +4439,7 @@ struct RepositoriesFeatureTests {
       RepositoriesFeature()
     } withDependencies: {
       $0.gitClient.remoteInfo = { _ in nil }
-      $0.githubCLI.batchPullRequests = { _, _, _, _ in
+      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
         Issue.record("batchPullRequests should not run when remoteInfo is unavailable")
         return [:]
       }
@@ -4537,7 +4537,7 @@ struct RepositoriesFeatureTests {
       RepositoriesFeature()
     } withDependencies: {
       $0.gitClient.remoteInfo = { _ in nil }
-      $0.githubCLI.batchPullRequests = { _, _, _, _ in
+      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
         Issue.record("batchPullRequests should not run when remoteInfo is unavailable")
         return [:]
       }

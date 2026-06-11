@@ -69,6 +69,28 @@ struct PullRequestRefreshCoordinatorTests {
     #expect(hosts == ["github.com", "ghe.example"])
   }
 
+  @Test func sameHostWithDifferentAccountsTriggersIndependentBatches() async throws {
+    let clock = TestClock()
+    let probe = CoordinatorProbe()
+    let outcomes = OutcomeCollector()
+    let coordinator = makeCoordinator(
+      probe: probe, clock: clock, outcomes: outcomes,
+      batched: { _, requests in successResult(for: requests) }
+    )
+
+    coordinator.enqueue(
+      request(repo: "alpha", accountOverride: GithubAccountOverride(host: "github.com", login: "one")))
+    coordinator.enqueue(request(repo: "beta", accountOverride: GithubAccountOverride(host: "github.com", login: "two")))
+
+    await clock.advance(by: .milliseconds(250))
+    await Task.yield()
+    await Task.yield()
+
+    let calls = await probe.batchedCalls()
+    #expect(calls.count == 2)
+    #expect(Set(calls.compactMap(\.accountOverride?.login)) == ["one", "two"])
+  }
+
   @Test func partialErrorTriggersPerRepoFallback() async throws {
     let clock = TestClock()
     let probe = CoordinatorProbe()
@@ -494,11 +516,11 @@ private func makeCoordinator(
     [String: GithubPullRequest] = { _, _, _, _ in [:] }
 ) -> PullRequestRefreshCoordinator {
   var client = GithubCLIClient.testValue
-  client.batchPullRequestsAcrossRepositories = { host, requests in
-    await probe.recordBatched(host: host, requests: requests)
+  client.batchPullRequestsAcrossRepositories = { host, requests, accountOverride in
+    await probe.recordBatched(host: host, requests: requests, accountOverride: accountOverride)
     return try await batched(host, requests)
   }
-  client.batchPullRequests = { host, owner, repo, branches in
+  client.batchPullRequests = { host, owner, repo, branches, _ in
     await probe.recordLegacy(host: host, owner: owner, repo: repo, branches: branches)
     return try await legacy(host, owner, repo, branches)
   }
@@ -530,6 +552,7 @@ nonisolated private func request(
   repositoryID: Repository.ID? = nil,
   rootPath: String? = nil,
   host: String = "github.com",
+  accountOverride: GithubAccountOverride? = nil,
   branches: [String] = ["feat-1"],
   worktreeIDs: [Worktree.ID]? = nil
 ) -> PullRequestRefreshCoordinator.Request {
@@ -540,6 +563,7 @@ nonisolated private func request(
     host: host,
     owner: "khoi",
     repo: repo,
+    accountOverride: accountOverride,
     branches: branches,
     worktreeIDs: worktreeIDs ?? ["\(resolvedRepositoryID)-wt"]
   )
@@ -580,6 +604,7 @@ actor CoordinatorProbe {
   struct BatchedCall: Sendable {
     let host: String
     let requests: [CrossRepoPullRequestRequest]
+    let accountOverride: GithubAccountOverride?
   }
 
   struct LegacyCall: Sendable {
@@ -592,8 +617,12 @@ actor CoordinatorProbe {
   private var batched: [BatchedCall] = []
   private var legacy: [LegacyCall] = []
 
-  func recordBatched(host: String, requests: [CrossRepoPullRequestRequest]) {
-    batched.append(BatchedCall(host: host, requests: requests))
+  func recordBatched(
+    host: String,
+    requests: [CrossRepoPullRequestRequest],
+    accountOverride: GithubAccountOverride?
+  ) {
+    batched.append(BatchedCall(host: host, requests: requests, accountOverride: accountOverride))
   }
 
   func recordLegacy(host: String, owner: String, repo: String, branches: [String]) {

@@ -363,6 +363,7 @@ extension RepositoriesFeature {
           }
           await send(.showToast(.inProgress("Marking PR ready…")))
           do {
+            @Shared(.repositorySettings(repoRoot)) var repositorySettings
             guard
               let remoteInfo = await Self.resolveGithubRemoteInfo(
                 repositoryRootURL: repoRoot,
@@ -375,7 +376,12 @@ extension RepositoriesFeature {
                 .presentAlert(title: "GitHub repository not resolved", message: unresolvedGithubRepositoryMessage))
               return
             }
-            try await githubCLI.markPullRequestReady(worktreeRoot, remoteInfo, pullRequest.number)
+            try await githubCLI.markPullRequestReady(
+              worktreeRoot,
+              remoteInfo,
+              pullRequest.number,
+              repositorySettings.githubAccountOverride
+            )
             await send(.showToast(.success("Pull request marked ready")))
             await send(.githubIntegration(.delayedPullRequestRefresh(worktreeID)))
           } catch {
@@ -420,7 +426,13 @@ extension RepositoriesFeature {
                 .presentAlert(title: "GitHub repository not resolved", message: unresolvedGithubRepositoryMessage))
               return
             }
-            try await githubCLI.mergePullRequest(worktreeRoot, remoteInfo, pullRequest.number, strategy)
+            try await githubCLI.mergePullRequest(
+              worktreeRoot,
+              remoteInfo,
+              pullRequest.number,
+              strategy,
+              repositorySettings.githubAccountOverride
+            )
             await send(.showToast(.success("Pull request merged")))
             await send(.worktreeInfoEvent(pullRequestRefresh))
             await send(.githubIntegration(.delayedPullRequestRefresh(worktreeID)))
@@ -451,6 +463,7 @@ extension RepositoriesFeature {
           }
           await send(.showToast(.inProgress("Closing pull request…")))
           do {
+            @Shared(.repositorySettings(repoRoot)) var repositorySettings
             guard
               let remoteInfo = await Self.resolveGithubRemoteInfo(
                 repositoryRootURL: repoRoot,
@@ -463,7 +476,12 @@ extension RepositoriesFeature {
                 .presentAlert(title: "GitHub repository not resolved", message: unresolvedGithubRepositoryMessage))
               return
             }
-            try await githubCLI.closePullRequest(worktreeRoot, remoteInfo, pullRequest.number)
+            try await githubCLI.closePullRequest(
+              worktreeRoot,
+              remoteInfo,
+              pullRequest.number,
+              repositorySettings.githubAccountOverride
+            )
             await send(.showToast(.success("Pull request closed")))
             await send(.worktreeInfoEvent(pullRequestRefresh))
             await send(.githubIntegration(.delayedPullRequestRefresh(worktreeID)))
@@ -502,7 +520,9 @@ extension RepositoriesFeature {
           }
           await send(.showToast(.inProgress("Fetching CI logs…")))
           do {
-            guard let run = try await githubCLI.latestRun(worktreeRoot, branchName) else {
+            @Shared(.repositorySettings(repoRoot)) var repositorySettings
+            let accountOverride = repositorySettings.githubAccountOverride
+            guard let run = try await githubCLI.latestRun(worktreeRoot, branchName, accountOverride) else {
               await send(.dismissToast)
               await send(
                 .presentAlert(
@@ -522,10 +542,10 @@ extension RepositoriesFeature {
               )
               return
             }
-            let failedLogs = try await githubCLI.failedRunLogs(worktreeRoot, run.databaseId)
+            let failedLogs = try await githubCLI.failedRunLogs(worktreeRoot, run.databaseId, accountOverride)
             let logs =
               if failedLogs.isEmpty {
-                try await githubCLI.runLogs(worktreeRoot, run.databaseId)
+                try await githubCLI.runLogs(worktreeRoot, run.databaseId, accountOverride)
               } else {
                 failedLogs
               }
@@ -579,7 +599,9 @@ extension RepositoriesFeature {
           }
           await send(.showToast(.inProgress("Re-running failed jobs…")))
           do {
-            guard let run = try await githubCLI.latestRun(worktreeRoot, branchName) else {
+            @Shared(.repositorySettings(repoRoot)) var repositorySettings
+            let accountOverride = repositorySettings.githubAccountOverride
+            guard let run = try await githubCLI.latestRun(worktreeRoot, branchName, accountOverride) else {
               await send(.dismissToast)
               await send(
                 .presentAlert(
@@ -599,7 +621,7 @@ extension RepositoriesFeature {
               )
               return
             }
-            try await githubCLI.rerunFailedJobs(worktreeRoot, run.databaseId)
+            try await githubCLI.rerunFailedJobs(worktreeRoot, run.databaseId, accountOverride)
             await send(.showToast(.success("Failed jobs re-run started")))
             await send(.githubIntegration(.delayedPullRequestRefresh(worktreeID)))
           } catch {
@@ -719,6 +741,7 @@ extension RepositoriesFeature {
         await send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
         return
       }
+      @Shared(.repositorySettings(repositoryRootURL)) var repositorySettings
       coordinatorClient.enqueue(
         PullRequestRefreshCoordinator.Request(
           repositoryID: repositoryID,
@@ -726,6 +749,7 @@ extension RepositoriesFeature {
           host: info.host,
           owner: info.owner,
           repo: info.repo,
+          accountOverride: repositorySettings.githubAccountOverride,
           branches: branches,
           worktreeIDs: worktreeIDs
         )

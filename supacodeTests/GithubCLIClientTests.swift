@@ -124,9 +124,9 @@ struct GithubCLIClientTests {
     )
     let client = GithubCLIClient.live(shell: shell)
 
-    try await client.mergePullRequest(repoRoot, remoteInfo, 12, .squash)
-    try await client.closePullRequest(repoRoot, remoteInfo, 13)
-    try await client.markPullRequestReady(repoRoot, remoteInfo, 14)
+    try await client.mergePullRequest(repoRoot, remoteInfo, 12, .squash, nil)
+    try await client.closePullRequest(repoRoot, remoteInfo, 13, nil)
+    try await client.markPullRequestReady(repoRoot, remoteInfo, 14, nil)
 
     let calls = await probe.snapshot()
     #expect(
@@ -136,6 +136,83 @@ struct GithubCLIClientTests {
         ["pr", "ready", "14", "--repo", "github.enterprise.test/octo/repo"],
       ])
     #expect(calls.allSatisfy { $0.currentDirectoryURL == repoRoot })
+  }
+
+  @Test func pullRequestMutationChecksExpectedAccountBeforeCommand() async throws {
+    let repoRoot = URL(fileURLWithPath: "/tmp/private")
+    let remoteInfo = GithubRemoteInfo(host: "github.com", owner: "octo", repo: "repo")
+    let account = GithubAccountOverride(host: "github.com", login: "work")
+    let probe = GithubCommandProbe()
+    let shell = ShellClient(
+      run: { executableURL, _, _ in
+        if executableURL.lastPathComponent == "which" {
+          return ShellOutput(stdout: "/usr/bin/gh", stderr: "", exitCode: 0)
+        }
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      },
+      runLoginImpl: { executableURL, arguments, currentDirectoryURL, _ in
+        guard executableURL.lastPathComponent == "gh" else {
+          return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+        }
+        await probe.record(arguments: arguments, currentDirectoryURL: currentDirectoryURL)
+        if arguments.starts(with: ["auth", "status"]) {
+          return ShellOutput(
+            stdout: #"{"hosts":{"github.com":[{"active":true,"login":"work","state":"success"}]}}"#,
+            stderr: "",
+            exitCode: 0
+          )
+        }
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      }
+    )
+    let client = GithubCLIClient.live(shell: shell)
+
+    try await client.mergePullRequest(repoRoot, remoteInfo, 12, .squash, account)
+
+    let calls = await probe.snapshot()
+    #expect(
+      calls.map(\.arguments) == [
+        ["auth", "status", "--active", "--hostname", "github.com", "--json", "hosts"],
+        ["pr", "merge", "12", "--squash", "--repo", "github.com/octo/repo"],
+      ])
+  }
+
+  @Test func pullRequestMutationSwitchesAndRestoresExpectedAccount() async throws {
+    let repoRoot = URL(fileURLWithPath: "/tmp/private")
+    let remoteInfo = GithubRemoteInfo(host: "github.com", owner: "octo", repo: "repo")
+    let account = GithubAccountOverride(host: "github.com", login: "work")
+    let probe = GithubCommandProbe()
+    let shell = ShellClient(
+      run: { executableURL, _, _ in
+        if executableURL.lastPathComponent == "which" {
+          return ShellOutput(stdout: "/usr/bin/gh", stderr: "", exitCode: 0)
+        }
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      },
+      runLoginImpl: { executableURL, arguments, currentDirectoryURL, _ in
+        guard executableURL.lastPathComponent == "gh" else {
+          return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+        }
+        await probe.record(arguments: arguments, currentDirectoryURL: currentDirectoryURL)
+        return ShellOutput(
+          stdout: #"{"hosts":{"github.com":[{"active":true,"login":"personal","state":"success"}]}}"#,
+          stderr: "",
+          exitCode: 0
+        )
+      }
+    )
+    let client = GithubCLIClient.live(shell: shell)
+
+    try await client.mergePullRequest(repoRoot, remoteInfo, 12, .squash, account)
+
+    let calls = await probe.snapshot()
+    #expect(
+      calls.map(\.arguments) == [
+        ["auth", "status", "--active", "--hostname", "github.com", "--json", "hosts"],
+        ["auth", "switch", "--hostname", "github.com", "--user", "work"],
+        ["pr", "merge", "12", "--squash", "--repo", "github.com/octo/repo"],
+        ["auth", "switch", "--hostname", "github.com", "--user", "personal"],
+      ])
   }
 
   @Test func batchPullRequestsCapsConcurrencyAtThree() async throws {
@@ -169,7 +246,7 @@ struct GithubCLIClientTests {
     let client = GithubCLIClient.live(shell: shell)
     let branches = (0..<100).map { "feature-\($0)" }
 
-    _ = try await client.batchPullRequests("github.com", "khoi", "repo", branches)
+    _ = try await client.batchPullRequests("github.com", "khoi", "repo", branches, nil)
 
     let snapshot = await probe.snapshot()
     #expect(snapshot.ghCallCount == 4)
@@ -219,7 +296,7 @@ struct GithubCLIClientTests {
     let branches = (0..<30).map { "feature-\($0)" }
 
     do {
-      _ = try await client.batchPullRequests("github.com", "khoi", "repo", branches)
+      _ = try await client.batchPullRequests("github.com", "khoi", "repo", branches, nil)
       Issue.record("Expected batchPullRequests to throw")
     } catch let error as GithubCLIError {
       switch error {
@@ -259,7 +336,7 @@ struct GithubCLIClientTests {
     let uniqueBranches = (0..<30).map { "feature-\($0)" }
     let branches = uniqueBranches + ["feature-0", "feature-1", "feature-2", "", ""]
 
-    let result = try await client.batchPullRequests("github.com", "khoi", "repo", branches)
+    let result = try await client.batchPullRequests("github.com", "khoi", "repo", branches, nil)
 
     #expect(result.isEmpty)
     let snapshot = await probe.snapshot()
@@ -275,7 +352,7 @@ struct GithubCLIClientTests {
     }
     let client = GithubCLIClient.live(shell: shell)
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", [])
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", [], nil)
 
     #expect(result.successByRepo.isEmpty)
     #expect(result.failedRepos.isEmpty)
@@ -295,7 +372,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "khoi", repo: "beta", branches: ["", "  "]),
     ]
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     #expect(result.successByRepo.isEmpty)
     #expect(result.failedRepos.isEmpty)
@@ -316,7 +393,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "supabit", repo: "beta", branches: ["feat-3"]),
     ]
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     #expect(result.successByRepo[RepoKey(owner: "khoi", repo: "alpha")] != nil)
     #expect(result.successByRepo[RepoKey(owner: "supabit", repo: "beta")] != nil)
@@ -339,7 +416,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "octo", repo: "ghe-repo", branches: ["main"])
     ]
 
-    _ = try await client.batchPullRequestsAcrossRepositories("github.enterprise.test", requests)
+    _ = try await client.batchPullRequestsAcrossRepositories("github.enterprise.test", requests, nil)
 
     let invocations = await observedArguments.snapshot()
     #expect(invocations.count == 1)
@@ -363,7 +440,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "supabit", repo: "beta", branches: ["feat-2"]),
     ]
 
-    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     let invocations = await observedArguments.snapshot()
     let queryArgument = try #require(invocations.first?.first(where: { $0.hasPrefix("query=") }))
@@ -393,7 +470,7 @@ struct GithubCLIClientTests {
       )
     ]
 
-    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     let invocations = await observedArguments.snapshot()
     let queryArgument = try #require(invocations.first?.first(where: { $0.hasPrefix("query=") }))
@@ -414,7 +491,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "khoi", repo: "repo-\(index)", branches: ["main"])
     }
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     let snapshot = await probe.snapshot()
     #expect(snapshot.ghCallCount == 2)
@@ -443,7 +520,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "khoi", repo: "repo-\(index)", branches: ["main"])
     }
 
-    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     let snapshot = await probe.snapshot()
     #expect(snapshot.ghCallCount == 4)
@@ -463,7 +540,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "supabit", repo: "beta", branches: ["feat-2"]),
     ]
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     #expect(result.successByRepo[RepoKey(owner: "khoi", repo: "alpha")] != nil)
     #expect(result.successByRepo[RepoKey(owner: "supabit", repo: "beta")] != nil)
@@ -485,7 +562,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "supabit", repo: "beta", branches: ["feat-3"]),
     ]
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     #expect(result.failedRepos[RepoKey(owner: "khoi", repo: "alpha")] != nil)
     #expect(result.successByRepo[RepoKey(owner: "supabit", repo: "beta")] != nil)
@@ -506,7 +583,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "supabit", repo: "beta", branches: ["feat-2"]),
     ]
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     #expect(result.successByRepo.isEmpty)
     #expect(result.failedRepos.count == 2)
@@ -528,7 +605,7 @@ struct GithubCLIClientTests {
     ]
 
     do {
-      _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+      _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
       Issue.record("Expected batchPullRequestsAcrossRepositories to throw")
     } catch let error as GithubCLIError {
       switch error {
@@ -558,7 +635,7 @@ struct GithubCLIClientTests {
       )
     ]
 
-    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    _ = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     let invocations = await observedArguments.snapshot()
     let queryArgument = try #require(invocations.first?.first(where: { $0.hasPrefix("query=") }))
@@ -582,7 +659,7 @@ struct GithubCLIClientTests {
       CrossRepoPullRequestRequest(owner: "khoi", repo: "alpha", branches: ["feat-1"])
     ]
 
-    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests)
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
 
     let alphaPRs = try #require(result.successByRepo[RepoKey(owner: "khoi", repo: "alpha")])
     let pullRequest = try #require(alphaPRs["feat-1"])

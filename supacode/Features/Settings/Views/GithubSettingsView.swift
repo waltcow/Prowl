@@ -8,7 +8,7 @@ final class GithubSettingsViewModel {
     case unavailable
     case outdated
     case notAuthenticated
-    case authenticated(username: String, host: String)
+    case authenticated(GithubAuthStatusSnapshot)
     case error(String)
   }
 
@@ -29,8 +29,9 @@ final class GithubSettingsViewModel {
     }
 
     do {
-      if let status = try await githubCLI.authStatus() {
-        state = .authenticated(username: status.username, host: status.host)
+      let snapshot = try await githubCLI.authStatusSnapshot()
+      if snapshot.allAccounts.contains(where: { $0.active }) {
+        state = .authenticated(snapshot)
       } else {
         state = .notAuthenticated
       }
@@ -100,14 +101,30 @@ struct GithubSettingsView: View {
                 .font(.callout)
             }
 
-          case .authenticated(let username, let host):
-            LabeledContent("Signed in as") {
-              Text(username)
-                .font(.body)
-            }
-            LabeledContent("Host") {
-              Text(host)
-                .font(.body)
+          case .authenticated(let snapshot):
+            ForEach(snapshot.sortedHosts, id: \.self) { host in
+              let accounts = snapshot.accounts(on: host)
+              VStack(alignment: .leading, spacing: 8) {
+                LabeledContent("Host") {
+                  Text(host)
+                    .font(.body)
+                }
+                ForEach(accounts) { account in
+                  HStack {
+                    Text(account.login)
+                    if account.active {
+                      Text("Active")
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let state = account.state {
+                      Text(state)
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+                  .font(.body)
+                }
+              }
             }
 
           case .error(let message):

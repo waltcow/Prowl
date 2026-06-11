@@ -9,6 +9,7 @@ final class PullRequestRefreshCoordinator {
     let host: String
     let owner: String
     let repo: String
+    let accountOverride: GithubAccountOverride?
     let branches: [String]
     let worktreeIDs: [Worktree.ID]
   }
@@ -33,10 +34,15 @@ final class PullRequestRefreshCoordinator {
   private let softTimeout: Duration
   private let resultHandler: @MainActor (Outcome) -> Void
 
-  private var pendingByHost: [String: [Repository.ID: Request]] = [:]
-  private var flushTaskByHost: [String: Task<Void, Never>] = [:]
-  private var inflightHosts: Set<String> = []
-  private var queuedByHost: [String: [Repository.ID: Request]] = [:]
+  private struct BatchKey: Hashable, Sendable {
+    let host: String
+    let accountOverride: GithubAccountOverride?
+  }
+
+  private var pendingByHost: [BatchKey: [Repository.ID: Request]] = [:]
+  private var flushTaskByHost: [BatchKey: Task<Void, Never>] = [:]
+  private var inflightHosts: Set<BatchKey> = []
+  private var queuedByHost: [BatchKey: [Repository.ID: Request]] = [:]
 
   init(
     githubCLI: GithubCLIClient,
@@ -68,23 +74,28 @@ final class PullRequestRefreshCoordinator {
       host: request.host,
       owner: request.owner,
       repo: request.repo,
+      accountOverride: request.accountOverride,
       branches: cleanedBranches,
       worktreeIDs: request.worktreeIDs
     )
 
-    if inflightHosts.contains(normalized.host) {
+    let key = BatchKey(host: normalized.host, accountOverride: normalized.accountOverride)
+    if inflightHosts.contains(key) {
       mergeRequest(normalized, into: &queuedByHost)
       return
     }
 
     mergeRequest(normalized, into: &pendingByHost)
-    rescheduleDebounce(forHost: normalized.host)
+    rescheduleDebounce(forKey: key)
   }
 
   func cancelHost(_ host: String) {
-    flushTaskByHost.removeValue(forKey: host)?.cancel()
-    pendingByHost.removeValue(forKey: host)
-    queuedByHost.removeValue(forKey: host)
+    for key in flushTaskByHost.keys where key.host == host {
+      flushTaskByHost.removeValue(forKey: key)?.cancel()
+    }
+    pendingByHost = pendingByHost.filter { $0.key.host != host }
+    queuedByHost = queuedByHost.filter { $0.key.host != host }
+    inflightHosts = inflightHosts.filter { $0.host != host }
   }
 
   func reset() {
@@ -99,9 +110,10 @@ final class PullRequestRefreshCoordinator {
 
   private func mergeRequest(
     _ request: Request,
-    into bucket: inout [String: [Repository.ID: Request]]
+    into bucket: inout [BatchKey: [Repository.ID: Request]]
   ) {
-    var hostBucket = bucket[request.host] ?? [:]
+    let key = BatchKey(host: request.host, accountOverride: request.accountOverride)
+    var hostBucket = bucket[key] ?? [:]
     if let existing = hostBucket[request.repositoryID] {
       var seen = Set<String>(existing.branches)
       var combined = existing.branches
@@ -119,44 +131,45 @@ final class PullRequestRefreshCoordinator {
         host: request.host,
         owner: request.owner,
         repo: request.repo,
+        accountOverride: request.accountOverride,
         branches: combined,
         worktreeIDs: workCombined
       )
     } else {
       hostBucket[request.repositoryID] = request
     }
-    bucket[request.host] = hostBucket
+    bucket[key] = hostBucket
   }
 
-  private func rescheduleDebounce(forHost host: String) {
-    flushTaskByHost.removeValue(forKey: host)?.cancel()
+  private func rescheduleDebounce(forKey key: BatchKey) {
+    flushTaskByHost.removeValue(forKey: key)?.cancel()
     let task = Task { [weak self, debounceWindow, clock] in
       do {
         try await clock.sleep(for: debounceWindow)
       } catch {
         return
       }
-      await self?.flush(host: host)
+      await self?.flush(key: key)
     }
-    flushTaskByHost[host] = task
+    flushTaskByHost[key] = task
   }
 
-  private func flush(host: String) async {
-    flushTaskByHost.removeValue(forKey: host)
-    guard let bucket = pendingByHost.removeValue(forKey: host), !bucket.isEmpty else {
+  private func flush(key: BatchKey) async {
+    flushTaskByHost.removeValue(forKey: key)
+    guard let bucket = pendingByHost.removeValue(forKey: key), !bucket.isEmpty else {
       return
     }
-    inflightHosts.insert(host)
+    inflightHosts.insert(key)
     let requests = Array(bucket.values)
-    await processBatch(host: host, requests: requests)
-    inflightHosts.remove(host)
-    if let queued = queuedByHost.removeValue(forKey: host), !queued.isEmpty {
-      pendingByHost[host, default: [:]].merge(queued) { _, new in new }
-      await flush(host: host)
+    await processBatch(key: key, requests: requests)
+    inflightHosts.remove(key)
+    if let queued = queuedByHost.removeValue(forKey: key), !queued.isEmpty {
+      pendingByHost[key, default: [:]].merge(queued) { _, new in new }
+      await flush(key: key)
     }
   }
 
-  private func processBatch(host: String, requests: [Request]) async {
+  private func processBatch(key: BatchKey, requests: [Request]) async {
     let groupsByKey = groupRequestsByRepo(requests)
     let crossRepoRequests = groupsByKey.values.map { group in
       CrossRepoPullRequestRequest(
@@ -166,7 +179,11 @@ final class PullRequestRefreshCoordinator {
       )
     }
     do {
-      let result = try await runBatchWithTimeout(host: host, requests: crossRepoRequests)
+      let result = try await runBatchWithTimeout(
+        host: key.host,
+        requests: crossRepoRequests,
+        accountOverride: key.accountOverride
+      )
       for (key, prsByBranch) in result.successByRepo {
         guard let group = groupsByKey[key] else {
           continue
@@ -208,14 +225,15 @@ final class PullRequestRefreshCoordinator {
 
   private func runBatchWithTimeout(
     host: String,
-    requests: [CrossRepoPullRequestRequest]
+    requests: [CrossRepoPullRequestRequest],
+    accountOverride: GithubAccountOverride?
   ) async throws -> CrossRepoPullRequestResult {
     try await withThrowingTaskGroup(of: BatchTimeoutOutcome.self) { group in
       let githubCLI = self.githubCLI
       let softTimeout = self.softTimeout
       let clock = self.clock
       group.addTask {
-        let value = try await githubCLI.batchPullRequestsAcrossRepositories(host, requests)
+        let value = try await githubCLI.batchPullRequestsAcrossRepositories(host, requests, accountOverride)
         return .completed(value)
       }
       group.addTask {
@@ -241,7 +259,8 @@ final class PullRequestRefreshCoordinator {
         group.requests[0].host,
         group.key.owner,
         group.key.repo,
-        group.branches
+        group.branches,
+        group.requests[0].accountOverride
       )
       for request in group.requests {
         resultHandler(

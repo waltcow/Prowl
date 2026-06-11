@@ -53,13 +53,23 @@ Open the [Command Palette](command-palette.md) (`⌘P`) on a worktree that has a
 - The **`gh` CLI** must be installed and authenticated (`gh auth login`).
 - `githubIntegrationEnabled` (global) gates all GitHub features.
 - Per repo: `fetchPullRequestState` (auto-fetch PR state; on by default — turn off
-  for big/expensive repos), `pullRequestMergeStrategy` override.
-- Settings → **GitHub** tab holds the integration options.
+  for big/expensive repos), `pullRequestMergeStrategy` override, and
+  `githubAccountOverride` for repositories that need a specific `gh` account.
+- Settings → **GitHub** tab shows every authenticated `gh` host/account and which
+  account is active for each host.
+
+When a repository has `githubAccountOverride` set, Prowl temporarily runs
+`gh auth switch --hostname <host> --user <login>` before GitHub operations for
+that repository, then switches the host back to the previously active account.
+This uses `gh`'s stored authentication state; Prowl still never reads or stores
+GitHub tokens.
 
 ## Gotchas for agents
 
 - No `gh` / not authenticated → no PR features. If a human expects PR actions and
   they're missing, check `gh auth status`.
+- If a repo is pinned to a specific GitHub identity and PR actions fail, verify
+  that `gh auth status` lists that account on the repo's host.
 - PR actions appear in the palette **only when the selected worktree's branch has a
   PR**. No PR → no actions.
 - "Copy CI Failure Logs" is the high-value loop for agents: copy logs → feed to the

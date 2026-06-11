@@ -94,6 +94,29 @@ struct GithubCLIOutputTests {
     try GithubCLIOutput.decode(GithubAuthStatusResponse.self, from: json)
   }
 
+  @Test func authStatusPreservesAllHostsAndAccounts() throws {
+    let response = try authResponse(
+      """
+      {"hosts":{
+        "github.com":[
+          {"active":false,"login":"work","state":"success","gitProtocol":"ssh","tokenSource":"keyring"},
+          {"active":true,"login":"personal","state":"success","gitProtocol":"ssh","tokenSource":"keyring"}
+        ],
+        "enterprise.internal":[
+          {"active":true,"login":"enterprise","state":"success","gitProtocol":"https","tokenSource":"keyring"}
+        ]
+      }}
+      """
+    )
+
+    let snapshot = GithubAuthStatusSnapshot(response: response)
+
+    #expect(snapshot.hosts.count == 2)
+    #expect(snapshot.accounts(on: "github.com").map(\.login) == ["work", "personal"])
+    #expect(snapshot.activeAccount(on: "github.com")?.login == "personal")
+    #expect(snapshot.activeAccount(on: "enterprise.internal")?.login == "enterprise")
+  }
+
   @Test func picksActiveAccountFromNonFirstHost() throws {
     let response = try authResponse(
       #"{"hosts":{"git.example.com":[{"active":true,"login":"enterprise-user"}]}}"#
