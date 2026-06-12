@@ -422,6 +422,50 @@ struct ProjectWorkspaceTests {
     )
   }
 
+  @Test func planKeepsExistingLocalBranchWhenNotResetting() {
+    let repository = ProjectWorkspaceCreationRepository(
+      id: "maker",
+      name: "maker.git",
+      sourceKind: .bareRepository,
+      sourceLocation: "/tmp/maker.git",
+      checkoutMode: .useExistingRef,
+      baseRef: "origin/chore/x",
+      baseRefOptions: [
+        GitBranchRefOption(ref: "origin/chore/x", kind: .remoteTracking),
+        GitBranchRefOption(ref: "chore/x", kind: .local),
+      ]
+    )
+
+    // A same-named local branch exists and the user keeps it (default): check
+    // out the local branch directly instead of resetting it to the remote.
+    #expect(repository.resettableLocalBranchName == "chore/x")
+    #expect(
+      WorkspaceCreationPromptFeature.plan(for: repository).map(\.checkout)
+        == .success(.useExistingRef("chore/x"))
+    )
+  }
+
+  @Test func planResetsLocalBranchToRemoteWhenChosen() {
+    var repository = ProjectWorkspaceCreationRepository(
+      id: "maker",
+      name: "maker.git",
+      sourceKind: .bareRepository,
+      sourceLocation: "/tmp/maker.git",
+      checkoutMode: .useExistingRef,
+      baseRef: "origin/chore/x",
+      baseRefOptions: [
+        GitBranchRefOption(ref: "origin/chore/x", kind: .remoteTracking),
+        GitBranchRefOption(ref: "chore/x", kind: .local),
+      ]
+    )
+    repository.resetLocalBranchToRemote = true
+
+    #expect(
+      WorkspaceCreationPromptFeature.plan(for: repository).map(\.checkout)
+        == .success(.trackRemoteRef(remoteRef: "origin/chore/x", branchName: "chore/x"))
+    )
+  }
+
   @Test func defaultRepositoryNameStripsGitSuffix() {
     #expect(
       WorkspaceCreationPromptFeature.defaultRepositoryName(for: URL(fileURLWithPath: "/tmp/maker.git"))
@@ -715,7 +759,7 @@ struct ProjectWorkspaceTests {
     )
     let commands = LockIsolated<[ProjectWorkspaceGitCommand]>([])
     let apiPath = rootURL.appending(path: "api").standardizedFileURL.path(percentEncoded: false)
-    await ProjectWorkspace.cleanup(
+    let failures = await ProjectWorkspace.removeWorktrees(
       workspace,
       rootURL: rootURL,
       gitRunner: ProjectWorkspaceGitRunner { command in
@@ -723,15 +767,19 @@ struct ProjectWorkspaceTests {
       }
     )
 
+    #expect(failures.isEmpty)
     #expect(
       commands.value.map(\.arguments) == [
         ["-C", bareURL.path(percentEncoded: false), "worktree", "remove", "--force", apiPath]
       ])
+    // removeWorktrees must leave the folder and the linked source intact.
+    #expect(FileManager.default.fileExists(atPath: rootURL.path(percentEncoded: false)))
+    ProjectWorkspace.removeWorkspaceFolder(at: rootURL)
     #expect(!FileManager.default.fileExists(atPath: rootURL.path(percentEncoded: false)))
     #expect(FileManager.default.fileExists(atPath: linkedSourceURL.path(percentEncoded: false)))
   }
 
-  @Test func cleanupDeletesSelectedBranchesAfterWorktreeRemoval() async throws {
+  @Test func removeWorktreesDoesNotDeleteBranches() async throws {
     let rootURL = try makeTemporaryWorkspaceRoot()
     let bareURL = try makeTemporaryWorkspaceRoot()
     defer {
@@ -757,22 +805,59 @@ struct ProjectWorkspaceTests {
     )
     let commands = LockIsolated<[ProjectWorkspaceGitCommand]>([])
     let apiPath = rootURL.appending(path: "api").standardizedFileURL.path(percentEncoded: false)
-    await ProjectWorkspace.cleanup(
+    let failures = await ProjectWorkspace.removeWorktrees(
       workspace,
       rootURL: rootURL,
-      deleteBranchEntryIDs: ["api"],
       gitRunner: ProjectWorkspaceGitRunner { command in
         commands.withValue { $0.append(command) }
       }
     )
 
     let barePath = bareURL.path(percentEncoded: false)
+    #expect(failures.isEmpty)
+    // Branch deletion is routed through GitClient's guarded entry point, never
+    // the workspace git runner — so no `branch -D` is issued here.
     #expect(
       commands.value.map(\.arguments) == [
-        ["-C", barePath, "worktree", "remove", "--force", apiPath],
-        ["-C", barePath, "branch", "-D", "chore/x"],
+        ["-C", barePath, "worktree", "remove", "--force", apiPath]
       ])
-    #expect(!FileManager.default.fileExists(atPath: rootURL.path(percentEncoded: false)))
+  }
+
+  @Test func removeWorktreesReportsFailedRemovals() async throws {
+    let rootURL = try makeTemporaryWorkspaceRoot()
+    let bareURL = try makeTemporaryWorkspaceRoot()
+    defer {
+      try? FileManager.default.removeItem(at: rootURL)
+      try? FileManager.default.removeItem(at: bareURL)
+    }
+    try FileManager.default.createDirectory(
+      at: rootURL.appending(path: "api"),
+      withIntermediateDirectories: true
+    )
+
+    let workspace = ProjectWorkspace(
+      repositories: [
+        ProjectWorkspace.RepositoryEntry(
+          id: "api",
+          name: "API",
+          path: "api",
+          sourceKind: .bareRepository,
+          sourceLocation: bareURL.path(percentEncoded: false),
+          branchName: "chore/x"
+        )
+      ]
+    )
+    let failures = await ProjectWorkspace.removeWorktrees(
+      workspace,
+      rootURL: rootURL,
+      gitRunner: ProjectWorkspaceGitRunner { _ in
+        throw ProjectWorkspaceCreationError.gitCommandFailed(command: "git worktree remove", message: "broken")
+      }
+    )
+
+    #expect(failures == ["API"])
+    // A failed worktree removal must not delete the folder.
+    #expect(FileManager.default.fileExists(atPath: rootURL.path(percentEncoded: false)))
   }
 
   @Test func listRuntimeContextsReportWorkspaceKind() {

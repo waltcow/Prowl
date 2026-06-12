@@ -763,6 +763,20 @@ extension RepositoriesFeature {
       return .send(
         .repositoryManagement(.repositoryRemoved(repository.id, selectionWasRemoved: selectionWasRemoved)))
 
+    case .alert(.presented(.confirmWorkspaceRootDeletion(let repositoryID, let rootPath, let selectionWasRemoved))):
+      state.alert = nil
+      let rootURL = URL(fileURLWithPath: rootPath)
+      return .run { send in
+        ProjectWorkspace.removeWorkspaceFolder(at: rootURL)
+        await send(
+          .repositoryManagement(.repositoryRemoved(repositoryID, selectionWasRemoved: selectionWasRemoved)))
+      }
+
+    case .alert(.presented(.keepWorkspaceFolderAfterCleanupFailure(let repositoryID, let selectionWasRemoved))):
+      state.alert = nil
+      return .send(
+        .repositoryManagement(.repositoryRemoved(repositoryID, selectionWasRemoved: selectionWasRemoved)))
+
     case .presentAlert(let title, let message):
       state.alert = messageAlert(title: title, message: message)
       return .none

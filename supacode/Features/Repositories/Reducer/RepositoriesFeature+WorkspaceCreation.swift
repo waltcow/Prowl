@@ -34,12 +34,29 @@ extension RepositoriesFeature {
     case .promptRequested:
       let candidates = state.workspaceCreationCandidates
       let title = "Workspace"
+      // Seed with the collision-free base path synchronously (pure path math),
+      // then resolve a unique, non-colliding folder name off the main actor so
+      // the reducer body performs no filesystem I/O.
+      let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)
+      let requestedRootPath = Self.workspaceRootPath(folderName: folderName, suffix: nil)
       state.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: title,
-        rootPath: defaultWorkspaceRootURL(title: title).path(percentEncoded: false),
+        rootPath: requestedRootPath,
         openedRepositoryCandidates: candidates
       )
+      return .run { send in
+        let resolved = Self.uniqueWorkspaceRootPath(folderName: folderName)
+        await send(.workspaceCreation(.defaultRootPathResolved(path: resolved, requestedRootPath: requestedRootPath)))
+      }
+
+    case .defaultRootPathResolved(let path, let requestedRootPath):
+      // Only adopt the de-duplicated path if the user has not edited the field
+      // since the prompt opened.
+      guard state.workspaceCreationPrompt?.rootPath == requestedRootPath else {
+        return .none
+      }
+      state.workspaceCreationPrompt?.rootPath = path
       return .none
 
     case .promptCanceled, .promptDismissed:
@@ -123,16 +140,26 @@ extension RepositoriesFeature {
     }
   }
 
-  private func defaultWorkspaceRootURL(title: String) -> URL {
-    let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)
-    let baseURL = SupacodePaths.workspacesDirectory
-    var candidateURL = baseURL.appending(path: folderName, directoryHint: .isDirectory)
-    var suffix = 2
-    while FileManager.default.fileExists(atPath: candidateURL.path(percentEncoded: false)) {
-      candidateURL = baseURL.appending(path: "\(folderName)-\(suffix)", directoryHint: .isDirectory)
-      suffix += 1
+  nonisolated private static func workspaceRootPath(folderName: String, suffix: Int?) -> String {
+    let component = suffix.map { "\(folderName)-\($0)" } ?? folderName
+    return SupacodePaths.workspacesDirectory
+      .appending(path: component, directoryHint: .isDirectory)
+      .standardizedFileURL
+      .path(percentEncoded: false)
+  }
+
+  // Resolves a workspace folder path that does not collide with an existing
+  // directory. Touches the filesystem, so it must run inside an effect rather
+  // than the reducer body.
+  nonisolated static func uniqueWorkspaceRootPath(folderName: String) -> String {
+    var suffix: Int?
+    while true {
+      let candidate = workspaceRootPath(folderName: folderName, suffix: suffix)
+      if !FileManager.default.fileExists(atPath: candidate) {
+        return candidate
+      }
+      suffix = (suffix ?? 1) + 1
     }
-    return candidateURL.standardizedFileURL
   }
 
   private static func trimmedNonEmpty(_ value: String?) -> String? {

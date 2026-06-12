@@ -309,6 +309,28 @@ struct WorkspaceCreationPromptView: View {
           store.send(.repositoryBaseRefChanged(repository.id, ref))
         }
         .disabled(store.isCreating || repository.baseRefOptions.isEmpty)
+
+        if let localBranchName = repository.resettableLocalBranchName {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Local branch “\(localBranchName)” already exists and would be reset to this ref.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+            Picker(
+              "Local branch “\(localBranchName)”",
+              selection: Binding(
+                get: { repository.resetLocalBranchToRemote },
+                set: { store.send(.repositoryResetLocalBranchChanged(repository.id, $0)) }
+              )
+            ) {
+              Text("Use local branch").tag(false)
+              Text("Reset to \(repository.baseRef ?? "remote")").tag(true)
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .disabled(store.isCreating)
+          }
+        }
       }
     }
   }

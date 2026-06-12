@@ -74,6 +74,7 @@ struct WorkspaceCreationPromptFeature {
     case repositorySourceLocationChanged(Repository.ID, String)
     case repositoryBranchNameChanged(Repository.ID, String)
     case repositoryBaseRefChanged(Repository.ID, String)
+    case repositoryResetLocalBranchChanged(Repository.ID, Bool)
     case rootPathChosen(String)
     case cancelButtonTapped
     case createButtonTapped
@@ -326,7 +327,14 @@ struct WorkspaceCreationPromptFeature {
           return .none
         }
         repository.baseRef = trimmed.isEmpty ? nil : trimmed
+        // A new ref selection invalidates any previous keep/reset choice.
+        repository.resetLocalBranchToRemote = false
         state.repositories[id: repositoryID] = repository
+        state.validationMessage = nil
+        return .none
+
+      case .repositoryResetLocalBranchChanged(let repositoryID, let resetToRemote):
+        state.repositories[id: repositoryID]?.resetLocalBranchToRemote = resetToRemote
         state.validationMessage = nil
         return .none
 
@@ -432,7 +440,14 @@ struct WorkspaceCreationPromptFeature {
         guard !branchName.isEmpty else {
           return .failure(.missingExistingRef(displayName))
         }
-        checkout = .trackRemoteRef(remoteRef: baseRef, branchName: branchName)
+        if let localBranchName = repository.resettableLocalBranchName, !repository.resetLocalBranchToRemote {
+          // A same-named local branch already exists and the user chose to keep
+          // it: check out the local branch directly rather than resetting it to
+          // the remote ref with `-B`, which would discard local-only commits.
+          checkout = .useExistingRef(localBranchName)
+        } else {
+          checkout = .trackRemoteRef(remoteRef: baseRef, branchName: branchName)
+        }
       }
     }
     return .success(

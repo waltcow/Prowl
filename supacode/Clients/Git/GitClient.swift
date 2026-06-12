@@ -162,6 +162,10 @@ struct GitClient {
       .filter { !$0.hasSuffix("/HEAD") }
       .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     let remoteRefs = parseRefLines(remoteOutput, prefix: "refs/remotes/")
+      // Drop `<remote>/HEAD` symbolic pointers: they resolve to a branch that is
+      // already listed, and selecting one would derive an invalid `HEAD` branch
+      // name in the remote-tracking checkout path.
+      .filter { !$0.hasSuffix("/HEAD") }
       .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     return deduplicatedOptions(
       localRefs.map { GitBranchRefOption(ref: $0, kind: .local) }

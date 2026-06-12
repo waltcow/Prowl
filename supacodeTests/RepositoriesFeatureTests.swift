@@ -588,13 +588,12 @@ struct RepositoriesFeatureTests {
       RepositoriesFeature()
     }
 
+    let title = "Workspace"
     await store.send(.workspaceCreation(.promptRequested)) {
-      let title = "Workspace"
-      let expectedRootPath = expectedDefaultWorkspaceRootPath(for: title)
       $0.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: title,
-        rootPath: expectedRootPath,
+        rootPath: defaultWorkspaceBaseRootPath(for: title),
         openedRepositoryCandidates: [
           ProjectWorkspaceCreationRepository(
             id: "/tmp/repo-a",
@@ -603,6 +602,9 @@ struct RepositoriesFeatureTests {
           )
         ]
       )
+    }
+    await store.receive(\.workspaceCreation.defaultRootPathResolved) {
+      $0.workspaceCreationPrompt?.rootPath = expectedDefaultWorkspaceRootPath(for: title)
     }
   }
 
@@ -628,6 +630,40 @@ struct RepositoriesFeatureTests {
       $0.repositories = [candidate]
     }
     await store.receive(.delegate(.baseRefSourceChanged(repoRootA)))
+  }
+
+  @Test func resetLocalBranchChoiceTogglesAndClearsOnRefChange() async {
+    let repoID = "/tmp/repo-a"
+    let repo = ProjectWorkspaceCreationRepository(
+      id: repoID,
+      name: "Repo A",
+      sourceKind: .bareRepository,
+      sourceLocation: "/tmp/repo-a.git",
+      checkoutMode: .useExistingRef,
+      baseRef: "origin/feature",
+      baseRefOptions: [
+        GitBranchRefOption(ref: "origin/feature", kind: .remoteTracking),
+        GitBranchRefOption(ref: "feature", kind: .local),
+      ]
+    )
+    let store = TestStore(
+      initialState: WorkspaceCreationPromptFeature.State(
+        repositories: [repo],
+        title: "Workspace",
+        rootPath: "/tmp/workspace"
+      )
+    ) {
+      WorkspaceCreationPromptFeature()
+    }
+
+    await store.send(.repositoryResetLocalBranchChanged(repoID, true)) {
+      $0.repositories[id: repoID]?.resetLocalBranchToRemote = true
+    }
+    // Selecting a different ref invalidates the keep/reset choice.
+    await store.send(.repositoryBaseRefChanged(repoID, "feature")) {
+      $0.repositories[id: repoID]?.baseRef = "feature"
+      $0.repositories[id: repoID]?.resetLocalBranchToRemote = false
+    }
   }
 
   @Test func workspaceCreationPromptIgnoresDuplicateOpenedRepository() async {
@@ -664,13 +700,12 @@ struct RepositoriesFeatureTests {
       RepositoriesFeature()
     }
 
+    let title = "Workspace"
     await store.send(.workspaceCreation(.promptRequested)) {
-      let title = "Workspace"
-      let expectedRootPath = expectedDefaultWorkspaceRootPath(for: title)
       $0.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: title,
-        rootPath: expectedRootPath,
+        rootPath: defaultWorkspaceBaseRootPath(for: title),
         openedRepositoryCandidates: [
           ProjectWorkspaceCreationRepository(
             id: repoRootA,
@@ -684,6 +719,9 @@ struct RepositoriesFeatureTests {
           ),
         ]
       )
+    }
+    await store.receive(\.workspaceCreation.defaultRootPathResolved) {
+      $0.workspaceCreationPrompt?.rootPath = expectedDefaultWorkspaceRootPath(for: title)
     }
   }
 
@@ -716,13 +754,12 @@ struct RepositoriesFeatureTests {
       }
     }
 
+    let title = "Workspace"
     await store.send(.workspaceCreation(.promptRequested)) {
-      let title = "Workspace"
-      let expectedRootPath = expectedDefaultWorkspaceRootPath(for: title)
       $0.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: title,
-        rootPath: expectedRootPath,
+        rootPath: defaultWorkspaceBaseRootPath(for: title),
         openedRepositoryCandidates: [
           ProjectWorkspaceCreationRepository(
             id: repoRootA,
@@ -736,6 +773,9 @@ struct RepositoriesFeatureTests {
           ),
         ]
       )
+    }
+    await store.receive(\.workspaceCreation.defaultRootPathResolved) {
+      $0.workspaceCreationPrompt?.rootPath = expectedDefaultWorkspaceRootPath(for: title)
     }
     await store.send(.workspaceCreationPrompt(.presented(.addOpenedRepository(repoRootA)))) {
       $0.workspaceCreationPrompt?.repositories.append(
@@ -1228,6 +1268,181 @@ struct RepositoriesFeatureTests {
     }
     await store.receive(\.repositoryManagement.repositoryRemoved)
     await store.finish()
+  }
+
+  @Test func removeWorkspaceRoutesBranchDeletionThroughGuardedClient() async throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-ws-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+      at: rootURL.appending(path: "api"),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: rootURL) }
+    let workspaceID = rootURL.path(percentEncoded: false)
+    let workspace = ProjectWorkspace(
+      repositories: [
+        ProjectWorkspace.RepositoryEntry(
+          id: "api",
+          name: "API",
+          path: "api",
+          sourceKind: .bareRepository,
+          sourceLocation: "/tmp/api.git",
+          branchName: "chore/x"
+        )
+      ]
+    )
+    let repository = makeRepository(
+      id: workspaceID, name: "WS", kind: .plain, worktrees: [], workspace: workspace
+    )
+    struct DeleteBranchCall: Sendable, Equatable {
+      let name: String
+      let root: String
+      let force: Bool
+    }
+    let deleteCalls = LockIsolated<[DeleteBranchCall]>([])
+    let store = TestStore(initialState: makeState(repositories: [repository])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.repositoryPersistence.loadRepositoryEntries = { [] }
+      $0.repositoryPersistence.saveRepositoryEntries = { _ in }
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+      $0.shellClient.run = { _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
+      $0.gitClient.deleteLocalBranch = { name, url, force in
+        deleteCalls.withValue {
+          $0.append(DeleteBranchCall(name: name, root: url.path(percentEncoded: false), force: force))
+        }
+        return .deleted
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.repositoryManagement(.requestRemoveRepository(workspaceID)))
+    await store.send(.repositoryManagement(.removeWorkspaceDeleteFilesChanged(true)))
+    await store.send(.repositoryManagement(.removeWorkspaceDeleteBranchChanged("api", true)))
+    await store.send(.repositoryManagement(.removeWorkspacePromptConfirmed))
+    await store.receive(\.repositoryManagement.repositoryRemoved)
+    await store.finish()
+
+    // Branch deletion must go through the guarded GitClient entry point with
+    // force = true, never a raw `git branch -D`.
+    #expect(deleteCalls.value.count == 1)
+    #expect(deleteCalls.value.first?.name == "chore/x")
+    #expect(deleteCalls.value.first?.root == "/tmp/api.git")
+    #expect(deleteCalls.value.first?.force == true)
+    // All worktrees unregistered, so the folder is deleted without prompting.
+    #expect(!FileManager.default.fileExists(atPath: workspaceID))
+  }
+
+  @Test func removeWorkspaceAsksBeforeDeletingFolderWhenWorktreeRemovalFails() async throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-ws-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+      at: rootURL.appending(path: "api"),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: rootURL) }
+    let workspaceID = rootURL.path(percentEncoded: false)
+    let workspace = ProjectWorkspace(
+      repositories: [
+        ProjectWorkspace.RepositoryEntry(
+          id: "api",
+          name: "API",
+          path: "api",
+          sourceKind: .bareRepository,
+          sourceLocation: "/tmp/api.git"
+        )
+      ]
+    )
+    let repository = makeRepository(
+      id: workspaceID, name: "WS", kind: .plain, worktrees: [], workspace: workspace
+    )
+    let store = TestStore(initialState: makeState(repositories: [repository])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.repositoryPersistence.loadRepositoryEntries = { [] }
+      $0.repositoryPersistence.saveRepositoryEntries = { _ in }
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+      $0.shellClient.run = { _, _, _ in
+        throw ShellClientError(command: "git", stdout: "", stderr: "broken", exitCode: 1)
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.repositoryManagement(.requestRemoveRepository(workspaceID)))
+    await store.send(.repositoryManagement(.removeWorkspaceDeleteFilesChanged(true)))
+    await store.send(.repositoryManagement(.removeWorkspacePromptConfirmed))
+    await store.receive(\.repositoryManagement.workspaceCleanupReportedFailures)
+
+    // The folder must NOT be deleted yet — the user is asked first.
+    #expect(store.state.alert != nil)
+    #expect(FileManager.default.fileExists(atPath: workspaceID))
+
+    await store.send(
+      .alert(
+        .presented(
+          .confirmWorkspaceRootDeletion(
+            repositoryID: workspaceID,
+            rootPath: workspaceID,
+            selectionWasRemoved: false
+          ))))
+    await store.receive(\.repositoryManagement.repositoryRemoved)
+    await store.finish()
+
+    #expect(!FileManager.default.fileExists(atPath: workspaceID))
+  }
+
+  @Test func keepWorkspaceFolderAfterCleanupFailureRemovesEntryButKeepsFolder() async throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-ws-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+      at: rootURL.appending(path: "api"),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: rootURL) }
+    let workspaceID = rootURL.path(percentEncoded: false)
+    let workspace = ProjectWorkspace(
+      repositories: [
+        ProjectWorkspace.RepositoryEntry(
+          id: "api",
+          name: "API",
+          path: "api",
+          sourceKind: .bareRepository,
+          sourceLocation: "/tmp/api.git"
+        )
+      ]
+    )
+    let repository = makeRepository(
+      id: workspaceID, name: "WS", kind: .plain, worktrees: [], workspace: workspace
+    )
+    let store = TestStore(initialState: makeState(repositories: [repository])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.repositoryPersistence.loadRepositoryEntries = { [] }
+      $0.repositoryPersistence.saveRepositoryEntries = { _ in }
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+      $0.shellClient.run = { _, _, _ in
+        throw ShellClientError(command: "git", stdout: "", stderr: "broken", exitCode: 1)
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.repositoryManagement(.requestRemoveRepository(workspaceID)))
+    await store.send(.repositoryManagement(.removeWorkspaceDeleteFilesChanged(true)))
+    await store.send(.repositoryManagement(.removeWorkspacePromptConfirmed))
+    await store.receive(\.repositoryManagement.workspaceCleanupReportedFailures)
+
+    await store.send(
+      .alert(
+        .presented(
+          .keepWorkspaceFolderAfterCleanupFailure(
+            repositoryID: workspaceID,
+            selectionWasRemoved: false
+          ))))
+    await store.receive(\.repositoryManagement.repositoryRemoved)
+    await store.finish()
+
+    // Entry removed from Prowl, but the on-disk folder is preserved.
+    #expect(FileManager.default.fileExists(atPath: workspaceID))
   }
 
   @Test func repositoryRemovedDropsEntryDespiteTrailingSlashMismatch() async {
@@ -6446,7 +6661,17 @@ struct RepositoriesFeatureTests {
   }
 }
 
-// Mirrors RepositoriesFeature.defaultWorkspaceRootURL: the default folder name
+// The collision-free base path seeded synchronously by `.promptRequested`
+// before the unique-path effect resolves (no filesystem lookup).
+func defaultWorkspaceBaseRootPath(for title: String) -> String {
+  let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)
+  return SupacodePaths.workspacesDirectory
+    .appending(path: folderName, directoryHint: .isDirectory)
+    .standardizedFileURL
+    .path(percentEncoded: false)
+}
+
+// Mirrors RepositoriesFeature.uniqueWorkspaceRootPath: the default folder name
 // is uniqued against directories that already exist on the test machine.
 func expectedDefaultWorkspaceRootPath(for title: String) -> String {
   let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)

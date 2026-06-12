@@ -240,6 +240,12 @@ struct RepositoriesFeature {
     case removeWorkspaceDeleteBranchChanged(String, Bool)
     case removeWorkspacePromptDismissed
     case removeWorkspacePromptConfirmed
+    case workspaceCleanupReportedFailures(
+      repositoryID: Repository.ID,
+      rootPath: String,
+      failedRepositoryNames: [String],
+      selectionWasRemoved: Bool
+    )
     case repositoryRemoved(Repository.ID, selectionWasRemoved: Bool)
     case openRepositorySettings(Repository.ID)
   }
@@ -247,6 +253,7 @@ struct RepositoriesFeature {
   @CasePathable
   enum WorkspaceCreationAction: Equatable {
     case promptRequested
+    case defaultRootPathResolved(path: String, requestedRootPath: String)
     case promptCanceled
     case promptDismissed
     case refreshBaseRefs(Repository.ID)
@@ -479,6 +486,8 @@ struct RepositoriesFeature {
     case confirmArchiveWorktrees([ArchiveWorktreeTarget])
     case confirmForceDeleteBranch(ForceDeleteBranchRequest)
     case confirmRemoveRepository(Repository.ID)
+    case confirmWorkspaceRootDeletion(repositoryID: Repository.ID, rootPath: String, selectionWasRemoved: Bool)
+    case keepWorkspaceFolderAfterCleanupFailure(repositoryID: Repository.ID, selectionWasRemoved: Bool)
   }
 
   enum PullRequestAction: Equatable {

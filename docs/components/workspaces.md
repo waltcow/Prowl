@@ -68,9 +68,10 @@ The creation prompt detects base-ref candidates for already opened, local, and
 bare repositories by reading local git refs, preferring the detected default
 branch such as `main` or `master`. Refs are grouped as local branches, remote
 tracking branches, or fetched remote branches, and the picker supports simple
-text search. Remote default-branch pointers are shown explicitly, such as
-`origin/HEAD`. Base refs are selected from detected refs so workspace creation
-does not try to checkout an arbitrary, nonexistent branch.
+text search. `<remote>/HEAD` symbolic pointers are omitted from the picker
+because they only alias a branch that is already listed. Base refs are selected
+from detected refs so workspace creation does not try to checkout an arbitrary,
+nonexistent branch.
 
 Branch behavior is explicit:
 
@@ -85,6 +86,12 @@ Branch behavior is explicit:
   `git worktree add --track -B feature`, which creates the local tracking
   branch — aligning a same-named local branch to the remote when one exists.
   Git refuses if that branch is already checked out in another worktree.
+  - When a remote-tracking ref is selected and a same-named local branch already
+    exists, the repository row shows a choice: **Use local branch** (the
+    default — checks out the existing local branch as-is) or **Reset to** the
+    remote ref (the `-B` behavior, which discards local-only commits on that
+    branch). This prevents an unnoticed reset of a local branch that is ahead of
+    the remote.
 
 ## Removing a workspace
 
@@ -94,11 +101,15 @@ delete the workspace folder and its worktrees** to additionally unregister the
 worktrees that were created for this workspace from their source repositories
 (`git worktree remove --force`) and delete the workspace folder. Worktree
 entries with a recorded branch additionally offer a per-repository **Delete
-branch** checkbox that removes the branch from the source repository
-(`git branch -D`) after the worktree is gone. Linked repositories stay
-untouched — only the symlinks inside the workspace folder are removed. Cleanup
-is best-effort: a broken source repository is logged and skipped instead of
-blocking the deletion.
+branch** checkbox that removes the branch from the source repository after the
+worktree is gone. Branch deletion goes through the same protected-branch guard
+as the rest of Prowl, so `main`, `master`, and the repository's default remote
+branch are never deleted even if they were recorded as a workspace branch.
+Linked repositories stay untouched — only the symlinks inside the workspace
+folder are removed. Cleanup is best-effort: a broken source repository is logged
+and skipped instead of blocking the deletion. If a worktree cannot be
+unregistered, Prowl asks before deleting the workspace folder, since deleting it
+anyway would leave a dangling worktree registration in the source repository.
 
 ## Metadata
 

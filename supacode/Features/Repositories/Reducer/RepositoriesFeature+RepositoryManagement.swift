@@ -229,22 +229,80 @@ extension RepositoriesFeature {
           )
         )
       }
+      let repositoryID = repository.id
       let rootURL = repository.rootURL
-      let deleteBranchEntryIDs = Set(confirmation.branchOptions.filter(\.isSelected).map(\.id))
+      // Resolve the (source repo, branch) pairs the user opted to delete. The
+      // deletion itself is routed through GitClient's guarded entry point so a
+      // protected branch (main/master/default) can never be force-deleted.
+      let branchDeletions: [WorkspaceBranchDeletion] =
+        confirmation.branchOptions
+        .filter(\.isSelected)
+        .compactMap { option in
+          guard let entry = workspace.repositories.first(where: { $0.id == option.id }),
+            let sourceLocation = entry.sourceLocation,
+            let branchName = entry.branchName
+          else {
+            return nil
+          }
+          return WorkspaceBranchDeletion(sourceLocation: sourceLocation, branchName: branchName)
+        }
       let gitRunner = Self.workspaceGitRunner(shellClient: shellClient)
+      let gitClient = self.gitClient
       return .run { send in
-        await ProjectWorkspace.cleanup(
+        let failedRepositoryNames = await ProjectWorkspace.removeWorktrees(
           workspace,
           rootURL: rootURL,
-          deleteBranchEntryIDs: deleteBranchEntryIDs,
           gitRunner: gitRunner
         )
-        await send(
-          .repositoryManagement(
-            .repositoryRemoved(repository.id, selectionWasRemoved: selectionWasRemoved)
+        for deletion in branchDeletions {
+          let outcome = try? await gitClient.deleteLocalBranch(
+            deletion.branchName,
+            URL(fileURLWithPath: deletion.sourceLocation),
+            true
           )
-        )
+          if case .protected? = outcome {
+            workspaceRemovalLog.warning(
+              "Skipped deleting protected branch \(deletion.branchName) in \(deletion.sourceLocation)"
+            )
+          }
+        }
+        // Only delete the workspace folder when every worktree was unregistered;
+        // otherwise ask the user, since deleting it would orphan a live worktree
+        // registration in the source repository.
+        if failedRepositoryNames.isEmpty {
+          ProjectWorkspace.removeWorkspaceFolder(at: rootURL)
+          await send(
+            .repositoryManagement(
+              .repositoryRemoved(repositoryID, selectionWasRemoved: selectionWasRemoved)
+            )
+          )
+        } else {
+          await send(
+            .repositoryManagement(
+              .workspaceCleanupReportedFailures(
+                repositoryID: repositoryID,
+                rootPath: rootURL.path(percentEncoded: false),
+                failedRepositoryNames: failedRepositoryNames,
+                selectionWasRemoved: selectionWasRemoved
+              )
+            )
+          )
+        }
       }
+
+    case .workspaceCleanupReportedFailures(
+      let repositoryID,
+      let rootPath,
+      let failedRepositoryNames,
+      let selectionWasRemoved
+    ):
+      state.alert = workspaceCleanupFailureAlert(
+        repositoryID: repositoryID,
+        rootPath: rootPath,
+        failedRepositoryNames: failedRepositoryNames,
+        selectionWasRemoved: selectionWasRemoved
+      )
+      return .none
 
     case .removeFailedRepository(let repositoryID):
       state.alert = nil
@@ -312,6 +370,50 @@ extension RepositoriesFeature {
       return reduceRepositoryManagement(state: &state, action: action)
     }
   }
+
+  func workspaceCleanupFailureAlert(
+    repositoryID: Repository.ID,
+    rootPath: String,
+    failedRepositoryNames: [String],
+    selectionWasRemoved: Bool
+  ) -> AlertState<Alert> {
+    AlertState {
+      TextState("Some worktrees couldn't be removed")
+    } actions: {
+      ButtonState(
+        role: .destructive,
+        action: .confirmWorkspaceRootDeletion(
+          repositoryID: repositoryID,
+          rootPath: rootPath,
+          selectionWasRemoved: selectionWasRemoved
+        )
+      ) {
+        TextState("Delete Folder Anyway")
+      }
+      ButtonState(
+        role: .cancel,
+        action: .keepWorkspaceFolderAfterCleanupFailure(
+          repositoryID: repositoryID,
+          selectionWasRemoved: selectionWasRemoved
+        )
+      ) {
+        TextState("Keep Folder")
+      }
+    } message: {
+      TextState(
+        "Couldn't unregister worktrees for \(failedRepositoryNames.joined(separator: ", ")). "
+          + "Deleting the workspace folder now would leave those worktrees registered in their "
+          + "source repositories. Delete it anyway?"
+      )
+    }
+  }
+}
+
+nonisolated private let workspaceRemovalLog = SupaLogger("workspace")
+
+nonisolated struct WorkspaceBranchDeletion: Sendable, Equatable {
+  let sourceLocation: String
+  let branchName: String
 }
 
 // Path-based URL APIs append a trailing slash only while the directory exists

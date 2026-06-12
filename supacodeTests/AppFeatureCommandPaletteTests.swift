@@ -374,15 +374,17 @@ struct AppFeatureCommandPaletteTests {
       AppFeature()
     }
 
+    let title = "Workspace"
     await store.send(.commandPalette(.delegate(.newWorkspace)))
     await store.receive(\.repositories.workspaceCreation.promptRequested) {
-      let title = "Workspace"
-      let expectedRootPath = expectedDefaultWorkspaceRootPath(for: title)
       $0.repositories.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: title,
-        rootPath: expectedRootPath
+        rootPath: defaultWorkspaceBaseRootPath(for: title)
       )
+    }
+    await store.receive(\.repositories.workspaceCreation.defaultRootPathResolved) {
+      $0.repositories.workspaceCreationPrompt?.rootPath = expectedDefaultWorkspaceRootPath(for: title)
     }
   }
 

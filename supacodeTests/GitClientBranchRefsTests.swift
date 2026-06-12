@@ -80,7 +80,7 @@ struct GitClientBranchRefsTests {
     #expect(calls[1].contains("refs/remotes"))
   }
 
-  @Test func branchRefOptionsSpellRemoteHeadExplicitly() async throws {
+  @Test func branchRefOptionsOmitsRemoteHeadPointer() async throws {
     let shell = ShellClient(
       run: { _, arguments, _ in
         if arguments.contains("refs/heads") {
@@ -101,8 +101,10 @@ struct GitClientBranchRefsTests {
     let options = try await client.branchRefOptions(for: repoRoot)
 
     #expect(refs == ["main", "origin/main"])
-    #expect(options.contains(GitBranchRefOption(ref: "origin/HEAD", kind: .remoteTracking)))
-    #expect(!options.contains(GitBranchRefOption(ref: "origin", kind: .remoteTracking)))
+    // `<remote>/HEAD` pointers must be filtered so the remote-tracking checkout
+    // path never derives an invalid `HEAD` branch name.
+    #expect(!options.contains(GitBranchRefOption(ref: "origin/HEAD", kind: .remoteTracking)))
+    #expect(options.contains(GitBranchRefOption(ref: "origin/main", kind: .remoteTracking)))
   }
 
   @Test func remoteBranchRefsParsesDefaultHeadAndBranches() async throws {

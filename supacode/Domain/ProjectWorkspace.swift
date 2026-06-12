@@ -63,6 +63,10 @@ nonisolated struct ProjectWorkspaceCreationRepository: Equatable, Hashable, Send
   var branchName: String?
   var baseRef: String?
   var baseRefOptions: [GitBranchRefOption]
+  // User choice when a Use-Existing checkout on a remote-tracking ref would
+  // reset an existing same-named local branch: false keeps the local branch
+  // (checks it out directly), true resets it to the remote ref.
+  var resetLocalBranchToRemote: Bool = false
 
   init(
     id: String,
@@ -110,6 +114,27 @@ nonisolated struct ProjectWorkspaceCreationRepository: Equatable, Hashable, Send
 
   var localSourceURL: URL? {
     sourceKind.localSourceURL(from: sourceLocation)
+  }
+
+  // Non-nil when a Use-Existing checkout on a remote-tracking ref would reset an
+  // already-existing same-named local branch via `git worktree add -B`, so the
+  // user should choose between keeping the local branch and resetting it.
+  // Derived purely from the already-loaded ref options — no extra git lookup.
+  var resettableLocalBranchName: String? {
+    guard checkoutMode == .useExistingRef,
+      let selectedRef = baseRef?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+      let kind = baseRefOptions.first(where: { $0.ref == selectedRef })?.kind,
+      kind != .local
+    else {
+      return nil
+    }
+    let localName = selectedRef.split(separator: "/").dropFirst().joined(separator: "/")
+    guard !localName.isEmpty,
+      baseRefOptions.contains(where: { $0.kind == .local && $0.ref == localName })
+    else {
+      return nil
+    }
+    return localName
   }
 
   nonisolated static func baseRefOptions(
@@ -558,16 +583,24 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     await task.value
   }
 
-  // Best-effort removal cleanup: every failure is logged and the remaining
-  // entries are still processed so a broken repository cannot block deletion.
-  static func cleanup(
+  // Best-effort worktree removal for a workspace being deleted. Every failure
+  // is logged and the remaining entries are still processed so a broken
+  // repository cannot block deletion. Returns the display names of entries
+  // whose worktree could not be unregistered, so the caller can decide whether
+  // to still delete the workspace folder — deleting it unconditionally would
+  // leave a dangling worktree registration in the source repository.
+  //
+  // Branch deletion is intentionally NOT performed here: the caller routes it
+  // through GitClient's guarded entry point so protected branches
+  // (main/master/default) can never be force-deleted.
+  static func removeWorktrees(
     _ workspace: ProjectWorkspace,
     rootURL: URL,
-    deleteBranchEntryIDs: Set<String> = [],
     fileManager: FileManager = .default,
     gitRunner: ProjectWorkspaceGitRunner
-  ) async {
+  ) async -> [String] {
     let rootPath = normalizedPath(rootURL, resolvingSymlinks: false)
+    var failedRemovals: [String] = []
     for entry in workspace.repositories {
       let entryURL = entry.resolvedURL(relativeTo: rootURL)
       let entryPath = entryURL.path(percentEncoded: false)
@@ -588,22 +621,19 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
         )
       } catch {
         log.warning("Workspace cleanup could not unregister worktree at \(entryPath): \(error)")
-      }
-      // Branch deletion must follow the worktree removal — git refuses to
-      // delete a branch that still has a checkout.
-      if deleteBranchEntryIDs.contains(entry.id), let branchName = entry.branchName {
-        do {
-          try await gitRunner.run(
-            ProjectWorkspaceGitCommand(
-              arguments: ["-C", sourceLocation, "branch", "-D", branchName],
-              currentDirectoryURL: nil
-            )
-          )
-        } catch {
-          log.warning("Workspace cleanup could not delete branch \(branchName): \(error)")
-        }
+        failedRemovals.append(entry.name)
       }
     }
+    return failedRemovals
+  }
+
+  // Deletes the workspace folder itself. Separate from `removeWorktrees` so the
+  // caller can gate it on whether every worktree was successfully unregistered.
+  static func removeWorkspaceFolder(
+    at rootURL: URL,
+    fileManager: FileManager = .default
+  ) {
+    let rootPath = normalizedPath(rootURL, resolvingSymlinks: false)
     do {
       try fileManager.removeItem(at: rootURL)
     } catch {
