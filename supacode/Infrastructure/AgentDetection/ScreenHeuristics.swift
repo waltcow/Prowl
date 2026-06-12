@@ -56,10 +56,8 @@ nonisolated private func detectPi(_ content: String) -> AgentRawState {
 }
 
 nonisolated private func detectClaude(_ content: String) -> AgentRawState {
-  let lower = content.lowercased()
-
-  if content.contains("⌕ Search…") || lower.contains("ctrl+r to toggle") {
-    return .idle
+  if hasClaudeViewerChrome(content) {
+    return .unknown
   }
   let currentInteraction = claudeCurrentInteractionRegion(content)
   if hasClaudeBlockedPrompt(content: currentInteraction, lower: currentInteraction.lowercased()) {
@@ -233,6 +231,22 @@ nonisolated private func detectAmp(_ content: String) -> AgentRawState {
     return .working
   }
   return .idle
+}
+
+// Transcript (ctrl+r/ctrl+o) and history-search views cover the live status
+// area, so a frame showing their chrome carries no task-state signal — the
+// caller maps `.unknown` to "keep the previous state". The hint strings are
+// only trusted on the bottom chrome lines: matching them anywhere on screen
+// misreads conversation text that merely quotes them (e.g. a discussion
+// about these very heuristics).
+nonisolated private func hasClaudeViewerChrome(_ content: String) -> Bool {
+  let bottomLines = content.split(separator: "\n", omittingEmptySubsequences: false)
+    .map { $0.trimmingCharacters(in: .whitespaces) }
+    .filter { !$0.isEmpty }
+    .suffix(3)
+  return bottomLines.contains { line in
+    line.contains("⌕ Search…") || line.lowercased().contains("ctrl+r to toggle")
+  }
 }
 
 nonisolated private func contentAbovePromptBox(_ content: String) -> String {

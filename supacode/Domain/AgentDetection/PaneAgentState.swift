@@ -92,12 +92,20 @@ func stabilizeAgentState(
     return .working
   case .blocked:
     return .blocked
+  case .unknown:
+    // A viewer overlay (transcript, history search) is covering the live
+    // status area, so this frame carries no signal: keep the last trusted
+    // state, and keep the working hold alive while the screen stays covered.
+    if previous == .working {
+      lastWorkingAt = now
+    }
+    return previous
   case .idle where previous == .working:
     guard let lastWorkingAt else {
       return .idle
     }
     return now.timeIntervalSince(lastWorkingAt) < workingStateHold ? .working : .idle
-  case .idle, .unknown:
+  case .idle:
     return raw
   }
 }

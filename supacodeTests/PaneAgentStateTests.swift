@@ -73,6 +73,50 @@ struct PaneAgentStateTests {
     #expect(blocked == .blocked)
   }
 
+  @Test func unknownObservationKeepsPreviousStateAndRefreshesHold() {
+    let now = Date(timeIntervalSince1970: 100)
+    var lastWorking: Date? = now
+    let later = now.addingTimeInterval(10)
+
+    let held = stabilizeAgentState(
+      agent: .claude,
+      previous: .working,
+      raw: .unknown,
+      now: later,
+      lastWorkingAt: &lastWorking
+    )
+
+    #expect(held == .working)
+    #expect(lastWorking == later)
+
+    var noHistory: Date?
+    let idle = stabilizeAgentState(
+      agent: .claude,
+      previous: .idle,
+      raw: .unknown,
+      now: later,
+      lastWorkingAt: &noHistory
+    )
+
+    #expect(idle == .idle)
+    #expect(noHistory == nil)
+  }
+
+  @Test func unknownObservationWithoutHistoryStaysUnknown() {
+    let now = Date(timeIntervalSince1970: 100)
+    var lastWorking: Date?
+
+    let unknown = stabilizeAgentState(
+      agent: .claude,
+      previous: .unknown,
+      raw: .unknown,
+      now: now,
+      lastWorkingAt: &lastWorking
+    )
+
+    #expect(unknown == .unknown)
+  }
+
   @Test func presenceRequiresSixMissesBeforeRelease() {
     var presence = AgentDetectionPresence(currentAgent: .codex)
 

@@ -35,7 +35,9 @@ To avoid flicker, detection **stabilizes**: it tolerates several consecutive
 misses before declaring an agent gone, and a working agent gets a short (~3s)
 hold so brief pauses between thinking and output don't drop it out of
 "working" (a genuine finish therefore reports up to ~3s late; "blocked"
-bypasses the hold and surfaces immediately).
+bypasses the hold and surfaces immediately). Viewer overlays (Claude's
+transcript / history-search views) cover the live status area, so frames
+showing their chrome keep the last trusted state instead of forcing idle.
 
 ## The state machine
 

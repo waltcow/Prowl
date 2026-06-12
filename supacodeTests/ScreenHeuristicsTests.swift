@@ -177,6 +177,49 @@ struct ScreenHeuristicsTests {
     )
   }
 
+  @Test func claudeViewerChromeAtBottomCarriesNoSignal() {
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ✻ Tempering… (12s · esc to interrupt)
+          older transcript content
+          ctrl+r to toggle
+          """
+      ) == .unknown
+    )
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          Task complete.
+          ⌕ Search…
+          ↑↓ to navigate
+          """
+      ) == .unknown
+    )
+  }
+
+  @Test func claudeQuotedViewerHintMidConversationDoesNotForceIdle() {
+    // Regression: a chat message quoting "ctrl+r to toggle" used to force
+    // idle while the spinner below showed Claude still working.
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ⏺ 收尾完成,现状如下:
+
+          ❯ 3. 修一个我们现存的 bug:detectClaude 里 ctrl+r to toggle → 强制 idle,意味着
+            Claude working 时按 ctrl+o/ctrl+r 看 transcript 会闪成 Done。
+
+            这个仔细看看，你觉得有必要的话，可以修一下
+
+          ✻ Twisting… (34s · ↓ 1.8k tokens · thinking more with xhigh effort)
+          ─────────
+          ❯
+          ─────────
+          """
+      ) == .working
+    )
+  }
+
   @Test func codexDetection() {
     #expect(DetectedAgent.codex.detectState(in: "press enter to confirm or esc to cancel") == .blocked)
     #expect(DetectedAgent.codex.detectState(in: "• Working (12s)\nesc to interrupt") == .working)
