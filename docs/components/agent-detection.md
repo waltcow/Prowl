@@ -32,9 +32,10 @@ bash, etc.) so agents launched indirectly are still found.
    Kimi's moon phases, etc.).
 
 To avoid flicker, detection **stabilizes**: it tolerates several consecutive
-misses before declaring an agent gone, and Claude specifically gets a short
-(~1.2s) hold so brief pauses between thinking and output don't drop it out of
-"working".
+misses before declaring an agent gone, and a working agent gets a short (~3s)
+hold so brief pauses between thinking and output don't drop it out of
+"working" (a genuine finish therefore reports up to ~3s late; "blocked"
+bypasses the hold and surfaces immediately).
 
 ## The state machine
 

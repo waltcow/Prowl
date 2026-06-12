@@ -72,7 +72,7 @@ final class WorktreeTerminalState {
   var surfaceAgentStates: [UUID: PaneAgentState] = [:]
   var agentDetectionTasks: [UUID: Task<Void, Never>] = [:]
   var agentDetectionPresenceBySurface: [UUID: AgentDetectionPresence] = [:]
-  var lastClaudeWorkingAtBySurface: [UUID: Date] = [:]
+  var lastWorkingAtBySurface: [UUID: Date] = [:]
   var lastAgentDetectionDiagnosticsBySurface: [UUID: String] = [:]
   var agentDetectionEnabled = true
   var tabIsRunningById: [TerminalTabID: Bool] = [:]

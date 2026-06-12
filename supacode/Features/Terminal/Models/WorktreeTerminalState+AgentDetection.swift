@@ -78,15 +78,15 @@ extension WorktreeTerminalState {
     let raw = agent.detectState(in: activeText)
     guard surfaces[surfaceID] != nil else { return }
 
-    var lastClaudeWorkingAt = lastClaudeWorkingAtBySurface[surfaceID]
+    var lastWorkingAt = lastWorkingAtBySurface[surfaceID]
     let stabilized = stabilizeAgentState(
       agent: agent,
       previous: previous.state,
       raw: raw,
       now: now,
-      lastClaudeWorkingAt: &lastClaudeWorkingAt
+      lastWorkingAt: &lastWorkingAt
     )
-    lastClaudeWorkingAtBySurface[surfaceID] = lastClaudeWorkingAt
+    lastWorkingAtBySurface[surfaceID] = lastWorkingAt
 
     let isForeground = isSelected() && isFocusedSurface(surfaceID)
     let becameIdleFromActive =
@@ -143,7 +143,7 @@ extension WorktreeTerminalState {
   func removeAgentEntryIfNeeded(surfaceID: UUID) {
     guard surfaceAgentStates[surfaceID]?.detectedAgent != nil else { return }
     surfaceAgentStates[surfaceID] = PaneAgentState(lastChangedAt: Date())
-    lastClaudeWorkingAtBySurface.removeValue(forKey: surfaceID)
+    lastWorkingAtBySurface.removeValue(forKey: surfaceID)
     onAgentEntryRemoved?(surfaceID)
   }
 
@@ -203,7 +203,7 @@ extension WorktreeTerminalState {
     agentDetectionTasks.removeValue(forKey: surfaceId)
     surfaceAgentStates.removeValue(forKey: surfaceId)
     agentDetectionPresenceBySurface.removeValue(forKey: surfaceId)
-    lastClaudeWorkingAtBySurface.removeValue(forKey: surfaceId)
+    lastWorkingAtBySurface.removeValue(forKey: surfaceId)
     lastAgentDetectionDiagnosticsBySurface.removeValue(forKey: surfaceId)
     onAgentEntryRemoved?(surfaceId)
   }
@@ -216,7 +216,7 @@ extension WorktreeTerminalState {
     agentDetectionTasks.removeAll()
     surfaceAgentStates.removeAll()
     agentDetectionPresenceBySurface.removeAll()
-    lastClaudeWorkingAtBySurface.removeAll()
+    lastWorkingAtBySurface.removeAll()
     lastAgentDetectionDiagnosticsBySurface.removeAll()
     for id in removedIDs {
       onAgentEntryRemoved?(id)

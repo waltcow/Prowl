@@ -67,31 +67,36 @@ struct AgentDetectionPresence: Equatable, Sendable {
   }
 }
 
-private let claudeWorkingHold: TimeInterval = 1.2
+// Agents briefly clear their working indicators between steps (output gaps,
+// tool-call boundaries), so a raw working → idle flip is only trusted after
+// the screen has read idle for this long. Keeps Working from flapping to
+// Done and back during those pauses, at the cost of reporting a genuine
+// finish up to this much later.
+private let workingStateHold: TimeInterval = 3.0
 
 func stabilizeAgentState(
   agent: DetectedAgent?,
   previous: AgentRawState,
   raw: AgentRawState,
   now: Date,
-  lastClaudeWorkingAt: inout Date?
+  lastWorkingAt: inout Date?
 ) -> AgentRawState {
-  guard agent == .claude else {
-    lastClaudeWorkingAt = nil
+  guard agent != nil else {
+    lastWorkingAt = nil
     return raw
   }
 
   switch raw {
   case .working:
-    lastClaudeWorkingAt = now
+    lastWorkingAt = now
     return .working
   case .blocked:
     return .blocked
   case .idle where previous == .working:
-    guard let lastClaudeWorkingAt else {
+    guard let lastWorkingAt else {
       return .idle
     }
-    return now.timeIntervalSince(lastClaudeWorkingAt) < claudeWorkingHold ? .working : .idle
+    return now.timeIntervalSince(lastWorkingAt) < workingStateHold ? .working : .idle
   case .idle, .unknown:
     return raw
   }
