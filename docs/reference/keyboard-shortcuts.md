@@ -19,7 +19,7 @@ Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control �
 | Action | Default | Command ID | Remappable |
 |--------|---------|------------|------------|
 | New Worktree | ⌘N | `new_worktree` | yes |
-| Open Worktree (opens in Finder by default) | ⌘O | `open_worktree` | yes |
+| Open Worktree (with the selected Open-in app) | ⌘O | `open_worktree` | yes |
 | Open Repository… | ⌘⇧O | `open_repository` | yes |
 | Open on Code Host (e.g. GitHub) | ⌘⌃G | `open_pull_request` | yes |
 | Refresh Worktrees | ⌘⇧R | `refresh_worktrees` | yes |

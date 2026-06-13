@@ -132,7 +132,10 @@ struct AppearanceSettingsView: View {
                 .tag(action.settingsID)
             }
           }
-          .help("Applies to worktrees without repository overrides.")
+          .help(
+            "Applies to worktrees without repository overrides. "
+              + "Automatic prefers an app matching the project type, e.g. Xcode for Swift projects."
+          )
         }
         Section("Run") {
           Toggle(

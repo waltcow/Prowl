@@ -24,7 +24,7 @@ JSON is pretty-printed with sorted keys. Legacy `~/.supacode` is migrated to
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
 | `appearanceMode` | enum (`system`/`light`/`dark`) | `dark` | App appearance. |
-| `defaultEditorID` | String | `auto` | Default app to open worktrees (overridable per repo). |
+| `defaultEditorID` | String | `auto` | Default app to open worktrees (overridable per repo); `auto` prefers an app matching the detected project type. |
 | `confirmBeforeQuit` | Bool | `true` | Confirm before quitting Prowl. |
 | `updateChannel` | enum (`stable`/`tip`) | `stable` | Sparkle release channel. |
 | `updatesAutomaticallyCheckForUpdates` | Bool | `true` | Background update checks. |
@@ -74,7 +74,7 @@ Stored at `~/.prowl/repo/<repo-name>/prowl.json` (schema v2). For the tri-state
 | `setupScript` | String | `""` | Script run automatically after a worktree is created. |
 | `archiveScript` | String | `""` | Script run automatically before a worktree is archived. |
 | `runScript` | String | `""` | The on-demand Run Script (`⌘R`). |
-| `openActionID` | String | `auto` | App to open this repo's worktrees (overrides `defaultEditorID`). |
+| `openActionID` | String | `auto` | App to open this repo's worktrees (overrides `defaultEditorID`); `auto` prefers an app matching the detected project type. |
 | `worktreeBaseRef` | String? | `nil` | Default base branch/ref for new worktrees. |
 | `worktreeBaseDirectoryPath` | String? | `nil` | Parent directory for new worktrees (overrides global). |
 | `copyIgnoredOnWorktreeCreate` | Bool? | `nil` | Copy ignored files; `nil` = use global. |

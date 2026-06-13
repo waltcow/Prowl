@@ -419,7 +419,8 @@ struct AppFeature {
           @Shared(.repositorySettings(rootURL)) var repositorySettings
           state.openActionSelection = OpenWorktreeAction.fromSettingsID(
             repositorySettings.openActionID,
-            defaultEditorID: settings.defaultEditorID
+            defaultEditorID: settings.defaultEditorID,
+            workingDirectory: selectedWorktree.workingDirectory
           )
         }
         state.resolvedKeybindings = resolvedKeybindings(
@@ -746,7 +747,11 @@ struct AppFeature {
         // Run + Custom Command items must update in the same transaction —
         // otherwise the command list lands a frame later and the toolbar
         // visibly reflows when switching between cards with different commands.
-        applyWorktreeSettings(repositorySettings, into: &state)
+        applyWorktreeSettings(
+          repositorySettings,
+          workingDirectory: worktree.workingDirectory,
+          into: &state
+        )
         return applyWorktreeUserSettings(userRepositorySettings, into: &state)
 
       case .runScriptDraftChanged(let script):
@@ -868,10 +873,16 @@ struct AppFeature {
         )
 
       case .worktreeSettingsLoaded(let settings, let worktreeID):
-        guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories),
+          worktree.id == worktreeID
+        else {
           return .none
         }
-        applyWorktreeSettings(settings, into: &state)
+        applyWorktreeSettings(
+          settings,
+          workingDirectory: worktree.workingDirectory,
+          into: &state
+        )
         return .none
 
       case .worktreeUserSettingsLoaded(let settings, let worktreeID):

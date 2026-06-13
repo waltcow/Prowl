@@ -134,16 +134,26 @@ it from Prowl (closing its open terminals); it does **not** delete files on disk
 
 ## Opening a worktree in another app
 
-`⌘O` opens the worktree with the auto-detected default app — your first installed
-editor (Cursor → Zed → VS Code → Windsurf → …), falling through to Xcode and then
-**Finder only when no preferred app is found**. Use the **Open** dropdown in the
-worktree's detail toolbar to pick a different app, or set a per-repo default
-(`openActionID`) / global default (`defaultEditorID`). Prowl detects: Finder,
-Terminal, `$EDITOR`, VS Code (+ Insiders), VSCodium, Cursor, Zed, Windsurf,
-Antigravity, Xcode, Android Studio, JetBrains IDEs, GitHub Desktop / Fork /
-GitKraken / Sourcetree / Sublime Merge / SmartGit / GitUp, and terminals
-(Alacritty, Ghostty, Kitty, Warp, WezTerm). If the chosen app isn't installed,
-Prowl shows an alert.
+`⌘O` opens the worktree with the selected open action. When the action is
+**Automatic** (the default), Prowl inspects the worktree's top-level files and
+prefers an app matching the project type: `.xcodeproj`/`.xcworkspace`/
+`Package.swift`/`Project.swift` → Xcode, Gradle files → Android Studio (then
+IntelliJ IDEA), `*.sln`/`*.csproj` → Rider, `pom.xml` → IntelliJ IDEA,
+`go.mod` → GoLand, `Cargo.toml` → RustRover, `CMakeLists.txt` → CLion,
+`composer.json` → PhpStorm, `Gemfile` → RubyMine, Python manifests → PyCharm,
+`package.json` → WebStorm. If the matching app isn't installed (or no project
+type is detected), it falls back to the generic priority — your first
+installed editor (Cursor → Zed → VS Code → Windsurf → …), falling through to
+Xcode and then **Finder only when no preferred app is found**. Use the
+**Open** dropdown in the worktree's detail toolbar to pick a different app
+(this pins it for the repo), or set a per-repo default (`openActionID`) /
+global default (`defaultEditorID`). Prowl detects: Finder, Terminal,
+`$EDITOR`, VS Code (+ Insiders), VSCodium, Cursor, Zed, Windsurf, Antigravity,
+Sublime Text, Xcode, Android Studio, JetBrains IDEs (IntelliJ IDEA, WebStorm,
+PyCharm, RustRover, Rider, GoLand, CLion, PhpStorm, RubyMine), GitHub Desktop
+/ Fork / Tower / GitKraken / Sourcetree / Sublime Merge / SmartGit / GitUp,
+and terminals (Alacritty, Ghostty, iTerm2, Kitty, Warp, WezTerm). If the
+chosen app isn't installed, Prowl shows an alert.
 
 Other per-row context-menu items: **Copy Path**, **Reveal in Finder**. (Repo
 Settings lives on the repository **header** menu, not the worktree row.)

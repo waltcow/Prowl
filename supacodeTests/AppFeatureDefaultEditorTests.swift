@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import DependenciesTestSupport
 import Foundation
@@ -7,6 +8,9 @@ import Testing
 
 @MainActor
 struct AppFeatureDefaultEditorTests {
+  nonisolated private static var xcodeInstalled: Bool {
+    NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode") != nil
+  }
   @Test(.dependencies) func defaultEditorAppliesToAutomaticRepositorySettings() async {
     let worktree = makeWorktree()
     let repositoriesState = makeRepositoriesState(worktree: worktree)
@@ -90,6 +94,41 @@ struct AppFeatureDefaultEditorTests {
     await store.receive(\.worktreeSettingsLoaded) {
       $0.openActionSelection = .terminal
       $0.selectedRunScript = "pnpm dev"
+    }
+    await store.receive(\.worktreeUserSettingsLoaded)
+    await store.finish()
+  }
+
+  @Test(.dependencies, .enabled(if: xcodeInstalled))
+  func automaticSelectionPrefersXcodeForSwiftPackageWorktree() async throws {
+    let worktree = makeWorktree()
+    let fileManager = FileManager.default
+    try fileManager.createDirectory(
+      at: worktree.workingDirectory,
+      withIntermediateDirectories: true
+    )
+    defer { try? fileManager.removeItem(at: worktree.repositoryRootURL) }
+    try Data().write(to: worktree.workingDirectory.appending(path: "Package.swift"))
+    let repositoriesState = makeRepositoriesState(worktree: worktree)
+    let storage = SettingsTestStorage()
+    let settingsFileURL = URL(
+      fileURLWithPath: "/tmp/supacode-settings-\(UUID().uuidString).json"
+    )
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.settingsFileStorage = storage.storage
+      $0.settingsFileURL = settingsFileURL
+    }
+
+    await store.send(.repositories(.delegate(.selectedWorktreeChanged(worktree))))
+    await store.receive(\.worktreeSettingsLoaded) {
+      $0.openActionSelection = .xcode
     }
     await store.receive(\.worktreeUserSettingsLoaded)
     await store.finish()

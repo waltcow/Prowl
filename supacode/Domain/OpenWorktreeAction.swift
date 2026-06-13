@@ -9,6 +9,7 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
   case alacritty
   case androidStudio
   case antigravity
+  case clion
   case editor
   case finder
   case cursor
@@ -17,14 +18,21 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
   case gitkraken
   case gitup
   case ghostty
+  case goland
   case intellij
+  case iterm2
   case kitty
+  case phpstorm
   case pycharm
+  case rider
+  case rubymine
   case rustrover
   case smartgit
   case sourcetree
   case sublimeMerge
+  case sublimeText
   case terminal
+  case tower
   case vscode
   case vscodeInsiders
   case vscodium
@@ -44,19 +52,27 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     case .alacritty: "Alacritty"
     case .androidStudio: "Android Studio"
     case .antigravity: "Antigravity"
+    case .clion: "CLion"
     case .cursor: "Cursor"
     case .githubDesktop: "GitHub Desktop"
     case .gitkraken: "GitKraken"
     case .gitup: "GitUp"
     case .ghostty: "Ghostty"
+    case .goland: "GoLand"
     case .intellij: "IntelliJ IDEA"
+    case .iterm2: "iTerm2"
     case .kitty: "Kitty"
+    case .phpstorm: "PhpStorm"
     case .pycharm: "PyCharm"
+    case .rider: "Rider"
+    case .rubymine: "RubyMine"
     case .rustrover: "RustRover"
     case .smartgit: "SmartGit"
     case .sourcetree: "Sourcetree"
     case .sublimeMerge: "Sublime Merge"
+    case .sublimeText: "Sublime Text"
     case .terminal: "Terminal"
+    case .tower: "Tower"
     case .vscode: "VS Code"
     case .vscodeInsiders: "VS Code Insiders"
     case .vscodium: "VSCodium"
@@ -74,33 +90,59 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     switch self {
     case .finder: "Finder"
     case .editor: "$EDITOR"
-    case .alacritty, .androidStudio, .antigravity, .cursor, .fork, .githubDesktop, .gitkraken, .gitup,
-      .ghostty, .intellij, .kitty, .pycharm, .rustrover, .smartgit, .sourcetree, .sublimeMerge,
-      .terminal, .vscode, .vscodeInsiders, .vscodium, .warp, .webstorm, .wezterm, .windsurf,
-      .xcode, .zed:
+    case .alacritty, .androidStudio, .antigravity, .clion, .cursor, .fork, .githubDesktop, .gitkraken,
+      .gitup, .ghostty, .goland, .intellij, .iterm2, .kitty, .phpstorm, .pycharm, .rider, .rubymine,
+      .rustrover, .smartgit, .sourcetree, .sublimeMerge, .sublimeText, .terminal, .tower, .vscode,
+      .vscodeInsiders, .vscodium, .warp, .webstorm, .wezterm, .windsurf, .xcode, .zed:
       title
     }
   }
+
+  // Pre-rendered at display size and cached: `icon(forFile:)` plus the
+  // rasterizing resize cost milliseconds, and toolbar redraws request these
+  // icons constantly. Only hits are cached so a newly installed app shows up
+  // without invalidation; lookup misses are microseconds.
+  private static let menuIconSize = CGSize(width: 16, height: 16)
+  private static var menuIconCache: [String: MenuIcon] = [:]
 
   var menuIcon: MenuIcon? {
     switch self {
     case .editor:
       return .symbol("apple.terminal")
     default:
+      if let cached = Self.menuIconCache[bundleIdentifier] {
+        return cached
+      }
       guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
       else { return nil }
-      return .app(NSWorkspace.shared.icon(forFile: appURL.path))
+      let icon = Self.resizedIcon(NSWorkspace.shared.icon(forFile: appURL.path), size: Self.menuIconSize)
+      let menuIcon = MenuIcon.app(icon)
+      Self.menuIconCache[bundleIdentifier] = menuIcon
+      return menuIcon
     }
+  }
+
+  private static func resizedIcon(_ image: NSImage, size: CGSize) -> NSImage {
+    let newImage = NSImage(size: size)
+    newImage.lockFocus()
+    image.draw(
+      in: NSRect(origin: .zero, size: size),
+      from: NSRect(origin: .zero, size: image.size),
+      operation: .sourceOver,
+      fraction: 1.0
+    )
+    newImage.unlockFocus()
+    return newImage
   }
 
   var isInstalled: Bool {
     switch self {
     case .finder, .editor:
       return true
-    case .alacritty, .androidStudio, .antigravity, .cursor, .fork, .githubDesktop, .gitkraken, .gitup,
-      .ghostty, .intellij, .kitty, .pycharm, .rustrover, .smartgit, .sourcetree, .sublimeMerge,
-      .terminal, .vscode, .vscodeInsiders, .vscodium, .warp, .webstorm, .wezterm, .windsurf,
-      .xcode, .zed:
+    case .alacritty, .androidStudio, .antigravity, .clion, .cursor, .fork, .githubDesktop, .gitkraken,
+      .gitup, .ghostty, .goland, .intellij, .iterm2, .kitty, .phpstorm, .pycharm, .rider, .rubymine,
+      .rustrover, .smartgit, .sourcetree, .sublimeMerge, .sublimeText, .terminal, .tower, .vscode,
+      .vscodeInsiders, .vscodium, .warp, .webstorm, .wezterm, .windsurf, .xcode, .zed:
       return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
     }
   }
@@ -112,20 +154,28 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     case .alacritty: "alacritty"
     case .androidStudio: "android-studio"
     case .antigravity: "antigravity"
+    case .clion: "clion"
     case .cursor: "cursor"
     case .fork: "fork"
     case .githubDesktop: "github-desktop"
     case .gitkraken: "gitkraken"
     case .gitup: "gitup"
     case .ghostty: "ghostty"
+    case .goland: "goland"
     case .intellij: "intellij"
+    case .iterm2: "iterm2"
     case .kitty: "kitty"
+    case .phpstorm: "phpstorm"
     case .pycharm: "pycharm"
+    case .rider: "rider"
+    case .rubymine: "rubymine"
     case .rustrover: "rustrover"
     case .smartgit: "smartgit"
     case .sourcetree: "sourcetree"
     case .sublimeMerge: "sublime-merge"
+    case .sublimeText: "sublime-text"
     case .terminal: "terminal"
+    case .tower: "tower"
     case .vscode: "vscode"
     case .vscodeInsiders: "vscode-insiders"
     case .vscodium: "vscodium"
@@ -145,20 +195,28 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     case .alacritty: "org.alacritty"
     case .androidStudio: "com.google.android.studio"
     case .antigravity: "com.google.antigravity"
+    case .clion: "com.jetbrains.CLion"
     case .cursor: "com.todesktop.230313mzl4w4u92"
     case .fork: "com.DanPristupov.Fork"
     case .githubDesktop: "com.github.GitHubClient"
     case .gitkraken: "com.axosoft.gitkraken"
     case .gitup: "co.gitup.mac"
     case .ghostty: "com.mitchellh.ghostty"
+    case .goland: "com.jetbrains.goland"
     case .intellij: "com.jetbrains.intellij"
+    case .iterm2: "com.googlecode.iterm2"
     case .kitty: "net.kovidgoyal.kitty"
+    case .phpstorm: "com.jetbrains.PhpStorm"
     case .pycharm: "com.jetbrains.pycharm"
+    case .rider: "com.jetbrains.rider"
+    case .rubymine: "com.jetbrains.rubymine"
     case .rustrover: "com.jetbrains.rustrover"
     case .smartgit: "com.syntevo.smartgit"
     case .sourcetree: "com.torusknot.SourceTreeNotMAS"
     case .sublimeMerge: "com.sublimemerge"
+    case .sublimeText: "com.sublimetext.4"
     case .terminal: "com.apple.Terminal"
+    case .tower: "com.fournova.Tower3"
     case .vscode: "com.microsoft.VSCode"
     case .vscodeInsiders: "com.microsoft.VSCodeInsiders"
     case .vscodium: "com.vscodium"
@@ -180,11 +238,17 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     .windsurf,
     .vscodeInsiders,
     .vscodium,
+    .sublimeText,
     .androidStudio,
     .intellij,
     .webstorm,
     .pycharm,
     .rustrover,
+    .rider,
+    .goland,
+    .clion,
+    .phpstorm,
+    .rubymine,
     .antigravity,
   ]
   static let terminalPriority: [OpenWorktreeAction] = [
@@ -193,12 +257,14 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     .alacritty,
     .kitty,
     .warp,
+    .iterm2,
     .terminal,
   ]
   static let gitClientPriority: [OpenWorktreeAction] = [
     .githubDesktop,
     .sourcetree,
     .fork,
+    .tower,
     .gitkraken,
     .sublimeMerge,
     .smartgit,
@@ -223,7 +289,8 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
 
   static func fromSettingsID(
     _ settingsID: String?,
-    defaultEditorID: String?
+    defaultEditorID: String?,
+    workingDirectory: URL? = nil
   ) -> OpenWorktreeAction {
     if let settingsID, settingsID != automaticSettingsID,
       let action = allCases.first(where: { $0.settingsID == settingsID })
@@ -236,7 +303,7 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     {
       return action
     }
-    return preferredDefault()
+    return preferredDefault(for: workingDirectory)
   }
 
   static var availableCases: [OpenWorktreeAction] {
@@ -248,7 +315,21 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
   }
 
   static func preferredDefault() -> OpenWorktreeAction {
-    defaultPriority.first(where: \.isInstalled) ?? .finder
+    preferredDefault(for: nil)
+  }
+
+  /// Resolves the automatic open action. When a working directory is given,
+  /// apps suited to the detected project kind (e.g. Xcode for Swift packages,
+  /// Android Studio for Gradle projects) are tried before the generic priority.
+  static func preferredDefault(
+    for workingDirectory: URL?,
+    isInstalled: (OpenWorktreeAction) -> Bool = { $0.isInstalled }
+  ) -> OpenWorktreeAction {
+    let projectActions =
+      workingDirectory
+      .flatMap { WorktreeProjectKind.detect(at: $0) }?
+      .preferredActions ?? []
+    return (projectActions + defaultPriority).first(where: isInstalled) ?? .finder
   }
 
   func perform(with worktree: Worktree, onError: @escaping @MainActor @Sendable (OpenActionError) -> Void) {
@@ -259,7 +340,8 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
     case .finder:
       NSWorkspace.shared.activateFileViewerSelecting([worktree.workingDirectory])
     // Apps that require CLI arguments instead of Apple Events to open directories.
-    case .androidStudio, .intellij, .webstorm, .pycharm, .rustrover:
+    case .androidStudio, .clion, .goland, .intellij, .phpstorm, .pycharm, .rider, .rubymine,
+      .rustrover, .webstorm:
       guard
         let appURL = NSWorkspace.shared.urlForApplication(
           withBundleIdentifier: bundleIdentifier
@@ -291,8 +373,8 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
         }
       }
     case .alacritty, .antigravity, .cursor, .fork, .githubDesktop, .gitkraken, .gitup, .ghostty,
-      .kitty, .smartgit, .sourcetree, .sublimeMerge, .terminal, .vscode, .vscodeInsiders,
-      .vscodium, .warp, .wezterm, .windsurf, .xcode, .zed:
+      .iterm2, .kitty, .smartgit, .sourcetree, .sublimeMerge, .sublimeText, .terminal, .tower,
+      .vscode, .vscodeInsiders, .vscodium, .warp, .wezterm, .windsurf, .xcode, .zed:
       guard
         let appURL = NSWorkspace.shared.urlForApplication(
           withBundleIdentifier: bundleIdentifier
