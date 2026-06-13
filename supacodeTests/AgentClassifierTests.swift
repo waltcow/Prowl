@@ -25,6 +25,27 @@ struct AgentClassifierTests {
     #expect(identifyAgent(processName: "amp-local") == .amp)
   }
 
+  @Test func identifiesOhMyPiCommandNames() throws {
+    #expect(identifyAgent(processName: "omp") == .pi)
+    #expect(identifyAgent(processName: "oh-my-pi") == .pi)
+
+    let job = ForegroundJob(
+      processGroupID: 42,
+      processes: [
+        ForegroundProcess(
+          pid: 100,
+          name: "bun",
+          argv0: "bun",
+          cmdline: "bun /opt/homebrew/bin/omp --model gpt-5"
+        )
+      ]
+    )
+
+    let result = try #require(identifyAgentInJob(job))
+    #expect(result.agent == .pi)
+    #expect(result.name == "omp")
+  }
+
   @Test func identifiesCursorAgentAliasCommandLines() throws {
     let job = ForegroundJob(
       processGroupID: 42,

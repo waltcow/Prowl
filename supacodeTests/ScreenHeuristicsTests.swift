@@ -10,7 +10,64 @@ struct ScreenHeuristicsTests {
 
   @Test func piDetection() {
     #expect(DetectedAgent.pi.detectState(in: "Working...") == .working)
+    #expect(DetectedAgent.pi.detectState(in: "Working… ⟦esc⟧") == .working)
+    #expect(DetectedAgent.pi.detectState(in: "Reading files ⟨esc⟩") == .working)
+    #expect(DetectedAgent.pi.detectState(in: "Interrupting…") == .working)
     #expect(DetectedAgent.pi.detectState(in: "Done") == .idle)
+  }
+
+  @Test func piIgnoresStaleWorkingMentionInCompletedOutput() {
+    #expect(
+      DetectedAgent.pi.detectState(
+        in: """
+          2. 增强 Pi / Oh My Pi 的屏幕状态判断
+             - 原来 Pi 只认 Working...
+             - 现在还认：
+               - Working…
+               - Interrupting…
+               - 底部 5 行中以 ⟦esc⟧ / ⟨esc⟩ / [esc] 结尾、且前面有内容的行
+             - 这些都会判定为 .working。
+             - 其他情况仍然是 .idle。
+
+          结论：这是一个很聚焦的 branch，目的就是让 Prowl 正确识别 Oh My Pi，并显示 Pi 图标与 working 状态。
+
+           857   685  cache: 45K
+          ╭──     GPT-5.5 ·  high   ~/Sync/github/Prowl   add-oh-my-pi-agent ──╮
+          ╰─
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func piDetectsActiveSpinnerEvenWhenStatusPanelFollows() {
+    #expect(
+      DetectedAgent.pi.detectState(
+        in: """
+          After I add a failing test case, I should edit the code accordingly.
+          It’s important to reproduce the error first, then run the Swift tests after the edits.
+
+           980   571  cache: 50K
+
+          ┌───  Todo 5 tasks ─────────────────────────────────────────────────────┐
+          │ I. Investigation                                                       │
+          │   ├─  Reproduce stale working state                                   │
+          │   └─  Trace Pi heuristic cause                                        │
+          │ II. Fix                                                                │
+          │   ├─  Add failing regression test                                     │
+          │   ├─  Tighten Pi working detection                                    │
+          │   └─  Run relevant verification                                       │
+          └────────────────────────────────────────────────────────────────────────┘
+
+          ⠹ Updating progress ⟨esc⟩
+
+            Todos
+            └ II. Fix
+            └  Add failing regression test
+               Tighten Pi working detection
+               Run relevant verification
+          """
+      ) == .working
+    )
   }
 
   @Test func claudeDetection() {

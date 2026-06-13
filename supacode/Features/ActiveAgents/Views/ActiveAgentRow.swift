@@ -31,7 +31,7 @@ struct ActiveAgentRow: View {
 
   private var title: some View {
     HStack(alignment: .firstTextBaseline, spacing: 3) {
-      Text(entry.agent.displayName)
+      Text(entry.displayName)
         .font(.body.weight(.medium))
         .foregroundStyle(.primary)
       Text("·")
@@ -46,7 +46,7 @@ struct ActiveAgentRow: View {
 
   private var agentIcon: some View {
     Group {
-      if let icon = CommandIconMap.iconForFirstToken(entry.agent.iconLookupToken) {
+      if let icon = entry.iconSource {
         TabIconImage(rawName: icon.storageString, pointSize: 16)
       } else {
         Image(systemName: "sparkle")

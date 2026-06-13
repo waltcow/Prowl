@@ -246,6 +246,7 @@ struct AppFeatureSettingsChangedTests {
       tabTitle: "codex",
       surfaceID: fixedUUID(0),
       paneIndex: 1,
+      iconLookupToken: DetectedAgent.codex.iconLookupToken,
       agent: .codex,
       rawState: .working,
       displayState: .working,

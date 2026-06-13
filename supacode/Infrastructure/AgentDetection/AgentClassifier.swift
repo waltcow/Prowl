@@ -2,7 +2,7 @@ import Foundation
 
 func identifyAgent(processName: String) -> DetectedAgent? {
   switch processName.lowercased() {
-  case "pi":
+  case "pi", "omp", "oh-my-pi":
     return .pi
   case "claude", "claude-code":
     return .claude

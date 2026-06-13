@@ -2,6 +2,7 @@ import Foundation
 
 struct PaneAgentState: Equatable, Sendable {
   var detectedAgent: DetectedAgent?
+  var iconLookupToken: String?
   var fallbackState: AgentRawState
   var state: AgentRawState
   var seen: Bool
@@ -9,12 +10,14 @@ struct PaneAgentState: Equatable, Sendable {
 
   init(
     detectedAgent: DetectedAgent? = nil,
+    iconLookupToken: String? = nil,
     fallbackState: AgentRawState = .unknown,
     state: AgentRawState = .unknown,
     seen: Bool = true,
     lastChangedAt: Date = Date()
   ) {
     self.detectedAgent = detectedAgent
+    self.iconLookupToken = iconLookupToken
     self.fallbackState = fallbackState
     self.state = state
     self.seen = seen
