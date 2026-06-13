@@ -36,13 +36,43 @@ Do not use this as a replacement for unit tests, `make check`, `make build-app`,
 Start the debug app with a dedicated socket so it does not fight the normal installed Prowl instance for the default socket:
 
 ```bash
-socket="/tmp/prowl-self-verify-$$.sock"
+socket="$(mktemp -u /tmp/prowl-self-verify.XXXXXX).sock"
+printf '%s\n' "$socket" > /tmp/prowl-self-verify.socket
 PROWL_CLI_SOCKET="$socket" make run-app
 ```
 
 Keep that command running in its own shell session. If plain `make run-app` reports a socket ownership problem, relaunch with a custom `PROWL_CLI_SOCKET`; the installed app may already own the standard socket.
 
 When `PROWL_CLI_SOCKET` is set, CLI auto-launch is disabled. The debug app and every CLI invocation must use the same socket value.
+
+If your shell does not preserve variables across separate command invocations (many agent tool harnesses start a fresh shell each call), `$socket`, `$cli`, `$pane`, and `$tab` will not survive between steps. Persist the socket path as shown above and re-run the setup block below at the top of every later command. The debug app shares the installed app's `~/Library` data, so it loads the real repository list and looks identical to the installed window; never identify the debug instance by appearance. Target it by socket plus pane or tab UUID.
+
+## Reusable Shell Setup
+
+Use this block in each shell command after the debug app has started:
+
+```bash
+socket="$(cat /tmp/prowl-self-verify.socket)"
+cli="./.build/debug/prowl"
+
+prowl_debug() {
+  PROWL_CLI_SOCKET="$socket" "$cli" "$@"
+}
+
+debug_pids() {
+  for pid in $(pgrep -f "DerivedData/.*/Debug/Prowl.app/Contents/MacOS/ProwlApp"); do
+    [ "$(ps -p "$pid" -o comm= 2>/dev/null | sed 's#.*/##')" = "ProwlApp" ] && echo "$pid"
+  done
+}
+
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  [ -S "$socket" ] && break
+  sleep 1
+done
+test -S "$socket"
+```
+
+Use `prowl_debug ...` for all CLI commands below. Keep `PROWL_CLI_SOCKET` explicit if you inline commands instead of using the helper.
 
 ## Drive With Prowl CLI
 
@@ -53,17 +83,24 @@ make build-cli
 cli="./.build/debug/prowl"
 ```
 
-Then operate the debug app through the custom socket:
+Then seed the debug app and create a deterministic temporary pane:
 
 ```bash
-PROWL_CLI_SOCKET="$socket" "$cli" open .
-PROWL_CLI_SOCKET="$socket" "$cli" list --json
-PROWL_CLI_SOCKET="$socket" "$cli" tab create --json
-PROWL_CLI_SOCKET="$socket" "$cli" send --pane "$pane" 'printf "SELF_VERIFY:%s\n" "$PWD"' --capture --timeout 30 --json
-PROWL_CLI_SOCKET="$socket" "$cli" read --pane "$pane" --last 80 --wait-stable --json
+opened="$(prowl_debug open . --json)"
+worktree="$(echo "$opened" | jq -r '.data.target.worktree.id')"
+created="$(prowl_debug tab create --worktree "$worktree" --json)"
+pane="$(echo "$created" | jq -r '.data.target.pane.id')"
+tab="$(echo "$created" | jq -r '.data.target.tab.id')"
+
+prowl_debug send --pane "$pane" 'printf "SELF_VERIFY:%s\n" "$PWD"' --capture --timeout 30 --json
+prowl_debug read --pane "$pane" --last 80 --wait-stable --json
 ```
 
 Prefer targeting by pane or tab UUIDs from JSON output. Avoid relying on titles when multiple Prowl instances or similar tabs exist.
+
+Always seed the debug instance with `prowl_debug open . --json` before expecting panes. A fresh debug app can start windowless and return an empty `list`; `open .` creates or focuses a worktree tab that later commands can target. Prefer creating an extra temporary tab for the scenario, then close that tab during cleanup.
+
+`send --timeout` is in seconds (1–300, default 30): the maximum time to wait for the command to finish. The `wait.duration_ms` in the response is how long the command actually took, not the timeout — do not read a small `duration_ms` as the timeout being ignored.
 
 ## Run Observable Scenarios
 
@@ -77,21 +114,21 @@ Turn the change into one or more observable scenarios. Prefer small checks that 
 Example command scenario:
 
 ```bash
-PROWL_CLI_SOCKET="$socket" "$cli" send --pane "$pane" \
+prowl_debug send --pane "$pane" \
   'printf "SELF_VERIFY:%s\n" "$PWD"' \
   --capture --timeout 30 --json
 
-PROWL_CLI_SOCKET="$socket" "$cli" read --pane "$pane" --last 80 --wait-stable --json
+prowl_debug read --pane "$pane" --last 80 --wait-stable --json
 ```
 
 Example long-running scenario:
 
 ```bash
-PROWL_CLI_SOCKET="$socket" "$cli" send --pane "$pane" \
+prowl_debug send --pane "$pane" \
   'for i in 1 2 3; do echo "SELF_VERIFY_STEP:$i"; sleep 1; done' \
   --no-wait --json
 
-PROWL_CLI_SOCKET="$socket" "$cli" read --pane "$pane" --last 120 --json
+prowl_debug read --pane "$pane" --last 120 --json
 ```
 
 If the scenario uses another agent, keep it scoped and reversible. Short non-interactive agent tasks can finish before they are sampled; use an interactive session only when the behavior under test requires observing an active retained pane.
@@ -104,7 +141,8 @@ Capture only the debug app's window, not the whole screen. The current Prowl ses
 
 ```bash
 mkdir -p /tmp/prowl-self-verify
-pid="$(ps aux | grep "Debug/Prowl.app/Contents/MacOS/Prowl" | grep -v grep | awk '{print $2}' | head -1)"
+debug_pid="$(debug_pids | head -1)"
+test -n "$debug_pid"
 cat > /tmp/prowl-self-verify/winid.swift <<'SWIFT'
 import CoreGraphics
 import Foundation
@@ -114,7 +152,8 @@ for w in list where (w[kCGWindowOwnerPID as String] as? Int32) == pid {
   if let n = w[kCGWindowNumber as String] as? Int { print(n); break }
 }
 SWIFT
-wid="$(swift /tmp/prowl-self-verify/winid.swift "$pid" | head -1)"
+wid="$(swift /tmp/prowl-self-verify/winid.swift "$debug_pid" | head -1)"
+test -n "$wid"
 screencapture -o -l"$wid" /tmp/prowl-self-verify/prowl-debug-window.png
 ```
 
@@ -127,29 +166,35 @@ Browser or computer-use skills are useful for web and localhost targets, but do 
 Close tabs or panes created for verification:
 
 ```bash
-PROWL_CLI_SOCKET="$socket" "$cli" tab close --tab "$tab" --force --json
+prowl_debug tab close --tab "$tab" --force --json
 ```
 
-Stop the `make run-app` session when validation is done. If you must terminate manually, target only the debug app launched from DerivedData and do not kill `/Applications/Prowl.app`:
+Stop the `make run-app` session when validation is done. If you cannot stop that shell directly, terminate only the debug app launched from DerivedData and never the installed `/Applications/Prowl.app`. The Mach-O executable is named `ProwlApp` (not `Prowl`), and a plain `SIGTERM` is enough.
+
+Do not use `pkill -f "<path-pattern>"`: `-f` can also match the shell or helper process carrying that pattern. Use `debug_pids` from the reusable setup block so only processes whose executable basename is `ProwlApp` are signaled:
 
 ```bash
-pkill -f "DerivedData/.*/Debug/Prowl.app/Contents/MacOS/Prowl"
+for pid in $(debug_pids); do kill "$pid"; done
+sleep 2
+alive="$(debug_pids | tr '\n' ' ')"
+[ -n "$alive" ] && echo "debug still alive:$alive" || echo "debug app stopped"
 ```
 
-Remove the temporary files this skill created. The app never cleans up the custom socket or its lock: `CLISocketServer` only `unlink`s the socket on a clean `stop()` and never unlinks the `.lock` file at all, so a killed debug app leaves both `$socket` and `$socket.lock` behind. Delete them yourself, along with any screenshots:
+`SIGTERM` does not run the app's normal socket teardown, so the custom socket and its lock can remain. Remove them yourself, along with any screenshots:
 
 ```bash
 rm -f "$socket" "$socket.lock"
+rm -f /tmp/prowl-self-verify.socket
 rm -rf /tmp/prowl-self-verify
 ```
 
 ## Report Results
 
-In the final report, include:
+In the final report, include the essentials:
 
 - The socket path used for the debug app.
-- Which CLI binary was used and why.
-- The concrete CLI operations and agent tasks performed.
-- The relevant observed app or agent states.
-- Any single-window screenshot evidence.
-- Cleanup performed and any remaining limitations.
+- The CLI binary used.
+- The scenario performed and the concrete observed result.
+- Cleanup status.
+
+Add optional details only when they matter: pane or tab UUIDs, agent task state, screenshot path, build/check output, or remaining limitations.
