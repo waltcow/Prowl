@@ -357,7 +357,9 @@ extension WorktreeTerminalState {
     configureBridgeCallbacks(for: view, tabId: tabId)
     configureSurfaceCallbacks(for: view, tabId: tabId)
     surfaces[view.id] = view
-    startAgentDetection(for: view, tabId: tabId)
+    if initialInput?.isEmpty == false {
+      wakeAgentDetection(for: view, tabId: tabId)
+    }
     return view
   }
 
@@ -423,6 +425,7 @@ extension WorktreeTerminalState {
     view.onKeyInput = { [weak self, weak view] in
       guard let self, let view else { return }
       self.recordKeyInput(forSurfaceID: view.id)
+      self.wakeAgentDetection(for: view, tabId: tabId)
       self.markNotificationsRead(forSurfaceID: view.id)
     }
     view.onFontSizeShortcut = { [weak self] in

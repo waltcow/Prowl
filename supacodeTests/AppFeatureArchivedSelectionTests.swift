@@ -45,9 +45,6 @@ struct AppFeatureArchivedSelectionTests {
       $0.repositories.worktreeHistoryBackStack = [worktree.id]
       $0.repositories.selection = .archivedWorktrees
     }
-    // Leaving the worktree view can flip Shelf visibility, so AppFeature
-    // resyncs agent detection alongside the selection change.
-    await store.receive(\.syncAgentDetectionEnabled)
     await store.receive(\.repositories.delegate.selectedWorktreeChanged)
     await store.finish()
     #expect(saved.value.isEmpty)

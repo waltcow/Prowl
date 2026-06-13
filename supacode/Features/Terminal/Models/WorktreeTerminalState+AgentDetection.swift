@@ -2,40 +2,60 @@ import Foundation
 import GhosttyKit
 
 extension WorktreeTerminalState {
-  func setAgentDetectionEnabled(_ enabled: Bool) {
-    guard agentDetectionEnabled != enabled else { return }
-    agentDetectionEnabled = enabled
-
-    if enabled {
-      for (surfaceID, view) in surfaces {
-        guard let tabId = tabId(containing: surfaceID) else { continue }
-        startAgentDetection(for: view, tabId: tabId)
-      }
-    } else {
-      cleanupAllAgentDetectionState()
+  func wakeAgentDetection(forSurfaceID surfaceID: UUID) {
+    guard let view = surfaces[surfaceID],
+      let tabId = tabId(containing: surfaceID)
+    else {
+      return
     }
+    wakeAgentDetection(for: view, tabId: tabId)
   }
 
-  func startAgentDetection(for view: GhosttySurfaceView, tabId: TerminalTabID) {
-    guard agentDetectionEnabled else { return }
-    agentDetectionTasks[view.id]?.cancel()
-    surfaceAgentStates[view.id] = PaneAgentState(lastChangedAt: Date())
+  func wakeAgentDetection(for view: GhosttySurfaceView, tabId: TerminalTabID, now: Date = Date()) {
+    agentDetectionSchedules[view.id] = (agentDetectionSchedules[view.id] ?? .cold).warmed(now: now)
+    if surfaceAgentStates[view.id] == nil {
+      surfaceAgentStates[view.id] = PaneAgentState(lastChangedAt: now)
+    }
+    startAgentDetectionTaskIfNeeded(for: view, tabId: tabId)
+  }
+
+  func startAgentDetectionTaskIfNeeded(for view: GhosttySurfaceView, tabId: TerminalTabID) {
+    guard agentDetectionTasks[view.id] == nil else { return }
     agentDetectionTasks[view.id] = Task { @MainActor [weak self, weak view] in
       while !Task.isCancelled {
         guard let self, let view, self.surfaces[view.id] != nil else { return }
-        await self.detectAgentState(for: view, tabId: tabId)
-        let hasAgent = self.surfaceAgentStates[view.id]?.detectedAgent != nil
-        try? await Task.sleep(for: hasAgent ? activeAgentDetectionInterval : idleAgentDetectionInterval)
+        let hasAgent = await self.detectAgentState(for: view, tabId: tabId)
+        let now = Date()
+        let schedule = self.agentDetectionSchedules[view.id] ?? .cold
+        self.agentDetectionSchedules[view.id] =
+          hasAgent ? schedule.observedAgent(now: now) : schedule.observedNoAgent(now: now)
+
+        guard let interval = self.agentDetectionSchedules[view.id]?.nextInterval(now: now) else {
+          self.finishColdAgentDetection(forSurfaceID: view.id)
+          return
+        }
+        try? await Task.sleep(for: interval)
       }
     }
   }
 
-  func detectAgentState(for view: GhosttySurfaceView, tabId: TerminalTabID) async {
+  func finishColdAgentDetection(forSurfaceID surfaceID: UUID) {
+    agentDetectionTasks.removeValue(forKey: surfaceID)
+    agentDetectionSchedules.removeValue(forKey: surfaceID)
+    agentDetectionPresenceBySurface.removeValue(forKey: surfaceID)
+    lastWorkingAtBySurface.removeValue(forKey: surfaceID)
+    lastAgentDetectionDiagnosticsBySurface.removeValue(forKey: surfaceID)
+    if surfaceAgentStates[surfaceID]?.detectedAgent == nil {
+      surfaceAgentStates.removeValue(forKey: surfaceID)
+    }
+  }
+
+  func detectAgentState(for view: GhosttySurfaceView, tabId: TerminalTabID) async -> Bool {
     let surfaceID = view.id
     let childPID = view.bridge.childPID()
     let processGroupID = view.bridge.foregroundProcessGroupID()
     let job = await AgentProcessProbe.shared.foregroundJob(processGroupID: processGroupID, childPID: childPID)
-    guard surfaces[surfaceID] != nil else { return }
+    guard surfaces[surfaceID] != nil else { return false }
 
     let identified = job.flatMap { identifyAgentInJob($0) }
     let probedAgent = identified?.agent
@@ -63,7 +83,7 @@ extension WorktreeTerminalState {
         )
       }
       removeAgentEntryIfNeeded(surfaceID: surfaceID)
-      return
+      return false
     }
 
     let now = Date()
@@ -76,7 +96,7 @@ extension WorktreeTerminalState {
     // capture behind that never reached ARC; over a 24 h session this added
     // up to hundreds of MB of unreferenced allocations.
     let raw = agent.detectState(in: activeText)
-    guard surfaces[surfaceID] != nil else { return }
+    guard surfaces[surfaceID] != nil else { return false }
 
     var lastWorkingAt = lastWorkingAtBySurface[surfaceID]
     let stabilized = stabilizeAgentState(
@@ -128,9 +148,10 @@ extension WorktreeTerminalState {
         )
       )
     }
-    guard next != previous else { return }
+    guard next != previous else { return true }
     surfaceAgentStates[surfaceID] = next
     emitAgentEntry(surfaceID: surfaceID, tabId: tabId, state: next)
+    return true
   }
 
   func markAgentSeen(surfaceID: UUID) {
@@ -204,6 +225,7 @@ extension WorktreeTerminalState {
   func cleanupAgentDetectionState(forSurfaceId surfaceId: UUID) {
     agentDetectionTasks[surfaceId]?.cancel()
     agentDetectionTasks.removeValue(forKey: surfaceId)
+    agentDetectionSchedules.removeValue(forKey: surfaceId)
     surfaceAgentStates.removeValue(forKey: surfaceId)
     agentDetectionPresenceBySurface.removeValue(forKey: surfaceId)
     lastWorkingAtBySurface.removeValue(forKey: surfaceId)
@@ -217,6 +239,7 @@ extension WorktreeTerminalState {
     }
     let removedIDs = Array(surfaceAgentStates.keys)
     agentDetectionTasks.removeAll()
+    agentDetectionSchedules.removeAll()
     surfaceAgentStates.removeAll()
     agentDetectionPresenceBySurface.removeAll()
     lastWorkingAtBySurface.removeAll()

@@ -58,8 +58,10 @@ A **Done** pane becomes **Idle** the moment you focus it.
 
 ## How often it runs
 
-- ~**300 ms** when an agent is present or you're typing (active).
-- ~**2 s** when idle.
+- **No polling** for cold panes that have not received recent input.
+- ~**2 s** for a short warm window after typing, paste, CLI input, or an initial
+  command starts in the pane.
+- ~**300 ms** once an agent is detected, so Working/Blocked/Done stays responsive.
 
 The heavier process probe is throttled (cached ≈ 0.75 s per process group unless
 something changes) so many panes don't add up to high CPU. Status indicators redraw on a

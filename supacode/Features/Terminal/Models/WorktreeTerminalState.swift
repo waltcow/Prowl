@@ -70,11 +70,11 @@ final class WorktreeTerminalState {
   var surfaces: [UUID: GhosttySurfaceView] = [:]
   var focusedSurfaceIdByTab: [TerminalTabID: UUID] = [:]
   var surfaceAgentStates: [UUID: PaneAgentState] = [:]
+  var agentDetectionSchedules: [UUID: AgentDetectionSchedule] = [:]
   var agentDetectionTasks: [UUID: Task<Void, Never>] = [:]
   var agentDetectionPresenceBySurface: [UUID: AgentDetectionPresence] = [:]
   var lastWorkingAtBySurface: [UUID: Date] = [:]
   var lastAgentDetectionDiagnosticsBySurface: [UUID: String] = [:]
-  var agentDetectionEnabled = true
   var tabIsRunningById: [TerminalTabID: Bool] = [:]
   var surfaceRunningStartedAtById: [UUID: Date] = [:]
   var runScriptTabId: TerminalTabID?
@@ -213,6 +213,7 @@ final class WorktreeTerminalState {
   func insertCommittedText(_ text: String, in tabId: TerminalTabID) -> Bool {
     guard let surface = surfaceView(for: tabId) else { return false }
     surface.insertCommittedTextForBroadcast(text)
+    wakeAgentDetection(forSurfaceID: surface.id)
     return true
   }
 
@@ -220,6 +221,7 @@ final class WorktreeTerminalState {
   func insertCommittedText(_ text: String, in surfaceID: UUID) -> Bool {
     guard let surface = surfaceView(for: surfaceID) else { return false }
     surface.insertCommittedTextForBroadcast(text)
+    wakeAgentDetection(forSurfaceID: surface.id)
     return true
   }
 
@@ -232,13 +234,21 @@ final class WorktreeTerminalState {
   @discardableResult
   func submitLine(in surfaceID: UUID) -> Bool {
     guard let surface = surfaceView(for: surfaceID) else { return false }
-    return surface.submitLine()
+    let submitted = surface.submitLine()
+    if submitted {
+      wakeAgentDetection(forSurfaceID: surface.id)
+    }
+    return submitted
   }
 
   @discardableResult
   func sendKeyToken(_ token: String, in surfaceID: UUID) -> Bool {
     guard let surface = surfaceView(for: surfaceID) else { return false }
-    return surface.sendCLIKeyToken(token)
+    let sent = surface.sendCLIKeyToken(token)
+    if sent {
+      wakeAgentDetection(forSurfaceID: surface.id)
+    }
+    return sent
   }
 
   var taskStatus: WorktreeTaskStatus {
