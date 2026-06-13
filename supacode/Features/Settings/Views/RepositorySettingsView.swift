@@ -6,6 +6,7 @@ struct RepositorySettingsView: View {
   @Bindable var store: StoreOf<RepositorySettingsFeature>
   @State private var isBranchPickerPresented = false
   @State private var branchSearchText = ""
+  @State private var githubIdentityViewModel = RepositoryGithubIdentityViewModel()
 
   @State var selectedCustomCommandID: UserCustomCommand.ID?
   @State var recordingCustomCommandID: UserCustomCommand.ID?
@@ -222,6 +223,24 @@ struct RepositorySettingsView: View {
                 + "Disable to skip background GitHub queries and save API rate limit."
             )
 
+            Picker(selection: settings.githubAccountOverride) {
+              Text("Automatic").tag(GithubAccountOverride?.none)
+              if let override = store.settings.githubAccountOverride,
+                !githubIdentityViewModel.accounts.contains(where: { $0.override == override })
+              {
+                Text("\(override.login) @ \(override.host)")
+                  .tag(GithubAccountOverride?.some(override))
+              }
+              ForEach(githubIdentityViewModel.accounts) { account in
+                Text("\(account.login) @ \(account.host)")
+                  .tag(GithubAccountOverride?.some(account.override))
+              }
+            } label: {
+              Text("GitHub identity")
+              Text("Account Prowl switches to before running gh for this repository.")
+            }
+            .help("Select the gh account Prowl should use for this repository.")
+
             Picker(selection: settings.pullRequestMergeStrategy) {
               Text(
                 "Global \(Text(store.globalPullRequestMergeStrategy.title).foregroundStyle(.secondary))"
@@ -325,6 +344,7 @@ struct RepositorySettingsView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .task {
       store.send(.task)
+      await githubIdentityViewModel.load()
       syncSelectedCommandID(with: store.userSettings.customCommands)
     }
     .onChange(of: store.userSettings.customCommands) { _, commands in
@@ -375,6 +395,23 @@ struct RepositorySettingsView: View {
         "“\(conflict.newCommandTitle)” and “\(conflict.existingCommandTitle)” both use \(conflict.shortcutDisplay)."
           + "\n\nChoose Replace to keep the new shortcut and clear the conflicting command."
       )
+    }
+  }
+}
+
+@MainActor @Observable
+private final class RepositoryGithubIdentityViewModel {
+  var accounts: [GithubAuthAccountStatus] = []
+
+  @ObservationIgnored
+  @Dependency(GithubCLIClient.self) private var githubCLI
+
+  func load() async {
+    do {
+      let snapshot = try await githubCLI.authStatusSnapshot()
+      accounts = snapshot.allAccounts
+    } catch {
+      accounts = []
     }
   }
 }

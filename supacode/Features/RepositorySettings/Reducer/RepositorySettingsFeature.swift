@@ -288,6 +288,7 @@ struct RepositorySettingsFeature {
           .trimmingCharacters(in: .whitespacesAndNewlines)
         normalizedSettings.customTitle =
           (trimmedCustomTitle?.isEmpty ?? true) ? nil : trimmedCustomTitle
+        normalizedSettings.githubAccountOverride = normalizedSettings.githubAccountOverride?.normalized
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
         $repositorySettings.withLock { $0 = normalizedSettings }

@@ -21,7 +21,7 @@ struct BatchedPullRequestRefreshReducerTests {
         Issue.record("Should not resolve when cache hit")
         return nil
       }
-      $0.githubCLI.batchPullRequests = { _, _, _, _ in
+      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
         Issue.record("Legacy batchPullRequests should not run on coordinator path")
         return [:]
       }
