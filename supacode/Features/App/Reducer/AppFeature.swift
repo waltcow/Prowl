@@ -554,9 +554,14 @@ struct AppFeature {
         guard let worktree = state.repositories.selectedTerminalWorktree else {
           return .none
         }
-        let rootURL = worktree.repositoryRootURL
-        @Shared(.repositorySettings(rootURL)) var repositorySettings
-        $repositorySettings.withLock { $0.openActionID = OpenWorktreeAction.automaticSettingsID }
+        // Clearing the pin only matters when the repo isn't already automatic;
+        // re-resolve and reopen unconditionally so the entry behaves like the
+        // concrete app rows, where selecting always opens.
+        if !state.openActionIsAutomatic {
+          let rootURL = worktree.repositoryRootURL
+          @Shared(.repositorySettings(rootURL)) var repositorySettings
+          $repositorySettings.withLock { $0.openActionID = OpenWorktreeAction.automaticSettingsID }
+        }
         @Shared(.settingsFile) var settingsFile
         state.openActionSelection = OpenWorktreeAction.fromSettingsID(
           OpenWorktreeAction.automaticSettingsID,

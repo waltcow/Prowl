@@ -103,7 +103,12 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
   // icons constantly. Only hits are cached so a newly installed app shows up
   // without invalidation; lookup misses are microseconds.
   private static let menuIconSize = CGSize(width: 16, height: 16)
-  private static var menuIconCache: [String: MenuIcon] = [:]
+  // `@MainActor` makes the cache's isolation explicit and compiler-enforced:
+  // every `menuIcon` access happens during SwiftUI rendering on the main
+  // thread, so this shared mutable state is never touched concurrently. (A
+  // lock would be the wrong tool here — `NSImage` isn't `Sendable`, so the
+  // cached values shouldn't cross threads in the first place.)
+  @MainActor private static var menuIconCache: [String: MenuIcon] = [:]
 
   var menuIcon: MenuIcon? {
     switch self {
