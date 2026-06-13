@@ -64,7 +64,7 @@ struct OpenWorktreeActionTests {
   }
 
   @Test func preferredDefaultPicksXcodeForAppleProject() throws {
-    try withProjectDirectory(entries: ["Package.swift"]) { directory in
+    try withTemporaryProjectDirectory(entries: ["Package.swift"]) { directory in
       let installed: Set<OpenWorktreeAction> = [.xcode, .cursor, .vscode, .finder]
       let action = OpenWorktreeAction.preferredDefault(for: directory) { installed.contains($0) }
       #expect(action == .xcode)
@@ -72,7 +72,7 @@ struct OpenWorktreeActionTests {
   }
 
   @Test func preferredDefaultPicksAndroidStudioForGradleProject() throws {
-    try withProjectDirectory(entries: ["settings.gradle.kts", "gradlew"]) { directory in
+    try withTemporaryProjectDirectory(entries: ["settings.gradle.kts", "gradlew"]) { directory in
       let installed: Set<OpenWorktreeAction> = [.androidStudio, .cursor, .xcode, .finder]
       let action = OpenWorktreeAction.preferredDefault(for: directory) { installed.contains($0) }
       #expect(action == .androidStudio)
@@ -80,7 +80,7 @@ struct OpenWorktreeActionTests {
   }
 
   @Test func preferredDefaultFallsBackToSecondSpecialistThenGenericPriority() throws {
-    try withProjectDirectory(entries: ["build.gradle.kts"]) { directory in
+    try withTemporaryProjectDirectory(entries: ["build.gradle.kts"]) { directory in
       let withIntellij: Set<OpenWorktreeAction> = [.intellij, .cursor, .finder]
       let intellijPick = OpenWorktreeAction.preferredDefault(for: directory) {
         withIntellij.contains($0)
@@ -96,7 +96,7 @@ struct OpenWorktreeActionTests {
   }
 
   @Test func preferredDefaultIgnoresProjectKindWithoutMarkers() throws {
-    try withProjectDirectory(entries: ["README.md"]) { directory in
+    try withTemporaryProjectDirectory(entries: ["README.md"]) { directory in
       let installed: Set<OpenWorktreeAction> = [.xcode, .vscode, .finder]
       let action = OpenWorktreeAction.preferredDefault(for: directory) { installed.contains($0) }
       #expect(action == .vscode)
@@ -114,18 +114,4 @@ struct OpenWorktreeActionTests {
     #expect(action == .finder)
   }
 
-  private func withProjectDirectory(
-    entries: [String],
-    body: (URL) throws -> Void
-  ) throws {
-    let fileManager = FileManager.default
-    let directory = fileManager.temporaryDirectory
-      .appending(path: "open-action-\(UUID().uuidString)")
-    try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? fileManager.removeItem(at: directory) }
-    for entry in entries {
-      try Data().write(to: directory.appending(path: entry))
-    }
-    try body(directory)
-  }
 }

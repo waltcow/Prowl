@@ -26,7 +26,7 @@ struct WorktreeProjectKindTests {
     (["package.json"], WorktreeProjectKind.web),
   ])
   func detectsKindFromMarker(entries: [String], expected: WorktreeProjectKind) throws {
-    try withTemporaryDirectory(entries: entries) { directory in
+    try withTemporaryProjectDirectory(entries: entries) { directory in
       #expect(WorktreeProjectKind.detect(at: directory) == expected)
     }
   }
@@ -40,13 +40,13 @@ struct WorktreeProjectKindTests {
     (["composer.json", "package.json"], WorktreeProjectKind.php),
   ])
   func specificMarkersWinOverGenericOnes(entries: [String], expected: WorktreeProjectKind) throws {
-    try withTemporaryDirectory(entries: entries) { directory in
+    try withTemporaryProjectDirectory(entries: entries) { directory in
       #expect(WorktreeProjectKind.detect(at: directory) == expected)
     }
   }
 
   @Test func returnsNilWithoutMarkers() throws {
-    try withTemporaryDirectory(entries: ["README.md", "src/"]) { directory in
+    try withTemporaryProjectDirectory(entries: ["README.md", "src/"]) { directory in
       #expect(WorktreeProjectKind.detect(at: directory) == nil)
     }
   }
@@ -55,30 +55,5 @@ struct WorktreeProjectKindTests {
     let directory = FileManager.default.temporaryDirectory
       .appending(path: "missing-\(UUID().uuidString)")
     #expect(WorktreeProjectKind.detect(at: directory) == nil)
-  }
-
-  /// Creates a temporary directory containing `entries` (a trailing slash
-  /// marks a subdirectory, like an `.xcodeproj` bundle) and removes it after
-  /// `body` runs.
-  private func withTemporaryDirectory(
-    entries: [String],
-    body: (URL) throws -> Void
-  ) throws {
-    let fileManager = FileManager.default
-    let directory = fileManager.temporaryDirectory
-      .appending(path: "project-kind-\(UUID().uuidString)")
-    try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? fileManager.removeItem(at: directory) }
-    for entry in entries {
-      if entry.hasSuffix("/") {
-        try fileManager.createDirectory(
-          at: directory.appending(path: String(entry.dropLast())),
-          withIntermediateDirectories: true
-        )
-      } else {
-        try Data().write(to: directory.appending(path: entry))
-      }
-    }
-    try body(directory)
   }
 }
