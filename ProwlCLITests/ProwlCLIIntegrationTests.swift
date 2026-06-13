@@ -38,6 +38,41 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(error["code"] as? String, CLIErrorCode.appNotRunning)
   }
 
+  func testJSONModePreservesEscapedControlCharactersFromAppResponse() throws {
+    let socketPath = temporarySocketPath(suffix: "json-control")
+    let responseJSON = [
+      #"{"ok":true,"command":"read","schema_version":"prowl.cli.read.v1","data":{"#,
+      #""target":{"#,
+      #""worktree":{"id":"wt-1","name":"main","path":"/Projects/App","root_path":"/Projects/App","kind":"git"},"#,
+      #""tab":{"id":"tab-1","title":"Tab\u0007Title","selected":true},"#,
+      #""pane":{"id":"pane-1","title":"zsh\u001b[31m","cwd":"/Projects/App","focused":true}"#,
+      #"},"#,
+      #""mode":"last","last":80,"source":"scrollback","truncated":false,"#,
+      #""line_count":1,"text":"alpha\u001b[31mbeta\u0000end"}}"#,
+    ].joined()
+    let responseData = try XCTUnwrap(responseJSON.data(using: .utf8))
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      responseData: responseData,
+      args: ["read", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "\(responseJSON)\n")
+    assertNoRawJSONControlCharacters(in: result.stdout)
+
+    let payload = try jsonObject(from: result.stdout)
+    let data = try XCTUnwrap(payload["data"] as? [String: Any])
+    XCTAssertEqual(data["text"] as? String, "alpha\u{1B}[31mbeta\u{0}end")
+
+    let target = try XCTUnwrap(data["target"] as? [String: Any])
+    let tab = try XCTUnwrap(target["tab"] as? [String: Any])
+    let pane = try XCTUnwrap(target["pane"] as? [String: Any])
+    XCTAssertEqual(tab["title"] as? String, "Tab\u{7}Title")
+    XCTAssertEqual(pane["title"] as? String, "zsh\u{1B}[31m")
+  }
+
   func testOpenCommandRoundTripsOverSocket() throws {
     let socketPath = temporarySocketPath(suffix: "open")
     let response = try CommandResponse(
@@ -1329,6 +1364,14 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let responseData = try encoder.encode(response)
+    return try runWithMockServer(socketPath: socketPath, responseData: responseData, args: args)
+  }
+
+  private func runWithMockServer(
+    socketPath: String,
+    responseData: Data,
+    args: [String]
+  ) throws -> (Data, CommandResult) {
     let server = try MockSocketServer(socketPath: socketPath, responseData: responseData)
     try server.start()
 
@@ -1443,6 +1486,21 @@ final class ProwlCLIIntegrationTests: XCTestCase {
   private func jsonObject(from text: String) throws -> [String: Any] {
     let data = try XCTUnwrap(text.data(using: .utf8))
     return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  }
+
+  private func assertNoRawJSONControlCharacters(
+    in text: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    guard let data = text.data(using: .utf8) else {
+      XCTFail("Output is not UTF-8", file: file, line: line)
+      return
+    }
+
+    for byte in data where byte < 0x20 && byte != 0x09 && byte != 0x0A && byte != 0x0D {
+      XCTFail("Output contains raw control byte 0x\(String(byte, radix: 16))", file: file, line: line)
+    }
   }
 
   private func temporarySocketPath(suffix: String) -> String {

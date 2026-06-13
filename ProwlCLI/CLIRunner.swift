@@ -13,7 +13,12 @@ enum CLIRunner {
       let responseData = try SocketTransportClient.send(envelope)
       let decoder = JSONDecoder()
       let response = try decoder.decode(CommandResponse.self, from: responseData)
-      OutputRenderer.render(response, mode: envelope.output)
+      switch envelope.output {
+      case .json:
+        renderJSONData(responseData)
+      case .text:
+        OutputRenderer.render(response, mode: .text)
+      }
       if !response.ok {
         throw ExitCode.failure
       }
@@ -35,6 +40,13 @@ enum CLIRunner {
         mode: envelope.output
       )
       throw ExitCode.failure
+    }
+  }
+
+  private static func renderJSONData(_ data: Data) {
+    FileHandle.standardOutput.write(data)
+    if data.last != UInt8(ascii: "\n") {
+      FileHandle.standardOutput.write(Data([UInt8(ascii: "\n")]))
     }
   }
 }
