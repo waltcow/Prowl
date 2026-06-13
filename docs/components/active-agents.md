@@ -24,7 +24,9 @@ Command Palette → "Toggle Active Agents Panel".
         tab title or branch (secondary)
 ```
 
-- **Icon** — the detected agent's icon (falls back to a sparkle).
+- **Icon** — the detected command/agent icon (for example `omp` keeps the OMP
+  icon even though it reports as the Pi agent; unknown wrappers fall back to the
+  agent icon, then a sparkle).
 - **Title** — agent name + repository (repo color-coded).
 - **Subtitle** — the tab title (if `showActiveAgentTabTitles`) or branch name.
 - **Status pill** — one of:

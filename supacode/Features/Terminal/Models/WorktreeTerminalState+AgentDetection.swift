@@ -100,9 +100,11 @@ extension WorktreeTerminalState {
     } else {
       seen = previous.seen
     }
+    let iconLookupToken = identified?.name ?? previous.iconLookupToken ?? agent.iconLookupToken
     let lastChangedAt = (previous.detectedAgent != agent || previous.state != stabilized) ? now : previous.lastChangedAt
     let next = PaneAgentState(
       detectedAgent: agent,
+      iconLookupToken: iconLookupToken,
       fallbackState: raw,
       state: stabilized,
       seen: seen,
@@ -191,6 +193,7 @@ extension WorktreeTerminalState {
       tabTitle: tabTitle,
       surfaceID: surfaceID,
       paneIndex: paneIndex,
+      iconLookupToken: state.iconLookupToken ?? agent.iconLookupToken,
       agent: agent,
       rawState: state.fallbackState,
       displayState: state.displayState,

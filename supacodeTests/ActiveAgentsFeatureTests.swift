@@ -100,6 +100,26 @@ struct ActiveAgentsFeatureTests {
     )
   }
 
+  @Test func rowIconUsesDetectedCommandTokenBeforeAgentFallback() {
+    let ompEntry = entry(
+      id: UUID(0),
+      state: .idle,
+      changedAt: Date(timeIntervalSince1970: 10),
+      agent: .pi,
+      iconLookupToken: "omp"
+    )
+    #expect(ompEntry.iconSource?.assetName == "OMP")
+
+    let fallbackEntry = entry(
+      id: UUID(1),
+      state: .idle,
+      changedAt: Date(timeIntervalSince1970: 10),
+      agent: .pi,
+      iconLookupToken: "unknown-wrapper"
+    )
+    #expect(fallbackEntry.iconSource?.assetName == "Pi")
+  }
+
   @Test func navigationReturnsNilForEmptyList() {
     let entries: IdentifiedArrayOf<ActiveAgentEntry> = []
     #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == nil)
@@ -228,7 +248,9 @@ struct ActiveAgentsFeatureTests {
     id: UUID,
     tabTitle: String = "1",
     state: AgentDisplayState,
-    changedAt: Date
+    changedAt: Date,
+    agent: DetectedAgent = .codex,
+    iconLookupToken: String? = nil
   ) -> ActiveAgentEntry {
     ActiveAgentEntry(
       id: id,
@@ -239,7 +261,8 @@ struct ActiveAgentsFeatureTests {
       tabTitle: tabTitle,
       surfaceID: id,
       paneIndex: 1,
-      agent: .codex,
+      iconLookupToken: iconLookupToken ?? agent.iconLookupToken,
+      agent: agent,
       rawState: state == .blocked ? .blocked : state == .working ? .working : .idle,
       displayState: state,
       lastChangedAt: changedAt

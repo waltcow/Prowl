@@ -16,8 +16,15 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   let tabTitle: String
   let surfaceID: UUID
   let paneIndex: Int
+  /// Command/process token used for row icon lookup. This can be more specific than
+  /// `agent` for aliases that share one semantic agent, e.g. `omp` vs `pi`.
+  let iconLookupToken: String
   let agent: DetectedAgent
   let rawState: AgentRawState
   let displayState: AgentDisplayState
   let lastChangedAt: Date
+
+  var iconSource: TabIconSource? {
+    CommandIconMap.iconForFirstToken(iconLookupToken) ?? CommandIconMap.iconForFirstToken(agent.iconLookupToken)
+  }
 }

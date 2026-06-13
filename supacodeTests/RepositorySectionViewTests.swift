@@ -305,6 +305,7 @@ struct RepositorySectionViewTests {
       tabTitle: "agent",
       surfaceID: UUID(),
       paneIndex: 1,
+      iconLookupToken: DetectedAgent.codex.iconLookupToken,
       agent: .codex,
       rawState: .working,
       displayState: .working,
