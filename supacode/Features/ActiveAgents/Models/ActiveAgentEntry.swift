@@ -23,6 +23,17 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   let rawState: AgentRawState
   let displayState: AgentDisplayState
   let lastChangedAt: Date
+  var displayName: String {
+    let trimmed = iconLookupToken.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard
+      !trimmed.isEmpty,
+      trimmed != "agent",
+      CommandIconMap.iconForFirstToken(trimmed) != nil
+    else {
+      return agent.displayName
+    }
+    return trimmed
+  }
 
   var iconSource: TabIconSource? {
     CommandIconMap.iconForFirstToken(iconLookupToken) ?? CommandIconMap.iconForFirstToken(agent.iconLookupToken)

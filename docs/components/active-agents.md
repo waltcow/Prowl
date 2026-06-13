@@ -27,7 +27,8 @@ Command Palette → "Toggle Active Agents Panel".
 - **Icon** — the detected command/agent icon (for example `omp` keeps the OMP
   icon even though it reports as the Pi agent; unknown wrappers fall back to the
   agent icon, then a sparkle).
-- **Title** — agent name + repository (repo color-coded).
+- **Title** — detected command/agent name + repository (repo color-coded);
+  command aliases such as `omp` are shown directly.
 - **Subtitle** — the tab title (if `showActiveAgentTabTitles`) or branch name.
 - **Status pill** — one of:
 

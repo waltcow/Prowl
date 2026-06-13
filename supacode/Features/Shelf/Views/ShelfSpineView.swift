@@ -619,12 +619,12 @@ private struct ShelfSpineTabSlot: View {
   private var helpText: String {
     guard let activeAgentEntry else { return tab.displayTitle }
     let tabTitle = ActiveAgentsPanel.tabTitle(for: activeAgentEntry)
-    return "Jump to \(activeAgentEntry.agent.displayName): \(activeAgentEntry.displayState.label) - \(tabTitle)"
+    return "Jump to \(activeAgentEntry.displayName): \(activeAgentEntry.displayState.label) - \(tabTitle)"
   }
 
   private var accessibilityLabel: String {
     guard let activeAgentEntry else { return tab.displayTitle }
-    return "Jump to \(activeAgentEntry.agent.displayName), \(activeAgentEntry.displayState.label)"
+    return "Jump to \(activeAgentEntry.displayName), \(activeAgentEntry.displayState.label)"
   }
 }
 

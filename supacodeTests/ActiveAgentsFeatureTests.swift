@@ -100,7 +100,7 @@ struct ActiveAgentsFeatureTests {
     )
   }
 
-  @Test func rowIconUsesDetectedCommandTokenBeforeAgentFallback() {
+  @Test func rowDisplayUsesDetectedCommandTokenBeforeAgentFallback() {
     let ompEntry = entry(
       id: UUID(0),
       state: .idle,
@@ -109,6 +109,7 @@ struct ActiveAgentsFeatureTests {
       iconLookupToken: "omp"
     )
     #expect(ompEntry.iconSource?.assetName == "OMP")
+    #expect(ompEntry.displayName == "omp")
 
     let fallbackEntry = entry(
       id: UUID(1),
@@ -118,6 +119,16 @@ struct ActiveAgentsFeatureTests {
       iconLookupToken: "unknown-wrapper"
     )
     #expect(fallbackEntry.iconSource?.assetName == "Pi")
+    #expect(fallbackEntry.displayName == "pi")
+
+    let cursorEntry = entry(
+      id: UUID(2),
+      state: .idle,
+      changedAt: Date(timeIntervalSince1970: 10),
+      agent: .cursor,
+      iconLookupToken: "agent"
+    )
+    #expect(cursorEntry.displayName == "cursor")
   }
 
   @Test func navigationReturnsNilForEmptyList() {
