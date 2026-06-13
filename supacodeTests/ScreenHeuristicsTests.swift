@@ -43,7 +43,8 @@ struct ScreenHeuristicsTests {
     #expect(
       DetectedAgent.pi.detectState(
         in: """
-          After I add a failing test case, I should edit the code accordingly. It’s important to reproduce the error first, then run the Swift tests after the edits.
+          After I add a failing test case, I should edit the code accordingly.
+          It’s important to reproduce the error first, then run the Swift tests after the edits.
 
            980   571  cache: 50K
 

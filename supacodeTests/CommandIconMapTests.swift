@@ -63,8 +63,8 @@ struct CommandIconMapTests {
   // MARK: - Coding agents
 
   @Test func codingAgentsResolved() {
-    #expect(CommandIconMap.iconForFirstToken("omp")?.assetName == "Pi")
-    #expect(CommandIconMap.iconForFirstToken("oh-my-pi")?.assetName == "Pi")
+    #expect(CommandIconMap.iconForFirstToken("omp")?.assetName == "OMP")
+    #expect(CommandIconMap.iconForFirstToken("oh-my-pi")?.assetName == "OMP")
     // Sample of the coding-agent set — they all share the sparkle SF
     // Symbol fallback, asset names match the imageset folders.
     #expect(CommandIconMap.iconForFirstToken("agent")?.assetName == "Cursor")
