@@ -14,6 +14,21 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       .deletingLastPathComponent()
   }
 
+  /// Backstop cleanup for mock-server socket files. `MockSocketServer.stop()`
+  /// (run via `defer`) covers the normal and throwing paths, but a test process
+  /// killed mid-run (timeout, Ctrl-C) skips both `defer` and `deinit` and leaks
+  /// the bound socket. Sweep any leftover `prowl-cli-*` from the socket
+  /// directory after each test so they cannot accumulate. Matched by prefix
+  /// only (no `.sock` suffix), so a truncated name would still be caught.
+  override func tearDownWithError() throws {
+    let dir = Self.socketDirectory
+    for name in (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+    where name.hasPrefix("prowl-cli-") {
+      unlink((dir as NSString).appendingPathComponent(name))
+    }
+    try super.tearDownWithError()
+  }
+
   func testHelpAndVersionSmoke() throws {
     let version = try runProwl(args: ["--version"])
     XCTAssertEqual(version.exitCode, 0)
@@ -1432,6 +1447,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     encoder.outputFormatting = [.sortedKeys]
     let responseData = try encoder.encode(response)
     let server = try MockSocketServer(socketPath: socketPath, responseData: responseData)
+    defer { server.stop() }
     try server.start()
 
     let result = try runProwl(
@@ -1575,10 +1591,22 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
   }
 
+  /// Directory for mock-server socket files, kept deliberately short. AF_UNIX
+  /// `sun_path` is capped at ~104 bytes; `NSTemporaryDirectory()` alone is ~49,
+  /// so `prowl-cli-<suffix>-<uuid>.sock` overflows and `bind()` silently
+  /// truncates the path. A truncated path would not match the string we pass to
+  /// `unlink()`, leaking the socket file. `/tmp` keeps the full path well under
+  /// the limit (and matches the CLI's own socket convention).
+  private static let socketDirectory = "/tmp"
+
   private func temporarySocketPath(suffix: String) -> String {
     let uuid = UUID().uuidString.lowercased()
     let filename = "prowl-cli-\(suffix)-\(uuid).sock"
-    return (NSTemporaryDirectory() as NSString).appendingPathComponent(filename)
+    let path = (Self.socketDirectory as NSString).appendingPathComponent(filename)
+    // Fail fast if a future suffix pushes the path past the sun_path limit,
+    // rather than letting bind() truncate and leak the socket again.
+    precondition(path.utf8.count <= 103, "Socket path exceeds AF_UNIX sun_path limit: \(path)")
+    return path
   }
 }
 
@@ -1914,9 +1942,16 @@ private final class MockSocketServer: @unchecked Sendable {
     self.responseData = responseData
   }
 
-  deinit {
+  deinit { stop() }
+
+  /// Idempotent teardown: closes the listening socket and removes its file.
+  /// Invoked via `defer` from the test helper so cleanup does not rely on
+  /// non-deterministic `deinit` timing — the accept loop runs on a background
+  /// queue, which can delay ARC release and leave the bound socket file behind.
+  func stop() {
     if serverFD >= 0 {
       close(serverFD)
+      serverFD = -1
     }
     unlink(socketPath)
   }
