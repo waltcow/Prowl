@@ -10,6 +10,7 @@ struct WorktreeDetailView: View {
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
     let openActionSelection: OpenWorktreeAction
+    let openActionIsAutomatic: Bool
     let showExtras: Bool
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
@@ -68,7 +69,6 @@ struct WorktreeDetailView: View {
       actionTargetWorktree != nil
       && loadingInfo == nil
       && !showsMultiSelectionSummary
-    let openActionSelection = state.openActionSelection
     let runScriptEnabled = hasActiveTerminalTarget
     let runScriptIsRunning = actionTargetWorktree.flatMap { state.runScriptStatusByWorktreeID[$0.id] } == true
     let customCommands = state.selectedCustomCommands
@@ -110,7 +110,8 @@ struct WorktreeDetailView: View {
             selectedWorktree: selectedWorktree,
             notificationGroups: notificationGroups,
             unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
-            openActionSelection: openActionSelection,
+            openActionSelection: state.openActionSelection,
+            openActionIsAutomatic: state.openActionIsAutomatic,
             showExtras: commandKeyObserver.isPressed,
             runScriptEnabled: runScriptEnabled,
             runScriptIsRunning: runScriptIsRunning,
@@ -176,6 +177,9 @@ struct WorktreeDetailView: View {
       },
       onOpenActionSelectionChanged: { action in
         store.send(.openActionSelectionChanged(action))
+      },
+      onResetOpenActionToAutomatic: {
+        store.send(.openActionResetToAutomatic)
       },
       onCopyPath: {
         guard let actionTargetWorktree else { return }
@@ -323,6 +327,7 @@ struct WorktreeDetailView: View {
       notificationGroups: input.notificationGroups,
       unseenNotificationWorktreeCount: input.unseenNotificationWorktreeCount,
       openActionSelection: input.openActionSelection,
+      openActionIsAutomatic: input.openActionIsAutomatic,
       showExtras: input.showExtras,
       runScriptEnabled: input.runScriptEnabled,
       runScriptIsRunning: input.runScriptIsRunning,
@@ -748,6 +753,7 @@ struct WorktreeDetailView: View {
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
     let openActionSelection: OpenWorktreeAction
+    let openActionIsAutomatic: Bool
     let showExtras: Bool
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
@@ -766,6 +772,7 @@ struct WorktreeDetailView: View {
     let onConsumeExternalRenamePrompt: (Int) -> Void
     let onOpenWorktree: (OpenWorktreeAction) -> Void
     let onOpenActionSelectionChanged: (OpenWorktreeAction) -> Void
+    let onResetOpenActionToAutomatic: () -> Void
     let onCopyPath: () -> Void
     let onSelectNotification: (Worktree.ID, WorktreeTerminalNotification) -> Void
     let onDismissAllNotifications: () -> Void
@@ -815,6 +822,7 @@ struct WorktreeDetailView: View {
         ToolbarItemGroup {
           openMenu(
             openActionSelection: toolbarState.openActionSelection,
+            openActionIsAutomatic: toolbarState.openActionIsAutomatic,
             showExtras: toolbarState.showExtras
           )
         }
@@ -824,7 +832,11 @@ struct WorktreeDetailView: View {
     }
 
     @ViewBuilder
-    private func openMenu(openActionSelection: OpenWorktreeAction, showExtras: Bool) -> some View {
+    private func openMenu(
+      openActionSelection: OpenWorktreeAction,
+      openActionIsAutomatic: Bool,
+      showExtras: Bool
+    ) -> some View {
       let availableActions = OpenWorktreeAction.availableCases
       let resolvedOpenActionSelection = OpenWorktreeAction.availableSelection(openActionSelection)
       Button {
@@ -838,6 +850,18 @@ struct WorktreeDetailView: View {
       .help(openActionHelpText(for: resolvedOpenActionSelection, isDefault: true))
 
       Menu {
+        Button {
+          onResetOpenActionToAutomatic()
+        } label: {
+          if openActionIsAutomatic {
+            Label("Automatic", systemImage: "checkmark")
+          } else {
+            Text("Automatic")
+          }
+        }
+        .buttonStyle(.plain)
+        .help("Pick the app automatically based on the project type")
+        Divider()
         ForEach(availableActions) { action in
           let isDefault = action == resolvedOpenActionSelection
           Button {

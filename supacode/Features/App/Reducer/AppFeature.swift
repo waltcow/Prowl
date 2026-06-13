@@ -13,6 +13,10 @@ struct AppFeature {
     var updates = UpdatesFeature.State()
     var commandPalette = CommandPaletteFeature.State()
     var openActionSelection: OpenWorktreeAction = .finder
+    /// Whether the selected worktree's repository resolves its open action
+    /// automatically (project-aware) rather than a user-pinned app. Drives the
+    /// "Automatic" entry's checkmark in the toolbar's Open menu.
+    var openActionIsAutomatic: Bool = true
     var selectedRunScript: String = ""
     var selectedCustomCommands: [UserCustomCommand] = []
     var resolvedKeybindings: ResolvedKeybindingMap = .appDefaults
@@ -49,6 +53,7 @@ struct AppFeature {
     case updates(UpdatesFeature.Action)
     case commandPalette(CommandPaletteFeature.Action)
     case openActionSelectionChanged(OpenWorktreeAction)
+    case openActionResetToAutomatic
     case worktreeSettingsLoaded(RepositorySettings, worktreeID: Worktree.ID)
     case worktreeUserSettingsLoaded(UserRepositorySettings, worktreeID: Worktree.ID)
     case openSelectedWorktree
@@ -419,8 +424,11 @@ struct AppFeature {
           @Shared(.repositorySettings(rootURL)) var repositorySettings
           state.openActionSelection = OpenWorktreeAction.fromSettingsID(
             repositorySettings.openActionID,
-            defaultEditorID: settings.defaultEditorID
+            defaultEditorID: settings.defaultEditorID,
+            workingDirectory: selectedWorktree.workingDirectory
           )
+          state.openActionIsAutomatic =
+            repositorySettings.openActionID == OpenWorktreeAction.automaticSettingsID
         }
         state.resolvedKeybindings = resolvedKeybindings(
           settings: state.settings,
@@ -532,6 +540,7 @@ struct AppFeature {
 
       case .openActionSelectionChanged(let action):
         state.openActionSelection = action
+        state.openActionIsAutomatic = false
         guard let worktree = state.repositories.selectedTerminalWorktree else {
           return .none
         }
@@ -540,6 +549,27 @@ struct AppFeature {
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         $repositorySettings.withLock { $0.openActionID = actionID }
         return .none
+
+      case .openActionResetToAutomatic:
+        guard let worktree = state.repositories.selectedTerminalWorktree else {
+          return .none
+        }
+        // Clearing the pin only matters when the repo isn't already automatic;
+        // re-resolve and reopen unconditionally so the entry behaves like the
+        // concrete app rows, where selecting always opens.
+        if !state.openActionIsAutomatic {
+          let rootURL = worktree.repositoryRootURL
+          @Shared(.repositorySettings(rootURL)) var repositorySettings
+          $repositorySettings.withLock { $0.openActionID = OpenWorktreeAction.automaticSettingsID }
+        }
+        @Shared(.settingsFile) var settingsFile
+        state.openActionSelection = OpenWorktreeAction.fromSettingsID(
+          OpenWorktreeAction.automaticSettingsID,
+          defaultEditorID: settingsFile.global.defaultEditorID,
+          workingDirectory: worktree.workingDirectory
+        )
+        state.openActionIsAutomatic = true
+        return .send(.openSelectedWorktree)
 
       case .openSelectedWorktree:
         return .send(.openWorktree(OpenWorktreeAction.availableSelection(state.openActionSelection)))
@@ -725,6 +755,7 @@ struct AppFeature {
           let worktree = terminalWorktree(for: worktreeID, repositories: state.repositories)
         else {
           state.openActionSelection = .finder
+          state.openActionIsAutomatic = true
           state.selectedRunScript = ""
           state.selectedCustomCommands = []
           state.resolvedKeybindings = resolvedKeybindings(
@@ -746,7 +777,11 @@ struct AppFeature {
         // Run + Custom Command items must update in the same transaction —
         // otherwise the command list lands a frame later and the toolbar
         // visibly reflows when switching between cards with different commands.
-        applyWorktreeSettings(repositorySettings, into: &state)
+        applyWorktreeSettings(
+          repositorySettings,
+          workingDirectory: worktree.workingDirectory,
+          into: &state
+        )
         return applyWorktreeUserSettings(userRepositorySettings, into: &state)
 
       case .runScriptDraftChanged(let script):
@@ -868,10 +903,16 @@ struct AppFeature {
         )
 
       case .worktreeSettingsLoaded(let settings, let worktreeID):
-        guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories),
+          worktree.id == worktreeID
+        else {
           return .none
         }
-        applyWorktreeSettings(settings, into: &state)
+        applyWorktreeSettings(
+          settings,
+          workingDirectory: worktree.workingDirectory,
+          into: &state
+        )
         return .none
 
       case .worktreeUserSettingsLoaded(let settings, let worktreeID):

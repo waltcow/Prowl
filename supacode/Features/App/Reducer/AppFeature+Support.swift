@@ -152,15 +152,21 @@ extension AppFeature {
   /// Applies a worktree's repository settings (open action, run script) into
   /// state. Shared by the normal `worktreeSettingsLoaded` action and the Canvas
   /// focus path so both stay in sync.
-  func applyWorktreeSettings(_ settings: RepositorySettings, into state: inout State) {
+  func applyWorktreeSettings(
+    _ settings: RepositorySettings,
+    workingDirectory: URL?,
+    into state: inout State
+  ) {
     @Shared(.settingsFile) var settingsFile
     let normalizedDefaultEditorID = OpenWorktreeAction.normalizedDefaultEditorID(
       settingsFile.global.defaultEditorID
     )
     state.openActionSelection = OpenWorktreeAction.fromSettingsID(
       settings.openActionID,
-      defaultEditorID: normalizedDefaultEditorID
+      defaultEditorID: normalizedDefaultEditorID,
+      workingDirectory: workingDirectory
     )
+    state.openActionIsAutomatic = settings.openActionID == OpenWorktreeAction.automaticSettingsID
     state.selectedRunScript = settings.runScript
   }
 
