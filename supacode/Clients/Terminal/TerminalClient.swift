@@ -50,7 +50,6 @@ struct TerminalClient {
     case prune(Set<Worktree.ID>)
     case setNotificationsEnabled(Bool)
     case setCommandFinishedNotification(enabled: Bool, threshold: Int)
-    case setAgentDetectionEnabled(Bool)
     case setCanvasMode(Bool)
     case setSelectedWorktreeID(Worktree.ID?)
     case saveLayoutSnapshot

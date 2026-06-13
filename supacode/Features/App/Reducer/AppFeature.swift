@@ -81,7 +81,6 @@ struct AppFeature {
     case endSearch
     case systemNotificationsPermissionFailed(errorMessage: String?)
     case systemNotificationTapped(worktreeID: Worktree.ID, surfaceID: UUID)
-    case syncAgentDetectionEnabled
     case alert(PresentationAction<Alert>)
     case terminalEvent(TerminalClient.Event)
   }
@@ -104,35 +103,6 @@ struct AppFeature {
   @Dependency(WorktreeInfoWatcherClient.self) var worktreeInfoWatcher
   @Dependency(CustomShortcutRegistryClient.self) var customShortcutRegistryClient
 
-  func agentDetectionEnabled(
-    state: State,
-    autoShowPanel: Bool? = nil,
-    showShelfStatus: Bool? = nil
-  ) -> Bool {
-    let shelfStatusVisible =
-      state.repositories.isShowingShelf && (showShelfStatus ?? state.settings.showActiveAgentStatusInShelf)
-    return ActiveAgentsFeature.detectionEnabled(
-      isPanelHidden: state.repositories.activeAgents.isPanelHidden,
-      autoShowPanel: autoShowPanel ?? state.settings.autoShowActiveAgentsPanel,
-      isShelfVisible: shelfStatusVisible
-    )
-  }
-
-  static func repositoriesActionMayChangeShelfVisibility(_ action: RepositoriesFeature.Action) -> Bool {
-    switch action {
-    case .selectArchivedWorktrees, .selectCanvas, .selectShelf, .selectTabbed, .setTopSegment, .toggleCanvas,
-      .toggleShelf:
-      return true
-    // `isShowingShelf` also requires a non-empty repository list, so actions
-    // that add or remove repositories can flip it without touching `isShelfActive`.
-    case .repositoriesLoaded, .repositoryManagement(.repositoryRemoved),
-      .repositoryManagement(.openRepositoriesFinished):
-      return true
-    default:
-      return false
-    }
-  }
-
   var body: some Reducer<State, Action> {
     let core = Reduce<State, Action> { state, action in
       switch action {
@@ -141,15 +111,11 @@ struct AppFeature {
         appLogger.info("[LayoutRestore] appLaunched: launchRestoreMode=\(String(describing: state.launchRestoreMode))")
         state.launchedAt = now
         state.repositories.launchRestoreMode = state.launchRestoreMode
-        let agentDetectionEnabled = agentDetectionEnabled(state: state)
         analyticsClient.capture("app_launched", nil)
         return .merge(
           .send(.repositories(.task)),
           .send(.settings(.task)),
           .send(.updates(.task)),
-          .run { _ in
-            await terminalClient.send(.setAgentDetectionEnabled(agentDetectionEnabled))
-          },
           .run { _ in
             await dockClient.setNotificationBadge(0)
           },
@@ -414,11 +380,6 @@ struct AppFeature {
         state.lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
         state.settings.keybindingUserOverrides = settings.keybindingUserOverrides
         state.repositories.showActiveAgentTabTitles = settings.showActiveAgentTabTitles
-        let agentDetectionEnabled = agentDetectionEnabled(
-          state: state,
-          autoShowPanel: settings.autoShowActiveAgentsPanel,
-          showShelfStatus: settings.showActiveAgentStatusInShelf
-        )
         if let selectedWorktree = state.repositories.selectedTerminalWorktree {
           let rootURL = selectedWorktree.repositoryRootURL
           @Shared(.repositorySettings(rootURL)) var repositorySettings
@@ -480,9 +441,6 @@ struct AppFeature {
                 threshold: settings.commandFinishedNotificationThreshold
               )
             )
-          },
-          .run { _ in
-            await terminalClient.send(.setAgentDetectionEnabled(agentDetectionEnabled))
           },
           .run { _ in
             await worktreeInfoWatcher.send(
@@ -940,12 +898,6 @@ struct AppFeature {
           }
         )
 
-      case .syncAgentDetectionEnabled:
-        let agentDetectionEnabled = agentDetectionEnabled(state: state)
-        return .run { _ in
-          await terminalClient.send(.setAgentDetectionEnabled(agentDetectionEnabled))
-        }
-
       case .alert(.dismiss):
         state.alert = nil
         return .none
@@ -959,20 +911,6 @@ struct AppFeature {
 
       case .alert:
         return .none
-
-      case .repositories(.activeAgents(.togglePanelVisibility)):
-        let nextIsPanelHidden = !state.repositories.activeAgents.isPanelHidden
-        let agentDetectionEnabled = ActiveAgentsFeature.detectionEnabled(
-          isPanelHidden: nextIsPanelHidden,
-          autoShowPanel: state.settings.autoShowActiveAgentsPanel,
-          isShelfVisible: state.repositories.isShowingShelf && state.settings.showActiveAgentStatusInShelf
-        )
-        return .run { _ in
-          await terminalClient.send(.setAgentDetectionEnabled(agentDetectionEnabled))
-        }
-
-      case .repositories(let action) where Self.repositoriesActionMayChangeShelfVisibility(action):
-        return .send(.syncAgentDetectionEnabled)
 
       case .repositories:
         return .none

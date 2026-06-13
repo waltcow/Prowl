@@ -15,7 +15,6 @@ final class WorktreeTerminalManager {
   private var notificationsEnabled = true
   private var commandFinishedNotificationEnabled = true
   private var commandFinishedNotificationThreshold = 10
-  private var agentDetectionEnabled = true
   private var preferredFontSize: Float32?
   private let baselineFontSize: Float32
   private var lastNotificationIndicatorCount: Int?
@@ -156,8 +155,6 @@ final class WorktreeTerminalManager {
       setNotificationsEnabled(enabled)
     case .setCommandFinishedNotification(let enabled, let threshold):
       setCommandFinishedNotification(enabled: enabled, threshold: threshold)
-    case .setAgentDetectionEnabled(let enabled):
-      setAgentDetectionEnabled(enabled)
     case .setCanvasMode(let enabled):
       if enabled {
         terminalLogger.info("[CanvasExit] enteringCanvas previousSelectedWorktree=\(selectedWorktreeID ?? "nil")")
@@ -242,7 +239,6 @@ final class WorktreeTerminalManager {
       enabled: commandFinishedNotificationEnabled,
       threshold: commandFinishedNotificationThreshold
     )
-    state.setAgentDetectionEnabled(agentDetectionEnabled)
     state.isSelected = { [weak self] in
       self?.selectedWorktreeID == worktree.id
     }
@@ -455,14 +451,6 @@ final class WorktreeTerminalManager {
     commandFinishedNotificationThreshold = threshold
     for state in states.values {
       state.setCommandFinishedNotification(enabled: enabled, threshold: threshold)
-    }
-  }
-
-  func setAgentDetectionEnabled(_ enabled: Bool) {
-    guard agentDetectionEnabled != enabled else { return }
-    agentDetectionEnabled = enabled
-    for state in states.values {
-      state.setAgentDetectionEnabled(enabled)
     }
   }
 

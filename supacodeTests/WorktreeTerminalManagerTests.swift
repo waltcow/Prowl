@@ -89,6 +89,50 @@ struct WorktreeTerminalManagerTests {
     #expect(state.canCloseFocusedSurface == false)
   }
 
+  @Test func newEmptyTabStartsColdAgentDetection() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    #expect(state.agentDetectionSchedules[surfaceId] == nil)
+    #expect(state.agentDetectionTasks[surfaceId] == nil)
+  }
+
+  @Test func wakingSurfaceStartsWarmAgentDetection() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    state.wakeAgentDetection(forSurfaceID: surfaceId)
+
+    let schedule = try #require(state.agentDetectionSchedules[surfaceId])
+    #expect(schedule.nextInterval(now: Date()) != nil)
+    #expect(state.agentDetectionTasks[surfaceId] != nil)
+
+    state.cleanupAllAgentDetectionState()
+  }
+
+  @Test func initialInputStartsWarmAgentDetection() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab(initialInput: "codex\n"))
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    let schedule = try #require(state.agentDetectionSchedules[surfaceId])
+    #expect(schedule.nextInterval(now: Date()) != nil)
+    #expect(state.agentDetectionTasks[surfaceId] != nil)
+
+    state.cleanupAllAgentDetectionState()
+  }
+
   @Test func firstTabUsesTabSurfaceContext() throws {
     let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
     let worktree = makeWorktree()
