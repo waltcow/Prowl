@@ -64,7 +64,11 @@ The debug app shares the installed app's `~/Library` data, so it loads the real 
 
 The `make run-app` log is the third verification surface, alongside `prowl read` and screenshots. Capture it to `/tmp/prowl-self-verify/run-app.log` as shown above instead of streaming the full output into the agent context.
 
-Before a scenario, record the current log line count. After the scenario, inspect only the new lines:
+This is especially useful when you add your own logging during development or debugging. The recommended workflow is:
+
+1. Add `SupaLogger` calls in the code you are changing to emit markers you can search for later.
+2. Rebuild and relaunch the debug app so the new logs take effect.
+3. Before running a scenario, record the current log line count. After the scenario, inspect only the new lines, filtering for the markers you added:
 
 ```bash
 log=/tmp/prowl-self-verify/run-app.log
@@ -75,10 +79,12 @@ before="$(wc -l <"$log" | tr -d ' ')"
 sleep 3
 after="$(wc -l <"$log" | tr -d ' ')"
 sed -n "$((before + 1)),${after}p" "$log" \
-  | rg "CLIService|WindowLifecycle|Terminal\\]|SurfaceFocus|terminalEvent|tabCreated|tabClosed|taskStatusChanged|Shell|error|warning"
+  | rg "YourMarker|error|warning"
 ```
 
-Use the log to corroborate app-side behavior: socket startup, window surfacing, terminal state creation, focus changes, tab creation/closure, task status changes, and warnings/errors. Logs can arrive a few seconds after the CLI command returns, so wait briefly and re-check before concluding an event is missing.
+Replace `YourMarker` with whatever log prefix or keyword you introduced in step 1. Do not hard-code a fixed set of log patterns — choose search terms that match the specific behavior you are verifying.
+
+Logs can arrive a few seconds after the CLI command returns, so wait briefly and re-check before concluding an event is missing.
 
 Do not treat the log as the primary proof of terminal contents or CLI response shape. Use `prowl read` for terminal text, ordinary `jq` for CLI JSON, and screenshots for visual gaps.
 
