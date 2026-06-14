@@ -9,15 +9,30 @@
 
 ## What it is
 
-The Diff window shows all changes in the selected worktree's working directory
-compared against **HEAD** — exactly what an agent has modified. It's a fast way to
-review before committing or merging.
+The default Diff window shows all changes in the selected worktree's working
+directory compared against **HEAD** — exactly what an agent has modified. It's a
+fast way to review before committing or merging.
 
-**Open:** `⌘⇧Y` (`show_diff`), or Command Palette → "Show Diff". The window is a
-persistent singleton (remembers size/position) and auto-refreshes when it regains
-focus. `⌘W` closes it.
+**Open:** click a worktree's diff badge, press `⌘⇧Y` (`show_diff`), or use
+Command Palette → "Show Diff".
 
-## What it shows
+By default Prowl opens its built-in YiTong-based diff window. In Settings →
+General → Diff Tool, you can choose an external tool instead:
+
+- **Built-in** — opens Prowl's diff window. The window is a persistent singleton
+  (remembers size/position) and auto-refreshes when it regains focus. `⌘W`
+  closes it.
+- **Hunk** — opens a new Prowl terminal tab and runs `hunk diff` in the worktree.
+- **FileMerge** — creates HEAD/worktree snapshot folders and runs `opendiff`.
+- **Kaleidoscope** — creates HEAD/worktree snapshot folders and runs
+  `ksdiff --diff`.
+- **Custom Command** — creates HEAD/worktree snapshot folders and runs your
+  command in the worktree directory. Supported placeholders:
+  `{leftPath}`, `{rightPath}`, `{worktreePath}`, `{repoPath}`, and `{branch}`.
+
+Tools that are not installed on the Mac are shown disabled in the Diff Tool menu.
+
+## What the built-in window shows
 
 - A **file list** sidebar of changed files, each with a colored status badge:
   - **M** Modified (orange) · **A** Added/untracked (green) · **D** Deleted (red) ·
@@ -47,5 +62,8 @@ Diff is a **git-only** feature — it's unavailable for plain (non-git) folders.
 
 - The diff is **working-tree vs HEAD**, not vs the base branch — it reflects
   uncommitted changes in that worktree.
+- External GUI tools receive snapshot folders so untracked files are included
+  without changing the git index.
+- The Hunk integration runs in a terminal tab because Hunk is terminal-native.
 - For changes already in a pull request (vs the base branch, with CI), see
   [github-pull-requests](github-pull-requests.md).

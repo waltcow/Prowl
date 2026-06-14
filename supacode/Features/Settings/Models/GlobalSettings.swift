@@ -39,6 +39,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var showNotificationDotOnDock: Bool
   var shelfSpineTintFallback: ShelfSpineTintFallback
   var shelfSpineTintFollowsRepositoryColor: Bool
+  var externalDiffToolID: String = ExternalDiffTool.builtIn.settingsID
+  var externalDiffCustomCommand: String = ""
 
   static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -209,6 +211,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encode(showNotificationDotOnDock, forKey: .showNotificationDotOnDock)
     try container.encode(shelfSpineTintFallback, forKey: .shelfSpineTintFallback)
     try container.encode(shelfSpineTintFollowsRepositoryColor, forKey: .shelfSpineTintFollowsRepositoryColor)
+    try container.encode(externalDiffToolID, forKey: .externalDiffToolID)
+    try container.encode(externalDiffCustomCommand, forKey: .externalDiffCustomCommand)
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -252,6 +256,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case showNotificationDotOnDock
     case shelfSpineTintFallback
     case shelfSpineTintFollowsRepositoryColor
+    case externalDiffToolID
+    case externalDiffCustomCommand
     // Legacy key for migration
     case automaticallyArchiveMergedWorktrees
   }
@@ -350,6 +356,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
       ?? Self.default.showActiveAgentStatusInShelf
     (windowTintMode, windowTintCustomColor) = try Self.decodeWindowTint(from: container)
     (shelfSpineTintFallback, shelfSpineTintFollowsRepositoryColor) = try Self.decodeShelfSpineTint(from: container)
+    (externalDiffToolID, externalDiffCustomCommand) = try Self.decodeExternalDiffSettings(from: container)
     let toolbarAndDock = try Self.decodeToolbarAndDockSettings(from: container)
     showRunButtonInToolbar = toolbarAndDock.showRunButtonInToolbar
     showDefaultEditorInToolbar = toolbarAndDock.showDefaultEditorInToolbar
@@ -379,6 +386,17 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
       try container.decodeIfPresent(Bool.self, forKey: .shelfSpineTintFollowsRepositoryColor)
       ?? Self.default.shelfSpineTintFollowsRepositoryColor
     return (fallback, followsRepositoryColor)
+  }
+
+  private static func decodeExternalDiffSettings(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> (String, String) {
+    let toolID =
+      ExternalDiffTool.normalizedSettingsID(try container.decodeIfPresent(String.self, forKey: .externalDiffToolID))
+    let customCommand =
+      try container.decodeIfPresent(String.self, forKey: .externalDiffCustomCommand)
+      ?? Self.default.externalDiffCustomCommand
+    return (toolID, customCommand)
   }
 
   private static func decodeMergedWorktreeAction(

@@ -57,6 +57,7 @@ struct AppFeature {
     case worktreeSettingsLoaded(RepositorySettings, worktreeID: Worktree.ID)
     case worktreeUserSettingsLoaded(UserRepositorySettings, worktreeID: Worktree.ID)
     case openSelectedWorktree
+    case showSelectedWorktreeDiff
     case openWorktree(OpenWorktreeAction)
     case openWorktreeFailed(OpenActionError)
     case requestQuit
@@ -102,6 +103,7 @@ struct AppFeature {
   @Dependency(TerminalClient.self) var terminalClient
   @Dependency(WorktreeInfoWatcherClient.self) var worktreeInfoWatcher
   @Dependency(CustomShortcutRegistryClient.self) var customShortcutRegistryClient
+  @Dependency(ExternalDiffToolClient.self) var externalDiffToolClient
 
   var body: some Reducer<State, Action> {
     let core = Reduce<State, Action> { state, action in
@@ -346,6 +348,12 @@ struct AppFeature {
           }
         )
 
+      case .repositories(.delegate(.showDiff(let worktreeID))):
+        guard let worktree = state.repositories.worktree(for: worktreeID) else {
+          return .none
+        }
+        return openDiffEffect(worktree: worktree, resolvedKeybindings: state.resolvedKeybindings)
+
       case .settings(.setSelection(let selection)):
         let resolvedSelection = selection ?? .general
         switch resolvedSelection {
@@ -531,6 +539,9 @@ struct AppFeature {
 
       case .openSelectedWorktree:
         return .send(.openWorktree(OpenWorktreeAction.availableSelection(state.openActionSelection)))
+
+      case .showSelectedWorktreeDiff:
+        return openSelectedWorktreeDiffEffect(state: state)
 
       case .openWorktree(let action):
         guard let worktree = state.repositories.selectedTerminalWorktree else {

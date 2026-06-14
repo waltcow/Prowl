@@ -142,21 +142,7 @@ extension AppFeature {
   ) -> Effect<Action>? {
     switch delegate {
     case .showDiff:
-      guard let worktreeID = state.repositories.selectedWorktreeID,
-        let worktree = state.repositories.worktree(for: worktreeID)
-      else {
-        return .none
-      }
-      let keybindings = state.resolvedKeybindings
-      return .run { _ in
-        await MainActor.run {
-          DiffWindowManager.shared.show(
-            worktreeURL: worktree.workingDirectory,
-            branchName: worktree.name,
-            resolvedKeybindings: keybindings
-          )
-        }
-      }
+      return openSelectedWorktreeDiffEffect(state: state)
 
     case .revealInFinder:
       return .send(.openWorktree(.finder))
@@ -183,6 +169,31 @@ extension AppFeature {
     default:
       return nil
     }
+  }
+
+  func openDiffEffect(
+    worktree: Worktree,
+    resolvedKeybindings: ResolvedKeybindingMap
+  ) -> Effect<Action> {
+    @Shared(.settingsFile) var settingsFile
+    let settings = ExternalDiffSettings(
+      toolID: settingsFile.global.externalDiffToolID,
+      customCommand: settingsFile.global.externalDiffCustomCommand
+    )
+    return .run { send in
+      await externalDiffToolClient.open(settings, worktree, resolvedKeybindings) { error in
+        send(.openWorktreeFailed(error))
+      }
+    }
+  }
+
+  func openSelectedWorktreeDiffEffect(state: State) -> Effect<Action> {
+    guard let worktreeID = state.repositories.selectedWorktreeID,
+      let worktree = state.repositories.worktree(for: worktreeID)
+    else {
+      return .none
+    }
+    return openDiffEffect(worktree: worktree, resolvedKeybindings: state.resolvedKeybindings)
   }
 
   func reduceCommandPaletteWorktreeActionDelegate(

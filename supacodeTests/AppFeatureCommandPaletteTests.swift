@@ -797,6 +797,110 @@ struct AppFeatureCommandPaletteTests {
     await store.receive(\.runCustomCommand)
   }
 
+  @Test(.dependencies) func showDiffDelegateUsesConfiguredExternalDiffTool() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-diff/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-diff"
+    )
+    let repository = makeRepository(id: "/tmp/repo-diff", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    var settings = GlobalSettings.default
+    settings.externalDiffToolID = ExternalDiffTool.custom.settingsID
+    settings.externalDiffCustomCommand = "my-diff {leftPath} {rightPath}"
+    let storage = SettingsTestStorage()
+    let settingsFileURL = URL(
+      fileURLWithPath: "/tmp/supacode-settings-\(UUID().uuidString).json"
+    )
+    let launched = LockIsolated<[(ExternalDiffSettings, Worktree)]>([])
+    let store = withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.settingsFileURL = settingsFileURL
+      $0.terminalClient.send = { _ in }
+      $0.externalDiffToolClient.open = { settings, worktree, _, _ in
+        launched.withValue { $0.append((settings, worktree)) }
+      }
+    } operation: {
+      @Shared(.settingsFile) var settingsFile
+      $settingsFile.withLock { $0.global = settings }
+      return TestStore(
+        initialState: AppFeature.State(
+          repositories: repositoriesState,
+          settings: SettingsFeature.State(settings: settings)
+        )
+      ) {
+        AppFeature()
+      }
+    }
+
+    await store.send(.commandPalette(.delegate(.showDiff)))
+    await store.finish()
+
+    #expect(
+      launched.value.map(\.0) == [
+        ExternalDiffSettings(
+          toolID: ExternalDiffTool.custom.settingsID,
+          customCommand: "my-diff {leftPath} {rightPath}"
+        )
+      ]
+    )
+    #expect(launched.value.map(\.1) == [worktree])
+  }
+
+  @Test(.dependencies) func showSelectedWorktreeDiffUsesConfiguredExternalDiffTool() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-shortcut-diff/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-shortcut-diff"
+    )
+    let repository = makeRepository(id: "/tmp/repo-shortcut-diff", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    var settings = GlobalSettings.default
+    settings.externalDiffToolID = ExternalDiffTool.custom.settingsID
+    settings.externalDiffCustomCommand = "my-diff {leftPath} {rightPath}"
+    let storage = SettingsTestStorage()
+    let settingsFileURL = URL(
+      fileURLWithPath: "/tmp/supacode-settings-\(UUID().uuidString).json"
+    )
+    let launched = LockIsolated<[(ExternalDiffSettings, Worktree)]>([])
+    let store = withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.settingsFileURL = settingsFileURL
+      $0.terminalClient.send = { _ in }
+      $0.externalDiffToolClient.open = { settings, worktree, _, _ in
+        launched.withValue { $0.append((settings, worktree)) }
+      }
+    } operation: {
+      @Shared(.settingsFile) var settingsFile
+      $settingsFile.withLock { $0.global = settings }
+      return TestStore(
+        initialState: AppFeature.State(
+          repositories: repositoriesState,
+          settings: SettingsFeature.State(settings: settings)
+        )
+      ) {
+        AppFeature()
+      }
+    }
+
+    await store.send(.showSelectedWorktreeDiff)
+    await store.finish()
+
+    #expect(
+      launched.value.map(\.0) == [
+        ExternalDiffSettings(
+          toolID: ExternalDiffTool.custom.settingsID,
+          customCommand: "my-diff {leftPath} {rightPath}"
+        )
+      ]
+    )
+    #expect(launched.value.map(\.1) == [worktree])
+  }
+
   @Test(.dependencies) func closePullRequestDispatchesAction() async {
     let store = TestStore(initialState: AppFeature.State()) {
       AppFeature()

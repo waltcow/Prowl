@@ -240,12 +240,7 @@ struct WorktreeRowsView: View {
 
   private func diffTapHandler(for worktreeID: Worktree.ID) -> (() -> Void)? {
     {
-      guard let worktree = store.state.worktree(for: worktreeID) else { return }
-      DiffWindowManager.shared.show(
-        worktreeURL: worktree.workingDirectory,
-        branchName: worktree.name,
-        resolvedKeybindings: resolvedKeybindings
-      )
+      store.send(.delegate(.showDiff(worktreeID)))
     }
   }
 

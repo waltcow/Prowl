@@ -63,6 +63,8 @@ JSON is pretty-printed with sorted keys. Legacy `~/.supacode` is migrated to
 | `showNotificationDotOnDock` | Bool | `false` | Numeric unread badge on the Dock icon. |
 | `shelfSpineTintFallback` | enum (`neutral`/`systemTint`) | `neutral` | Shelf spine color when a repo has no color. |
 | `shelfSpineTintFollowsRepositoryColor` | Bool | `true` | Tint shelf spines by repo color. |
+| `externalDiffToolID` | String | `built-in` | Tool used by diff badges and Show Diff: `built-in`, `hunk`, `filemerge`, `kaleidoscope`, or `custom`. |
+| `externalDiffCustomCommand` | String | `""` | Command template for `externalDiffToolID = custom`; supports `{leftPath}`, `{rightPath}`, `{worktreePath}`, `{repoPath}`, and `{branch}`. |
 
 ## Per-repository settings (`RepositorySettings`)
 

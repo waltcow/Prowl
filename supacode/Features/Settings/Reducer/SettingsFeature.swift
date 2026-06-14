@@ -49,6 +49,8 @@ struct SettingsFeature {
     var showDefaultEditorInToolbar: Bool
     var dockBounceMode: DockBounceMode
     var showNotificationDotOnDock: Bool
+    var externalDiffToolID: String
+    var externalDiffCustomCommand: String
     var cliInstallStatus: CLIInstallStatus = .notInstalled
     var cliInstallShowAlert: Bool = true
     /// Whether macOS will render the Dock notification badge (notification
@@ -102,10 +104,12 @@ struct SettingsFeature {
       showDefaultEditorInToolbar = settings.showDefaultEditorInToolbar
       dockBounceMode = settings.dockBounceMode
       showNotificationDotOnDock = settings.showNotificationDotOnDock
+      externalDiffToolID = settings.externalDiffToolID
+      externalDiffCustomCommand = settings.externalDiffCustomCommand
     }
 
     var globalSettings: GlobalSettings {
-      GlobalSettings(
+      var settings = GlobalSettings(
         appearanceMode: appearanceMode,
         defaultEditorID: defaultEditorID,
         confirmBeforeQuit: confirmBeforeQuit,
@@ -149,6 +153,9 @@ struct SettingsFeature {
         shelfSpineTintFallback: shelfSpineTintFallback,
         shelfSpineTintFollowsRepositoryColor: shelfSpineTintFollowsRepositoryColor
       )
+      settings.externalDiffToolID = externalDiffToolID
+      settings.externalDiffCustomCommand = externalDiffCustomCommand
+      return settings
     }
   }
 
@@ -262,6 +269,8 @@ struct SettingsFeature {
         state.showDefaultEditorInToolbar = normalizedSettings.showDefaultEditorInToolbar
         state.dockBounceMode = normalizedSettings.dockBounceMode
         state.showNotificationDotOnDock = normalizedSettings.showNotificationDotOnDock
+        state.externalDiffToolID = normalizedSettings.externalDiffToolID
+        state.externalDiffCustomCommand = normalizedSettings.externalDiffCustomCommand
         state.syncGlobalDefaults(from: normalizedSettings)
         return .send(.delegate(.settingsChanged(normalizedSettings)))
 

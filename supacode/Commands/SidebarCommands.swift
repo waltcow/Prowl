@@ -72,15 +72,7 @@ struct SidebarCommands: Commands {
       .help(helpText(title: "Select Previous Book", commandID: AppShortcuts.CommandID.selectPreviousShelfBook))
       shelfBookMenuButtons
       Button("Show Diff", systemImage: "plusminus.circle") {
-        let repos = store.repositories
-        guard let worktreeID = repos.selectedWorktreeID,
-          let worktree = repos.worktree(for: worktreeID)
-        else { return }
-        DiffWindowManager.shared.show(
-          worktreeURL: worktree.workingDirectory,
-          branchName: worktree.name,
-          resolvedKeybindings: store.resolvedKeybindings
-        )
+        store.send(.showSelectedWorktreeDiff)
       }
       .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.showDiff)))
       .help(helpText(title: "Show Diff", commandID: AppShortcuts.CommandID.showDiff))

@@ -6,6 +6,7 @@ struct AppearanceSettingsView: View {
 
   var body: some View {
     let openActionOptions = OpenWorktreeAction.availableCases
+    let externalDiffToolOptions = ExternalDiffTool.settingsMenuCases
     VStack(alignment: .leading) {
       Form {
         Section("Appearance") {
@@ -136,6 +137,34 @@ struct AppearanceSettingsView: View {
             "Applies to worktrees without repository overrides. "
               + "Automatic prefers an app matching the project type, e.g. Xcode for Swift projects."
           )
+        }
+        Section("Diff Tool") {
+          Picker(
+            "Open diff with",
+            selection: $store.externalDiffToolID
+          ) {
+            ForEach(externalDiffToolOptions) { tool in
+              Text(tool.title)
+                .tag(tool.settingsID)
+                .disabled(!tool.isInstalled)
+            }
+          }
+          .help("Choose what opens when you click a diff badge or run Show Diff.")
+          Text("Tools not installed on this Mac appear disabled.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+          if store.externalDiffToolID == ExternalDiffTool.custom.settingsID {
+            TextField(
+              "Command",
+              text: $store.externalDiffCustomCommand,
+              prompt: Text("my-diff {leftPath} {rightPath}")
+            )
+            .textFieldStyle(.roundedBorder)
+            .help(
+              "Runs in the worktree directory. Supports {leftPath}, {rightPath}, "
+                + "{worktreePath}, {repoPath}, and {branch}."
+            )
+          }
         }
         Section("Run") {
           Toggle(
