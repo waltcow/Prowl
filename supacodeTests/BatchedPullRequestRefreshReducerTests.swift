@@ -8,17 +8,23 @@ import Testing
 
 @MainActor
 struct BatchedPullRequestRefreshReducerTests {
-  @Test func refreshDispatchesViaCoordinatorWhenRemoteInfoCached() async {
+  @Test func refreshDispatchesViaCoordinatorUsingCurrentRemoteInfosWhenCacheExists() async {
     let context = makeContext()
     let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
     var initialState = context.state
-    initialState.remoteInfoByRepositoryID[context.repository.id] = context.remoteInfo
+    initialState.remoteInfoByRepositoryID[context.repository.id] = GithubRemoteInfo(
+      host: "github.com",
+      owner: "stale",
+      repo: "cached"
+    )
+    let upstreamInfo = GithubRemoteInfo(host: "github.com", owner: "khoi", repo: "upstream")
 
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
+      $0.gitClient.githubRemoteInfos = { _ in [context.remoteInfo, upstreamInfo] }
       $0.githubCLI.resolveRemoteInfo = { _ in
-        Issue.record("Should not resolve when cache hit")
+        Issue.record("gh resolveRemoteInfo should not run when git remotes resolve")
         return nil
       }
       $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
@@ -51,12 +57,11 @@ struct BatchedPullRequestRefreshReducerTests {
     #expect(snapshot.count == 1)
     let request = snapshot[0]
     #expect(request.host == "github.com")
-    #expect(request.owner == "khoi")
-    #expect(request.repo == "alpha")
+    #expect(request.repositories == [context.remoteInfo, upstreamInfo])
     #expect(request.branches == ["main", "feature"])
   }
 
-  @Test func refreshResolvesAndCachesRemoteInfoOnFirstRun() async {
+  @Test func refreshResolvesRemoteInfosOnFirstRun() async {
     let context = makeContext()
     let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
     let initialState = context.state
@@ -64,9 +69,9 @@ struct BatchedPullRequestRefreshReducerTests {
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.gitClient.remoteInfo = { _ in context.remoteInfo }
+      $0.gitClient.githubRemoteInfos = { _ in [context.remoteInfo] }
       $0.githubCLI.resolveRemoteInfo = { _ in
-        Issue.record("gh resolveRemoteInfo should not run when git remote resolves")
+        Issue.record("gh resolveRemoteInfo should not run when git remotes resolve")
         return nil
       }
       $0.pullRequestRefreshCoordinator = PullRequestRefreshCoordinatorClient(
@@ -88,9 +93,6 @@ struct BatchedPullRequestRefreshReducerTests {
     )
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
       $0.inFlightPullRequestRefreshRepositoryIDs = [context.repository.id]
-    }
-    await store.receive(\.githubIntegration.cacheRemoteInfo) {
-      $0.remoteInfoByRepositoryID[context.repository.id] = context.remoteInfo
     }
     await store.finish()
 

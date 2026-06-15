@@ -42,6 +42,11 @@ struct GitRemoteInfoTests {
     #expect(info == GithubRemoteInfo(host: "github.com", owner: "octo", repo: "repo"))
   }
 
+  @Test func parsePullRequestURLRemote() {
+    let info = GitClient.parseGithubRemoteInfo("https://github.com/octo/repo/pull/123")
+    #expect(info == GithubRemoteInfo(host: "github.com", owner: "octo", repo: "repo"))
+  }
+
   @Test func parseEnterpriseRemote() {
     let info = GitClient.parseGithubRemoteInfo("git@github.acme.com:team/repo.git")
     #expect(info == GithubRemoteInfo(host: "github.acme.com", owner: "team", repo: "repo"))
@@ -50,5 +55,21 @@ struct GitRemoteInfoTests {
   @Test func rejectsNonGithubRemote() {
     let info = GitClient.parseGithubRemoteInfo("https://gitlab.com/group/repo.git")
     #expect(info == nil)
+  }
+
+  @Test func prioritizesGithubRemotesForPullRequestLookup() {
+    let fork = GithubRemoteInfo(host: "github.com", owner: "fork", repo: "project")
+    let upstream = GithubRemoteInfo(host: "github.com", owner: "upstream", repo: "project")
+    let team = GithubRemoteInfo(host: "github.com", owner: "team", repo: "project")
+    let duplicateTeam = GithubRemoteInfo(host: "github.com", owner: "TEAM", repo: "project")
+
+    let infos = GitClient.prioritizedGithubRemoteInfos([
+      (name: "origin", info: fork),
+      (name: "team", info: team),
+      (name: "upstream", info: upstream),
+      (name: "backup", info: duplicateTeam),
+    ])
+
+    #expect(infos == [upstream, team, fork])
   }
 }

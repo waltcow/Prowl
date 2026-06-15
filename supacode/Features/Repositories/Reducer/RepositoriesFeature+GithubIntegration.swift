@@ -21,6 +21,37 @@ extension RepositoriesFeature {
     }
     return await githubCLI.resolveRemoteInfo(repositoryRootURL)
   }
+
+  static func resolveGithubRemoteInfos(
+    repositoryRootURL: URL,
+    githubCLI: GithubCLIClient,
+    gitClient: GitClientDependency
+  ) async -> [GithubRemoteInfo] {
+    let remoteInfos = await gitClient.githubRemoteInfos(repositoryRootURL)
+    if !remoteInfos.isEmpty {
+      return remoteInfos
+    }
+    if let remoteInfo = await githubCLI.resolveRemoteInfo(repositoryRootURL) {
+      return [remoteInfo]
+    }
+    return []
+  }
+
+  static func resolveGithubRemoteInfo(
+    for pullRequest: GithubPullRequest,
+    repositoryRootURL: URL,
+    githubCLI: GithubCLIClient,
+    gitClient: GitClientDependency
+  ) async -> GithubRemoteInfo? {
+    if let remoteInfo = GitClient.parseGithubRemoteInfo(pullRequest.url) {
+      return remoteInfo
+    }
+    return await resolveGithubRemoteInfo(
+      repositoryRootURL: repositoryRootURL,
+      githubCLI: githubCLI,
+      gitClient: gitClient
+    )
+  }
 }
 
 extension RepositoriesFeature {
@@ -87,8 +118,7 @@ extension RepositoriesFeature {
           repositoryID: repositoryID,
           repositoryRootURL: repositoryRootURL,
           worktrees: worktrees,
-          branches: branches,
-          cachedRemoteInfo: state.remoteInfoByRepositoryID[repositoryID]
+          branches: branches
         )
       case .unknown:
         queuePullRequestRefresh(
@@ -366,6 +396,7 @@ extension RepositoriesFeature {
             @Shared(.repositorySettings(repoRoot)) var repositorySettings
             guard
               let remoteInfo = await Self.resolveGithubRemoteInfo(
+                for: pullRequest,
                 repositoryRootURL: repoRoot,
                 githubCLI: githubCLI,
                 gitClient: gitClient
@@ -416,6 +447,7 @@ extension RepositoriesFeature {
           do {
             guard
               let remoteInfo = await Self.resolveGithubRemoteInfo(
+                for: pullRequest,
                 repositoryRootURL: repoRoot,
                 githubCLI: githubCLI,
                 gitClient: gitClient
@@ -466,6 +498,7 @@ extension RepositoriesFeature {
             @Shared(.repositorySettings(repoRoot)) var repositorySettings
             guard
               let remoteInfo = await Self.resolveGithubRemoteInfo(
+                for: pullRequest,
                 repositoryRootURL: repoRoot,
                 githubCLI: githubCLI,
                 gitClient: gitClient
@@ -713,47 +746,37 @@ extension RepositoriesFeature {
     repositoryID: Repository.ID,
     repositoryRootURL: URL,
     worktrees: [Worktree],
-    branches: [String],
-    cachedRemoteInfo: GithubRemoteInfo?
+    branches: [String]
   ) -> Effect<Action> {
     let worktreeIDs = worktrees.map(\.id)
     let coordinatorClient = pullRequestRefreshCoordinator
     let githubCLI = self.githubCLI
     let gitClient = self.gitClient
     return .run { send in
-      let resolvedRemoteInfo: GithubRemoteInfo?
-      if let cachedRemoteInfo {
-        resolvedRemoteInfo = cachedRemoteInfo
-      } else {
-        let info = await RepositoriesFeature.resolveGithubRemoteInfo(
-          repositoryRootURL: repositoryRootURL,
-          githubCLI: githubCLI,
-          gitClient: gitClient
-        )
-        if let info {
-          await send(
-            .githubIntegration(.cacheRemoteInfo(repositoryID: repositoryID, remoteInfo: info))
-          )
-        }
-        resolvedRemoteInfo = info
-      }
-      guard let info = resolvedRemoteInfo else {
+      let remoteInfos = await RepositoriesFeature.resolveGithubRemoteInfos(
+        repositoryRootURL: repositoryRootURL,
+        githubCLI: githubCLI,
+        gitClient: gitClient
+      )
+      guard !remoteInfos.isEmpty else {
         await send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
         return
       }
       @Shared(.repositorySettings(repositoryRootURL)) var repositorySettings
-      coordinatorClient.enqueue(
-        PullRequestRefreshCoordinator.Request(
-          repositoryID: repositoryID,
-          repositoryRootURL: repositoryRootURL,
-          host: info.host,
-          owner: info.owner,
-          repo: info.repo,
-          accountOverride: repositorySettings.githubAccountOverride,
-          branches: branches,
-          worktreeIDs: worktreeIDs
+      let remoteInfosByHost = Dictionary(grouping: remoteInfos, by: \.host)
+      for (host, hostRemoteInfos) in remoteInfosByHost {
+        coordinatorClient.enqueue(
+          PullRequestRefreshCoordinator.Request(
+            repositoryID: repositoryID,
+            repositoryRootURL: repositoryRootURL,
+            host: host,
+            repositories: hostRemoteInfos,
+            accountOverride: repositorySettings.githubAccountOverride,
+            branches: branches,
+            worktreeIDs: worktreeIDs
+          )
         )
-      )
+      }
     }
   }
 

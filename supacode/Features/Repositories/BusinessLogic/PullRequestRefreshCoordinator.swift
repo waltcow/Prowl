@@ -7,11 +7,62 @@ final class PullRequestRefreshCoordinator {
     let repositoryID: Repository.ID
     let repositoryRootURL: URL
     let host: String
-    let owner: String
-    let repo: String
+    let repositories: [GithubRemoteInfo]
     let accountOverride: GithubAccountOverride?
     let branches: [String]
     let worktreeIDs: [Worktree.ID]
+
+    var owner: String {
+      repositories.first?.owner ?? ""
+    }
+
+    var repo: String {
+      repositories.first?.repo ?? ""
+    }
+
+    init(
+      repositoryID: Repository.ID,
+      repositoryRootURL: URL,
+      host: String,
+      owner: String,
+      repo: String,
+      accountOverride: GithubAccountOverride?,
+      branches: [String],
+      worktreeIDs: [Worktree.ID]
+    ) {
+      self.init(
+        repositoryID: repositoryID,
+        repositoryRootURL: repositoryRootURL,
+        host: host,
+        repositories: [GithubRemoteInfo(host: host, owner: owner, repo: repo)],
+        accountOverride: accountOverride,
+        branches: branches,
+        worktreeIDs: worktreeIDs
+      )
+    }
+
+    init(
+      repositoryID: Repository.ID,
+      repositoryRootURL: URL,
+      host: String,
+      repositories: [GithubRemoteInfo],
+      accountOverride: GithubAccountOverride?,
+      branches: [String],
+      worktreeIDs: [Worktree.ID]
+    ) {
+      self.repositoryID = repositoryID
+      self.repositoryRootURL = repositoryRootURL
+      self.host = host
+      self.repositories = Self.deduplicateRepositories(repositories)
+      self.accountOverride = accountOverride
+      self.branches = branches
+      self.worktreeIDs = worktreeIDs
+    }
+
+    private static func deduplicateRepositories(_ repositories: [GithubRemoteInfo]) -> [GithubRemoteInfo] {
+      var seen = Set<RepoKey>()
+      return repositories.filter { seen.insert($0.key).inserted }
+    }
   }
 
   nonisolated enum Outcome: Sendable, Equatable {
@@ -65,19 +116,21 @@ final class PullRequestRefreshCoordinator {
       let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
       return trimmed.isEmpty ? nil : trimmed
     }
-    guard !cleanedBranches.isEmpty else {
+    guard !cleanedBranches.isEmpty, !request.repositories.isEmpty else {
       return
     }
     let normalized = Request(
       repositoryID: request.repositoryID,
       repositoryRootURL: request.repositoryRootURL,
       host: request.host,
-      owner: request.owner,
-      repo: request.repo,
+      repositories: request.repositories.filter { $0.host == request.host },
       accountOverride: request.accountOverride,
       branches: cleanedBranches,
       worktreeIDs: request.worktreeIDs
     )
+    guard !normalized.repositories.isEmpty else {
+      return
+    }
 
     let key = BatchKey(host: normalized.host, accountOverride: normalized.accountOverride)
     if inflightHosts.contains(key) {
@@ -125,12 +178,16 @@ final class PullRequestRefreshCoordinator {
       for worktreeID in request.worktreeIDs where workseen.insert(worktreeID).inserted {
         workCombined.append(worktreeID)
       }
+      var seenRepositories = Set<RepoKey>(existing.repositories.map(\.key))
+      var combinedRepositories = existing.repositories
+      for repository in request.repositories where seenRepositories.insert(repository.key).inserted {
+        combinedRepositories.append(repository)
+      }
       hostBucket[request.repositoryID] = Request(
         repositoryID: request.repositoryID,
         repositoryRootURL: request.repositoryRootURL,
         host: request.host,
-        owner: request.owner,
-        repo: request.repo,
+        repositories: combinedRepositories,
         accountOverride: request.accountOverride,
         branches: combined,
         worktreeIDs: workCombined
@@ -170,7 +227,7 @@ final class PullRequestRefreshCoordinator {
   }
 
   private func processBatch(key: BatchKey, requests: [Request]) async {
-    let groupsByKey = groupRequestsByRepo(requests)
+    let groupsByKey = groupBranchesByRepo(requests)
     let crossRepoRequests = groupsByKey.values.map { group in
       CrossRepoPullRequestRequest(
         owner: group.key.owner,
@@ -184,42 +241,66 @@ final class PullRequestRefreshCoordinator {
         requests: crossRepoRequests,
         accountOverride: key.accountOverride
       )
-      for (key, prsByBranch) in result.successByRepo {
-        guard let group = groupsByKey[key] else {
-          continue
+      var prsByRepo = result.successByRepo
+      var failedMessagesByRepo = result.failedRepos.mapValues { String(describing: $0) }
+      if !result.failedRepos.isEmpty {
+        let failedGroups = result.failedRepos.keys.compactMap { groupsByKey[$0] }
+        let fallback = await fetchFallbackResults(key: key, groups: failedGroups)
+        for (repoKey, prsByBranch) in fallback.successByRepo {
+          prsByRepo[repoKey] = prsByBranch
+          failedMessagesByRepo.removeValue(forKey: repoKey)
         }
-        for request in group.requests {
-          resultHandler(
-            .refreshed(
-              repositoryID: request.repositoryID,
-              repositoryRootURL: request.repositoryRootURL,
-              worktreeIDs: request.worktreeIDs,
-              prsByBranch: prsByBranch.filter { request.branches.contains($0.key) }
-            )
-          )
-        }
+        failedMessagesByRepo.merge(fallback.failedMessagesByRepo) { _, new in new }
       }
-      let failedRequests = result.failedRepos.keys.flatMap { key in
-        groupsByKey[key]?.requests ?? []
-      }
-      if !failedRequests.isEmpty {
-        await fanOutFallback(failedRequests)
-      }
+      emitOutcomes(
+        requests,
+        prsByRepo: prsByRepo,
+        failedMessagesByRepo: failedMessagesByRepo
+      )
     } catch {
-      await fanOutFallback(requests)
+      let fallback = await fetchFallbackResults(key: key, groups: Array(groupsByKey.values))
+      emitOutcomes(
+        requests,
+        prsByRepo: fallback.successByRepo,
+        failedMessagesByRepo: fallback.failedMessagesByRepo
+      )
     }
   }
 
-  private func fanOutFallback(_ requests: [Request]) async {
-    let groups = Array(groupRequestsByRepo(requests).values)
+  private func fetchFallbackResults(
+    key: BatchKey,
+    groups: [RepoRequestGroup]
+  ) async -> RepoFetchResults {
     // Run per-repo fallback requests concurrently; serial awaits here would multiply
     // a slow recovery path by the number of repos in the batch.
-    await withTaskGroup(of: Void.self) { group in
-      for requestGroup in groups {
-        group.addTask { [weak self] in
-          await self?.fallbackPerRepo(requestGroup)
+    await withTaskGroup(of: RepoFetchOutcome.self) { taskGroup in
+      let githubCLI = self.githubCLI
+      for repoGroup in groups {
+        taskGroup.addTask {
+          do {
+            let prs = try await githubCLI.batchPullRequests(
+              key.host,
+              repoGroup.key.owner,
+              repoGroup.key.repo,
+              repoGroup.branches,
+              key.accountOverride
+            )
+            return .success(repoGroup.key, prs)
+          } catch {
+            return .failed(repoGroup.key, String(describing: error))
+          }
         }
       }
+      var results = RepoFetchResults()
+      for await outcome in taskGroup {
+        switch outcome {
+        case .success(let repoKey, let prsByBranch):
+          results.successByRepo[repoKey] = prsByBranch
+        case .failed(let repoKey, let message):
+          results.failedMessagesByRepo[repoKey] = message
+        }
+      }
+      return results
     }
   }
 
@@ -253,50 +334,79 @@ final class PullRequestRefreshCoordinator {
     }
   }
 
-  private func fallbackPerRepo(_ group: RepoRequestGroup) async {
-    do {
-      let prs = try await githubCLI.batchPullRequests(
-        group.requests[0].host,
-        group.key.owner,
-        group.key.repo,
-        group.branches,
-        group.requests[0].accountOverride
-      )
-      for request in group.requests {
+  private func emitOutcomes(
+    _ requests: [Request],
+    prsByRepo: [RepoKey: [String: GithubPullRequest]],
+    failedMessagesByRepo: [RepoKey: String]
+  ) {
+    for request in requests {
+      let prsByBranch = mergedPullRequests(for: request, prsByRepo: prsByRepo)
+      let candidateKeys = request.repositories.map(\.key)
+      let allCandidatesFailed =
+        !candidateKeys.isEmpty
+        && candidateKeys.allSatisfy { prsByRepo[$0] == nil && failedMessagesByRepo[$0] != nil }
+      if allCandidatesFailed {
+        resultHandler(
+          .failed(
+            repositoryID: request.repositoryID,
+            worktreeIDs: request.worktreeIDs,
+            message: failureMessage(for: candidateKeys, failedMessagesByRepo: failedMessagesByRepo)
+          )
+        )
+      } else {
         resultHandler(
           .refreshed(
             repositoryID: request.repositoryID,
             repositoryRootURL: request.repositoryRootURL,
             worktreeIDs: request.worktreeIDs,
-            prsByBranch: prs.filter { request.branches.contains($0.key) }
-          )
-        )
-      }
-    } catch {
-      for request in group.requests {
-        resultHandler(
-          .failed(
-            repositoryID: request.repositoryID,
-            worktreeIDs: request.worktreeIDs,
-            message: String(describing: error)
+            prsByBranch: prsByBranch
           )
         )
       }
     }
   }
 
-  private func groupRequestsByRepo(_ requests: [Request]) -> [RepoKey: RepoRequestGroup] {
+  private func mergedPullRequests(
+    for request: Request,
+    prsByRepo: [RepoKey: [String: GithubPullRequest]]
+  ) -> [String: GithubPullRequest] {
+    var prsByBranch: [String: GithubPullRequest] = [:]
+    for branch in request.branches {
+      for repository in request.repositories {
+        if let pullRequest = prsByRepo[repository.key]?[branch] {
+          prsByBranch[branch] = pullRequest
+          break
+        }
+      }
+    }
+    return prsByBranch
+  }
+
+  private func failureMessage(
+    for repoKeys: [RepoKey],
+    failedMessagesByRepo: [RepoKey: String]
+  ) -> String {
+    let messages = repoKeys.compactMap { repoKey -> String? in
+      guard let message = failedMessagesByRepo[repoKey] else {
+        return nil
+      }
+      return "\(repoKey.owner)/\(repoKey.repo): \(message)"
+    }
+    return messages.isEmpty ? "GitHub pull request refresh failed." : messages.joined(separator: "; ")
+  }
+
+  private func groupBranchesByRepo(_ requests: [Request]) -> [RepoKey: RepoRequestGroup] {
     var groupsByKey: [RepoKey: RepoRequestGroup] = [:]
     for request in requests {
-      let key = RepoKey(owner: request.owner, repo: request.repo)
-      groupsByKey[key, default: RepoRequestGroup(key: key)].append(request)
+      for repository in request.repositories {
+        groupsByKey[repository.key, default: RepoRequestGroup(key: repository.key)].append(branches: request.branches)
+      }
     }
     return groupsByKey
   }
 
   private struct RepoRequestGroup: Sendable {
     let key: RepoKey
-    private(set) var requests: [Request] = []
     private(set) var branches: [String] = []
     private var seenBranches: Set<String> = []
 
@@ -304,9 +414,8 @@ final class PullRequestRefreshCoordinator {
       self.key = key
     }
 
-    mutating func append(_ request: Request) {
-      requests.append(request)
-      for branch in request.branches where seenBranches.insert(branch).inserted {
+    mutating func append(branches newBranches: [String]) {
+      for branch in newBranches where seenBranches.insert(branch).inserted {
         branches.append(branch)
       }
     }
@@ -315,6 +424,16 @@ final class PullRequestRefreshCoordinator {
   private enum BatchTimeoutOutcome: Sendable {
     case completed(CrossRepoPullRequestResult)
     case timedOut
+  }
+
+  private struct RepoFetchResults: Sendable {
+    var successByRepo: [RepoKey: [String: GithubPullRequest]] = [:]
+    var failedMessagesByRepo: [RepoKey: String] = [:]
+  }
+
+  private enum RepoFetchOutcome: Sendable {
+    case success(RepoKey, [String: GithubPullRequest])
+    case failed(RepoKey, String)
   }
 }
 
