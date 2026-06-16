@@ -326,7 +326,7 @@ struct CanvasView: View {
         isFocused: selectionState.primaryTabID == tab.id,
         isSelected: selectionState.selectedTabIDs.contains(tab.id),
         hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
-        tabIcon: tab.icon,
+        tabIcon: tab.iconLock != .auto ? tab.icon : nil,
         tabId: tab.id,
         tabs: state.tabManager.tabs,
         tabContextMenuActions: tabContextMenuActions(for: state),
