@@ -177,7 +177,8 @@ struct CanvasCardView: View {
     .terminalTabContextMenu(
       tabId: tabId,
       tabs: tabs,
-      actions: tabContextMenuActions
+      actions: tabContextMenuActions,
+      variant: .canvas
     )
   }
 
