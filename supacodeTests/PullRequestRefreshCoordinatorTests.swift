@@ -19,7 +19,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(request(repo: "beta"))
     coordinator.enqueue(request(repo: "gamma"))
 
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -40,7 +40,7 @@ struct PullRequestRefreshCoordinatorTests {
     )
 
     coordinator.enqueue(request(repo: "alpha"))
-    await clock.advance(by: .milliseconds(100))
+    await advanceCoordinatorClock(clock, by: .milliseconds(100))
     await Task.yield()
 
     #expect(await probe.batchedCalls().isEmpty)
@@ -59,7 +59,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(request(repo: "beta", host: "github.com"))
     coordinator.enqueue(request(repo: "gamma", host: "ghe.example"))
 
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -82,7 +82,7 @@ struct PullRequestRefreshCoordinatorTests {
       request(repo: "alpha", accountOverride: GithubAccountOverride(host: "github.com", login: "one")))
     coordinator.enqueue(request(repo: "beta", accountOverride: GithubAccountOverride(host: "github.com", login: "two")))
 
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -120,7 +120,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(request(repo: "alpha"))
     coordinator.enqueue(request(repo: "beta"))
 
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -150,7 +150,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(request(repo: "alpha"))
     coordinator.enqueue(request(repo: "beta"))
 
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -175,7 +175,7 @@ struct PullRequestRefreshCoordinatorTests {
     )
 
     coordinator.enqueue(request(repo: "alpha"))
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -199,7 +199,7 @@ struct PullRequestRefreshCoordinatorTests {
     )
 
     coordinator.enqueue(request(repo: "alpha"))
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await waitUntil { await probe.batchedCalls().count == 1 }
 
     coordinator.enqueue(request(repo: "beta"))
@@ -223,7 +223,7 @@ struct PullRequestRefreshCoordinatorTests {
 
     coordinator.enqueue(request(repo: "alpha", branches: []))
     coordinator.enqueue(request(repo: "beta", branches: ["", "   "]))
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
 
     #expect(await probe.batchedCalls().isEmpty)
@@ -240,7 +240,7 @@ struct PullRequestRefreshCoordinatorTests {
 
     coordinator.enqueue(request(repo: "alpha", branches: ["feat-1"]))
     coordinator.enqueue(request(repo: "alpha", branches: ["feat-2", "feat-1"]))
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
 
     let calls = await probe.batchedCalls()
@@ -275,7 +275,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(
       request(repo: "alpha", repositoryID: "alpha-b", branches: ["feat-2"])
     )
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -325,7 +325,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(
       request(repo: "alpha", repositoryID: "alpha-b", branches: ["feat-2"])
     )
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -356,9 +356,9 @@ struct PullRequestRefreshCoordinatorTests {
     )
 
     coordinator.enqueue(request(repo: "alpha"))
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await waitUntil { await probe.batchedCalls().count >= 1 }
-    await clock.advance(by: .seconds(6))
+    await advanceCoordinatorClock(clock, by: .seconds(6))
     await waitUntil { await probe.legacyCalls().count >= 1 }
 
     let legacyCalls = await probe.legacyCalls()
@@ -377,7 +377,7 @@ struct PullRequestRefreshCoordinatorTests {
 
     coordinator.enqueue(request(repo: "alpha"))
     coordinator.reset()
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
 
     #expect(await probe.batchedCalls().isEmpty)
@@ -395,7 +395,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(request(repo: "alpha", host: "host-a"))
     coordinator.enqueue(request(repo: "beta", host: "host-b"))
     coordinator.cancelHost("host-a")
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -422,7 +422,7 @@ struct PullRequestRefreshCoordinatorTests {
     )
 
     coordinator.enqueue(request(repo: "alpha", branches: ["feat-1"]))
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -450,16 +450,16 @@ struct PullRequestRefreshCoordinatorTests {
     )
 
     coordinator.enqueue(request(repo: "alpha"))
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
     #expect(await probe.batchedCalls().count == 1)
 
     coordinator.enqueue(request(repo: "beta"))
-    await clock.advance(by: .milliseconds(100))
+    await advanceCoordinatorClock(clock, by: .milliseconds(100))
     await Task.yield()
     #expect(await probe.batchedCalls().count == 1)
-    await clock.advance(by: .milliseconds(150))
+    await advanceCoordinatorClock(clock, by: .milliseconds(150))
     await Task.yield()
     await Task.yield()
     #expect(await probe.batchedCalls().count == 2)
@@ -486,7 +486,7 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(
       request(repo: "alpha", host: "ghe.example", branches: ["feat-x", "feat-y"])
     )
-    await clock.advance(by: .milliseconds(250))
+    await advanceCoordinatorClock(clock, by: .milliseconds(250))
     await Task.yield()
     await Task.yield()
 
@@ -545,6 +545,16 @@ private func waitUntil(
     }
     await Task.yield()
   }
+}
+
+private func advanceCoordinatorClock(
+  _ clock: TestClock<Duration>,
+  by duration: Duration
+) async {
+  // Let debounce tasks register and wake around TestClock advancement.
+  await Task.yield()
+  await clock.advance(by: duration)
+  await Task.yield()
 }
 
 nonisolated private func request(
