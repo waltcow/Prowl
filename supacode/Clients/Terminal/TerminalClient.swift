@@ -33,6 +33,7 @@ struct TerminalClient {
       customCommandIcon: String? = nil
     )
     case createTabInDirectory(Worktree, directory: URL)
+    case focusOrCreateTabInDirectory(Worktree, directory: URL, title: String?)
     case ensureInitialTab(Worktree, runSetupScriptIfNew: Bool, focusing: Bool)
     case runScript(Worktree, script: String)
     case insertText(Worktree, text: String)

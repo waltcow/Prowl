@@ -1,6 +1,8 @@
 import Foundation
 
-nonisolated enum ProjectWorkspaceRepositorySourceKind: String, Codable, Equatable, Hashable, Sendable {
+nonisolated enum ProjectWorkspaceRepositorySourceKind: String, Codable, Equatable, Hashable,
+  Sendable
+{
   case remote
   case localRepository = "local_repository"
   case bareRepository = "bare_repository"
@@ -40,7 +42,9 @@ nonisolated enum ProjectWorkspaceRepositorySourceKind: String, Codable, Equatabl
   }
 }
 
-nonisolated enum ProjectWorkspaceRepositoryCheckoutMode: String, Codable, Equatable, Hashable, Sendable {
+nonisolated enum ProjectWorkspaceRepositoryCheckoutMode: String, Codable, Equatable, Hashable,
+  Sendable
+{
   case link
   case createBranch = "create_branch"
   case useExistingRef = "use_existing_ref"
@@ -84,7 +88,8 @@ nonisolated struct ProjectWorkspaceCreationRepository: Equatable, Hashable, Send
     self.path = path
     sourceKind = .existingPath
     sourceLocation = normalizedURL.path(percentEncoded: false)
-    self.checkoutMode = checkoutMode ?? ProjectWorkspaceRepositorySourceKind.existingPath.defaultCheckoutMode
+    self.checkoutMode =
+      checkoutMode ?? ProjectWorkspaceRepositorySourceKind.existingPath.defaultCheckoutMode
     self.branchName = branchName
     self.baseRef = baseRef
     self.baseRefOptions = Self.normalizedBaseRefOptions(baseRefOptions)
@@ -128,13 +133,25 @@ nonisolated struct ProjectWorkspaceCreationRepository: Equatable, Hashable, Send
     else {
       return nil
     }
-    let localName = selectedRef.split(separator: "/").dropFirst().joined(separator: "/")
-    guard !localName.isEmpty,
+    guard let localName = Self.localBranchName(forRemoteRef: selectedRef),
       baseRefOptions.contains(where: { $0.kind == .local && $0.ref == localName })
     else {
       return nil
     }
     return localName
+  }
+
+  /// Converts refs loaded as `<remote>/<branch>` into the local branch name Git
+  /// would create or reset for a tracking checkout. Branch names can contain
+  /// slashes, so only the first path component is the remote name.
+  nonisolated static func localBranchName(forRemoteRef ref: String) -> String? {
+    let parts = ref.trimmingCharacters(in: .whitespacesAndNewlines).split(
+      separator: "/", maxSplits: 1)
+    guard parts.count == 2 else {
+      return nil
+    }
+    let branchName = String(parts[1])
+    return branchName.isEmpty ? nil : branchName
   }
 
   nonisolated static func baseRefOptions(
@@ -151,7 +168,9 @@ nonisolated struct ProjectWorkspaceCreationRepository: Equatable, Hashable, Send
     return normalizedBaseRefOptions(values)
   }
 
-  nonisolated static func preferredBaseRef(automaticBaseRef: String?, options: [GitBranchRefOption]) -> String? {
+  nonisolated static func preferredBaseRef(automaticBaseRef: String?, options: [GitBranchRefOption])
+    -> String?
+  {
     let refs = Set(options.map(\.ref))
     if let trimmed = automaticBaseRef?.trimmingCharacters(in: .whitespacesAndNewlines),
       !trimmed.isEmpty,
@@ -163,7 +182,9 @@ nonisolated struct ProjectWorkspaceCreationRepository: Equatable, Hashable, Send
       ?? options.first?.ref
   }
 
-  nonisolated static func normalizedBaseRefOptions(_ values: [GitBranchRefOption]) -> [GitBranchRefOption] {
+  nonisolated static func normalizedBaseRefOptions(_ values: [GitBranchRefOption])
+    -> [GitBranchRefOption]
+  {
     var seen = Set<String>()
     var result: [GitBranchRefOption] = []
     for value in values {
@@ -274,7 +295,9 @@ nonisolated enum ProjectWorkspaceCreationError: LocalizedError, Equatable, Senda
   }
 }
 
-nonisolated struct ProjectWorkspaceRepositoryEntry: Codable, Equatable, Hashable, Sendable, Identifiable {
+nonisolated struct ProjectWorkspaceRepositoryEntry: Codable, Equatable, Hashable, Sendable,
+  Identifiable
+{
   var id: String
   var name: String
   var role: String?
@@ -347,8 +370,10 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
 
   nonisolated static let metadataDirectoryName = ".prowl"
   nonisolated static let metadataFileName = "workspace.json"
+  nonisolated static let currentSchemaVersion = "prowl.workspace.v1"
   nonisolated private static let log = SupaLogger("workspace")
 
+  var schemaVersion: String
   var id: String
   var title: String
   var description: String
@@ -358,6 +383,7 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
   var updatedAt: Date?
 
   enum CodingKeys: String, CodingKey {
+    case schemaVersion = "schema_version"
     case id
     case title
     case description
@@ -368,6 +394,7 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
   }
 
   init(
+    schemaVersion: String = currentSchemaVersion,
     id: String = "",
     title: String = "",
     description: String = "",
@@ -376,6 +403,7 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     createdAt: Date? = nil,
     updatedAt: Date? = nil
   ) {
+    self.schemaVersion = schemaVersion
     self.id = id
     self.title = title
     self.description = description
@@ -387,11 +415,15 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion =
+      try container.decodeIfPresent(String.self, forKey: .schemaVersion)
+      ?? Self.currentSchemaVersion
     id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
     title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
     description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
     taskLinks = try container.decodeIfPresent([String].self, forKey: .taskLinks) ?? []
-    repositories = try container.decodeIfPresent([RepositoryEntry].self, forKey: .repositories) ?? []
+    repositories =
+      try container.decodeIfPresent([RepositoryEntry].self, forKey: .repositories) ?? []
     createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
     updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
   }
@@ -423,13 +455,18 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
       workspace.id = normalizedRoot
     }
     if workspace.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      workspace.title = rootURL.lastPathComponent.isEmpty ? normalizedRoot : rootURL.lastPathComponent
+      workspace.title =
+        rootURL.lastPathComponent.isEmpty ? normalizedRoot : rootURL.lastPathComponent
     }
     return workspace.normalized(relativeTo: rootURL)
   }
 
   func normalized(relativeTo rootURL: URL) -> ProjectWorkspace {
     var copy = self
+    copy.schemaVersion = copy.schemaVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+    if copy.schemaVersion.isEmpty {
+      copy.schemaVersion = Self.currentSchemaVersion
+    }
     let normalizedRoot = rootURL.standardizedFileURL.path(percentEncoded: false)
     if copy.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       copy.id = normalizedRoot
@@ -451,11 +488,14 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
       }
       if entry.name.isEmpty {
         let resolvedURL = entry.resolvedURL(relativeTo: rootURL)
-        entry.name = resolvedURL.lastPathComponent.isEmpty ? entry.id : resolvedURL.lastPathComponent
+        entry.name =
+          resolvedURL.lastPathComponent.isEmpty ? entry.id : resolvedURL.lastPathComponent
       }
       entry.role = entry.role?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-      entry.sourceLocation = entry.sourceLocation?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-      entry.branchName = entry.branchName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+      entry.sourceLocation =
+        entry.sourceLocation?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+      entry.branchName =
+        entry.branchName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
       entry.baseRef = entry.baseRef?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
       return entry
     }
@@ -492,7 +532,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
         ledger.createdRoot = true
       }
 
-      let metadataDirectoryURL = rootURL.appending(path: metadataDirectoryName, directoryHint: .isDirectory)
+      let metadataDirectoryURL = rootURL.appending(
+        path: metadataDirectoryName, directoryHint: .isDirectory)
       let metadataPath = metadataDirectoryURL.path(percentEncoded: false)
       let metadataURL = metadataURL(for: rootURL)
       if fileManager.fileExists(atPath: metadataURL.path(percentEncoded: false)) {
@@ -570,7 +611,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
             : [])
       for url in removableURLs {
         let path = url.path(percentEncoded: false)
-        guard fileManager.fileExists(atPath: path) || (try? url.checkResourceIsReachable()) == true else {
+        guard fileManager.fileExists(atPath: path) || (try? url.checkResourceIsReachable()) == true
+        else {
           continue
         }
         do {
@@ -609,7 +651,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
       }
       let isSymbolicLink =
         (try? entryURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
-      guard !isSymbolicLink, entry.sourceKind != .remote, let sourceLocation = entry.sourceLocation else {
+      guard !isSymbolicLink, entry.sourceKind != .remote, let sourceLocation = entry.sourceLocation
+      else {
         continue
       }
       do {
@@ -661,13 +704,15 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     guard !sourceLocation.isEmpty else {
       throw ProjectWorkspaceCreationError.missingRepositorySource(name)
     }
-    let checkout = try validatedCheckout(repository.checkout, sourceKind: repository.sourceKind, name: name)
+    let checkout = try validatedCheckout(
+      repository.checkout, sourceKind: repository.sourceKind, name: name)
     let workspacePath = uniqueRepositoryPath(
       for: repository,
       displayName: name,
       occupiedNames: &ledger.occupiedNames
     )
-    let destinationURL = workspaceRootURL.appending(path: workspacePath, directoryHint: .isDirectory)
+    let destinationURL = workspaceRootURL.appending(
+      path: workspacePath, directoryHint: .isDirectory)
     let destinationPath = normalizedPath(destinationURL, resolvingSymlinks: false)
     guard !fileManager.fileExists(atPath: destinationPath) else {
       throw ProjectWorkspaceCreationError.linkAlreadyExists(destinationPath)
@@ -676,7 +721,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     let normalizedSourceLocation: String
     switch repository.sourceKind {
     case .existingPath, .localRepository:
-      let sourcePath = try localRepositoryPath(sourceLocation: sourceLocation, fileManager: fileManager)
+      let sourcePath = try localRepositoryPath(
+        sourceLocation: sourceLocation, fileManager: fileManager)
       switch checkout {
       case .link:
         let sourceURL = URL(fileURLWithPath: sourcePath, isDirectory: true).standardizedFileURL
@@ -707,7 +753,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
       normalizedSourceLocation = sourceLocation
 
     case .bareRepository:
-      let sourcePath = try localRepositoryPath(sourceLocation: sourceLocation, fileManager: fileManager)
+      let sourcePath = try localRepositoryPath(
+        sourceLocation: sourceLocation, fileManager: fileManager)
       try await gitRunner.run(
         worktreeAddCommand(checkout, sourcePath: sourcePath, destinationPath: destinationPath)
       )
@@ -758,7 +805,9 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
       }
       return .link
     case .createBranch(let branchName, let baseRef):
-      guard let trimmedBranch = branchName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+      guard
+        let trimmedBranch = branchName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+      else {
         throw ProjectWorkspaceCreationError.missingBranchName(name)
       }
       return .createBranch(
@@ -771,7 +820,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
       }
       return .useExistingRef(trimmedRef)
     case .trackRemoteRef(let remoteRef, let branchName):
-      guard let trimmedRemoteRef = remoteRef.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+      guard
+        let trimmedRemoteRef = remoteRef.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
         let trimmedBranch = branchName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
       else {
         throw ProjectWorkspaceCreationError.missingExistingRef(name)
@@ -829,7 +879,10 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
       return ProjectWorkspaceGitCommand(arguments: arguments, currentDirectoryURL: nil)
     case .useExistingRef(let ref):
       return ProjectWorkspaceGitCommand(
-        arguments: ["-C", destinationPath, "checkout", "--end-of-options", remoteCloneExistingCheckoutRef(ref)],
+        arguments: [
+          "-C", destinationPath, "checkout", "--end-of-options",
+          remoteCloneExistingCheckoutRef(ref),
+        ],
         currentDirectoryURL: nil
       )
     case .trackRemoteRef(_, let branchName):
@@ -859,7 +912,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     sourceLocation: String,
     fileManager: FileManager
   ) throws -> String {
-    let repositoryPath = normalizedPath(URL(fileURLWithPath: sourceLocation), resolvingSymlinks: true)
+    let repositoryPath = normalizedPath(
+      URL(fileURLWithPath: sourceLocation), resolvingSymlinks: true)
     var repositoryIsDirectory = ObjCBool(false)
     guard fileManager.fileExists(atPath: repositoryPath, isDirectory: &repositoryIsDirectory),
       repositoryIsDirectory.boolValue
@@ -933,7 +987,8 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
   }
 
   private static func normalizedPath(_ url: URL, resolvingSymlinks: Bool) -> String {
-    var path = PathPolicy.normalizeURL(url, resolvingSymlinks: resolvingSymlinks).path(percentEncoded: false)
+    var path = PathPolicy.normalizeURL(url, resolvingSymlinks: resolvingSymlinks).path(
+      percentEncoded: false)
     while path.count > 1, path.hasSuffix("/") {
       path.removeLast()
     }

@@ -320,6 +320,7 @@ extension WorktreeTerminalState {
     focusedSurfaceIdByTab.removeAll()
     cleanupAllAgentDetectionState()
     tabIsRunningById.removeAll()
+    boundDirectoryTabIDs.removeAll()
     autoCloseSurfaceIds.removeAll()
     pendingCustomCommands.removeAll()
     setRunScriptTabId(nil)
@@ -805,6 +806,7 @@ extension WorktreeTerminalState {
     if newTree.isEmpty {
       trees.removeValue(forKey: tabId)
       focusedSurfaceIdByTab.removeValue(forKey: tabId)
+      removeBoundDirectoryTab(tabId)
       tabManager.closeTab(tabId)
       if tabId == runScriptTabId {
         setRunScriptTabId(nil)

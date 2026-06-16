@@ -140,8 +140,10 @@ struct RepositorySettingsView: View {
               isBranchPickerPresented = true
             } label: {
               HStack {
-                Text(store.settings.worktreeBaseRef ?? "Automatic (\(store.defaultWorktreeBaseRef))")
-                  .foregroundStyle(.primary)
+                Text(
+                  store.settings.worktreeBaseRef ?? "Automatic (\(store.defaultWorktreeBaseRef))"
+                )
+                .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.up.chevron.down")
                   .foregroundStyle(.secondary)
@@ -169,7 +171,7 @@ struct RepositorySettingsView: View {
           }
         } header: {
           VStack(alignment: .leading, spacing: 4) {
-            Text("Branch new workspaces from")
+            Text("Branch new worktrees from")
             Text("Each workspace is an isolated copy of your codebase.")
               .foregroundStyle(.secondary)
           }
@@ -183,8 +185,10 @@ struct RepositorySettingsView: View {
             )
             .textFieldStyle(.roundedBorder)
 
-            Text("Set a repository-specific worktree base directory. Leave empty to inherit the global setting.")
-              .foregroundStyle(.secondary)
+            Text(
+              "Set a repository-specific worktree base directory. Leave empty to inherit the global setting."
+            )
+            .foregroundStyle(.secondary)
             Text("Example new worktree path: \(exampleWorktreePath)")
               .foregroundStyle(.secondary)
               .monospaced()
@@ -370,8 +374,10 @@ struct RepositorySettingsView: View {
         } header: {
           VStack(alignment: .leading, spacing: 4) {
             Text("Custom Commands")
-            Text("Repository-local terminal actions. Custom command shortcuts take precedence in this repository.")
-              .foregroundStyle(.secondary)
+            Text(
+              "Repository-local terminal actions. Custom command shortcuts take precedence in this repository."
+            )
+            .foregroundStyle(.secondary)
           }
         }
       }

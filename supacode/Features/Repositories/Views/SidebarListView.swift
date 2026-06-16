@@ -42,6 +42,7 @@ struct SidebarListView: View {
   @State private var sidebarHeight = 0.0
   @State private var sidebarFooterHeight = 0.0
   @State private var resizingPanelHeight: Double?
+  @State private var isAddChoicePresented = false
   @Namespace private var topSegmentNamespace
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
   @Environment(CommandKeyObserver.self) private var commandKeyObserver
@@ -86,7 +87,8 @@ struct SidebarListView: View {
     let panelHeight = min(resizingPanelHeight ?? state.activeAgents.panelHeight, maximumPanelHeight)
     let panelOffset = state.activeAgents.isPanelHidden ? panelHeight : 0
     let activeAgentsPanelTopGap = 4.0
-    let listBottomPadding = state.activeAgents.isPanelHidden ? 0 : panelHeight + activeAgentsPanelTopGap
+    let listBottomPadding =
+      state.activeAgents.isPanelHidden ? 0 : panelHeight + activeAgentsPanelTopGap
 
     ScrollViewReader { scrollProxy in
       ScrollView {
@@ -95,7 +97,7 @@ struct SidebarListView: View {
         VStack(spacing: 0) {
           // When there are no repositories the sidebar stays empty — the
           // detail pane's `EmptyStateView` ("Open a repository or folder")
-          // carries the prompt and the Add Repository button instead.
+          // carries the prompt and the Add button instead.
           if !repositoryItems.isEmpty {
             repositoryListHeader(
               action: repositoryListHeaderAction,
@@ -194,20 +196,33 @@ struct SidebarListView: View {
         await revealPendingSidebarWorktree(pendingSidebarReveal, with: scrollProxy)
       }
       .toolbar {
-        ToolbarItemGroup(placement: .automatic) {
+        ToolbarItem(placement: .automatic) {
           Button {
-            store.send(.workspaceCreation(.promptRequested))
+            isAddChoicePresented = true
           } label: {
-            Label("New Workspace", systemImage: "folder.badge.person.crop")
+            Label("Add...", systemImage: "folder.badge.plus")
           }
-          .help("New Workspace")
-          Button {
-            store.send(.setOpenPanelPresented(true))
-          } label: {
-            Label("Add Repository", systemImage: "folder.badge.plus")
-          }
-          .help("Add Repository")
+          .help("Add Repository or Workspace")
         }
+      }
+      .confirmationDialog(
+        "Add to Prowl",
+        isPresented: $isAddChoicePresented,
+        titleVisibility: .visible
+      ) {
+        Button("Add Local Repository/Folder") {
+          store.send(.setOpenPanelPresented(true))
+        }
+        Button("Add Workspace") {
+          store.send(.workspaceCreation(.promptRequested))
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text(
+          "A local repository or folder opens one project root. "
+            + "A workspace creates one shared task folder "
+            + "containing multiple repositories for one agent to work across."
+        )
       }
     }  // ScrollViewReader
   }
@@ -477,7 +492,8 @@ struct SidebarListView: View {
     await Task.yield()
     await Task.yield()
     withAnimation(.easeOut(duration: 0.2)) {
-      scrollProxy.scrollTo(SidebarScrollID.worktree(pendingSidebarReveal.worktreeID), anchor: .center)
+      scrollProxy.scrollTo(
+        SidebarScrollID.worktree(pendingSidebarReveal.worktreeID), anchor: .center)
     }
     store.send(.consumePendingSidebarReveal(pendingSidebarReveal.id))
   }
@@ -510,7 +526,8 @@ struct SidebarListView: View {
   }
 
   static func repositoryHeaderOpensCanvasTarget(_ repository: Repository) -> Bool {
-    repository.capabilities.supportsRunnableFolderActions && !repository.capabilities.supportsWorktrees
+    repository.capabilities.supportsRunnableFolderActions
+      && !repository.capabilities.supportsWorktrees
   }
 
   static func activeAgentWorktreeMetadata(
@@ -525,7 +542,9 @@ struct SidebarListView: View {
     for repository in repositories {
       let repositoryName = customTitles[repository.id] ?? repository.name
       let repositoryColor = repositoryAppearances[repository.id]?.color
-      if repository.capabilities.supportsRunnableFolderActions && !repository.capabilities.supportsWorktrees {
+      if repository.capabilities.supportsRunnableFolderActions
+        && !repository.capabilities.supportsWorktrees
+      {
         repositoryNamesByWorktreeID[repository.id] = repositoryName
         branchNamesByWorktreeID[repository.id] = repository.name
         if let repositoryColor {
@@ -612,7 +631,9 @@ struct SidebarListView: View {
       best = (id, depth)
     }
     for repository in repositories {
-      if repository.capabilities.supportsRunnableFolderActions, !repository.capabilities.supportsWorktrees {
+      if repository.capabilities.supportsRunnableFolderActions,
+        !repository.capabilities.supportsWorktrees
+      {
         consider(id: repository.id, directory: repository.rootURL)
       }
       for worktree in repository.worktrees {

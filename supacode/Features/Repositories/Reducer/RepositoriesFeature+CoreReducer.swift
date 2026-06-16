@@ -10,7 +10,8 @@ extension RepositoriesFeature {
     action: Action
   ) -> Effect<Action> {
     switch action {
-    case .worktreeCreation, .worktreeLifecycle, .worktreeOrdering, .githubIntegration, .repositoryManagement,
+    case .worktreeCreation, .worktreeLifecycle, .worktreeOrdering, .githubIntegration,
+      .repositoryManagement,
       .workspaceCreation:
       return .none
 
@@ -346,6 +347,7 @@ extension RepositoriesFeature {
       state.isShelfActive = false
       recordWorktreeHistoryTransition(from: state.selectedWorktreeID, to: nil, state: &state)
       state.selection = .archivedWorktrees
+      state.selectedWorkspaceChildID = nil
       state.sidebarSelectedWorktreeIDs = []
       return .send(.delegate(.selectedWorktreeChanged(nil)))
 
@@ -356,6 +358,7 @@ extension RepositoriesFeature {
       state.preCanvasTerminalTargetID = canvasSeedWorktree?.id
       state.isShelfActive = false
       state.selection = .canvas
+      state.selectedWorkspaceChildID = nil
       state.sidebarSelectedWorktreeIDs = []
       // Canvas only renders cards for worktrees that already have a live
       // terminal surface. Normal/Shelf get the previously-focused worktree
@@ -525,7 +528,9 @@ extension RepositoriesFeature {
     case .setSidebarSelectedWorktreeIDs(let worktreeIDs):
       let validWorktreeIDs = Set(state.orderedWorktreeRows().map(\.id))
       var nextWorktreeIDs = worktreeIDs.intersection(validWorktreeIDs)
-      if let selectedWorktreeID = state.selectedWorktreeID, validWorktreeIDs.contains(selectedWorktreeID) {
+      if let selectedWorktreeID = state.selectedWorktreeID,
+        validWorktreeIDs.contains(selectedWorktreeID)
+      {
         nextWorktreeIDs.insert(selectedWorktreeID)
       }
       state.sidebarSelectedWorktreeIDs = nextWorktreeIDs
@@ -539,12 +544,44 @@ extension RepositoriesFeature {
       guard let repositoryID, state.repositories[id: repositoryID] != nil else { return .none }
       recordWorktreeHistoryTransition(from: state.selectedWorktreeID, to: nil, state: &state)
       state.selection = .repository(repositoryID)
+      state.selectedWorkspaceChildID = nil
       state.sidebarSelectedWorktreeIDs = []
       if state.repositories[id: repositoryID]?.kind == .plain {
         // Plain folder selection opens the folder as a Shelf book.
         state.openedWorktreeIDs.insert(repositoryID)
       }
       return .send(.delegate(.selectedWorktreeChanged(state.selectedTerminalWorktree)))
+
+    case .openWorkspaceChild(let childID):
+      guard let child = state.allResolvedWorkspaceChildren().first(where: { $0.id == childID }),
+        let workspaceRepository = state.repositories[id: child.workspaceID]
+      else {
+        return .none
+      }
+      recordWorktreeHistoryTransition(from: state.selectedWorktreeID, to: nil, state: &state)
+      state.selection = .repository(child.workspaceID)
+      state.selectedWorkspaceChildID = child.id
+      state.sidebarSelectedWorktreeIDs = []
+      state.openedWorktreeIDs.insert(child.workspaceID)
+      state.pendingTerminalFocusWorktreeIDs.insert(child.workspaceID)
+      let workspaceWorktree = Worktree(
+        id: workspaceRepository.id,
+        name: workspaceRepository.name,
+        detail: workspaceRepository.rootURL.path(percentEncoded: false),
+        workingDirectory: workspaceRepository.rootURL,
+        repositoryRootURL: workspaceRepository.rootURL
+      )
+      return .merge(
+        .send(.delegate(.selectedWorktreeChanged(workspaceWorktree))),
+        .run { _ in
+          await terminalClient.send(
+            .focusOrCreateTabInDirectory(
+              workspaceWorktree,
+              directory: child.workingDirectory,
+              title: child.repositoryName
+            ))
+        }
+      )
 
     case .selectWorktree(let worktreeID, let focusTerminal, let recordHistory):
       let selectWtToken = repositoriesLogger.beginInterval("reducer.selectWorktree")
@@ -567,7 +604,8 @@ extension RepositoriesFeature {
       }
       requestCanvasFocus(.worktree(worktree.id), openedWorktreeID: worktree.id, state: &state)
       return .run { _ in
-        await terminalClient.send(.ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false))
+        await terminalClient.send(
+          .ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false))
       }
 
     case .focusCanvasWorktree(let worktreeID):
@@ -578,7 +616,8 @@ extension RepositoriesFeature {
       }
       requestCanvasFocus(.worktree(worktree.id), openedWorktreeID: worktree.id, state: &state)
       return .run { _ in
-        await terminalClient.send(.ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false))
+        await terminalClient.send(
+          .ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false))
       }
 
     case .selectNextWorktree:
@@ -740,7 +779,8 @@ extension RepositoriesFeature {
     case .alert(.presented(.confirmArchiveWorktrees(let targets))):
       return .merge(
         targets.map { target in
-          .send(.worktreeLifecycle(.archiveWorktreeConfirmed(target.worktreeID, target.repositoryID)))
+          .send(
+            .worktreeLifecycle(.archiveWorktreeConfirmed(target.worktreeID, target.repositoryID)))
         }
       )
 
@@ -761,21 +801,28 @@ extension RepositoriesFeature {
           repository.worktrees.contains(where: { $0.id == id })
         } ?? false
       return .send(
-        .repositoryManagement(.repositoryRemoved(repository.id, selectionWasRemoved: selectionWasRemoved)))
+        .repositoryManagement(
+          .repositoryRemoved(repository.id, selectionWasRemoved: selectionWasRemoved)))
 
-    case .alert(.presented(.confirmWorkspaceRootDeletion(let repositoryID, let rootPath, let selectionWasRemoved))):
+    case .alert(
+      .presented(
+        .confirmWorkspaceRootDeletion(let repositoryID, let rootPath, let selectionWasRemoved))):
       state.alert = nil
       let rootURL = URL(fileURLWithPath: rootPath)
       return .run { send in
         ProjectWorkspace.removeWorkspaceFolder(at: rootURL)
         await send(
-          .repositoryManagement(.repositoryRemoved(repositoryID, selectionWasRemoved: selectionWasRemoved)))
+          .repositoryManagement(
+            .repositoryRemoved(repositoryID, selectionWasRemoved: selectionWasRemoved)))
       }
 
-    case .alert(.presented(.keepWorkspaceFolderAfterCleanupFailure(let repositoryID, let selectionWasRemoved))):
+    case .alert(
+      .presented(.keepWorkspaceFolderAfterCleanupFailure(let repositoryID, let selectionWasRemoved))
+    ):
       state.alert = nil
       return .send(
-        .repositoryManagement(.repositoryRemoved(repositoryID, selectionWasRemoved: selectionWasRemoved)))
+        .repositoryManagement(
+          .repositoryRemoved(repositoryID, selectionWasRemoved: selectionWasRemoved)))
 
     case .presentAlert(let title, let message):
       state.alert = messageAlert(title: title, message: message)
@@ -824,7 +871,8 @@ extension RepositoriesFeature {
         let previousLineChanges = normalizedLineChanges(state.worktreeInfoByID[worktreeID])
         return .run { send in
           if let changes = await gitClient.lineChanges(worktreeURL) {
-            let nextLineChanges = normalizedLineChanges(added: changes.added, removed: changes.removed)
+            let nextLineChanges = normalizedLineChanges(
+              added: changes.added, removed: changes.removed)
             guard !lineChangesEqual(nextLineChanges, previousLineChanges) else {
               return
             }

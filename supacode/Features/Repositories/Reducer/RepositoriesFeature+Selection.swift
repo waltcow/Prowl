@@ -141,6 +141,7 @@ func setSingleWorktreeSelection(
     recordWorktreeHistoryTransition(from: state.selectedWorktreeID, to: worktreeID, state: &state)
   }
   state.selection = worktreeID.map(SidebarSelection.worktree)
+  state.selectedWorkspaceChildID = nil
   if let worktreeID {
     state.sidebarSelectedWorktreeIDs = [worktreeID]
   } else {

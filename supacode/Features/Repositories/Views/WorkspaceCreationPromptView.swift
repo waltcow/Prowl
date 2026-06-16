@@ -5,12 +5,6 @@ import SwiftUI
 struct WorkspaceCreationPromptView: View {
   @Bindable var store: StoreOf<WorkspaceCreationPromptFeature>
   @FocusState private var isTitleFieldFocused: Bool
-  private let sourceKinds: [ProjectWorkspaceRepositorySourceKind] = [
-    .existingPath,
-    .localRepository,
-    .remote,
-    .bareRepository,
-  ]
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -24,23 +18,43 @@ struct WorkspaceCreationPromptView: View {
       VStack(alignment: .leading, spacing: 8) {
         Text("Title")
           .foregroundStyle(.secondary)
-        TextField("Workspace title", text: $store.title)
-          .textFieldStyle(.roundedBorder)
-          .focused($isTitleFieldFocused)
-          .disabled(store.isCreating)
-          .onSubmit {
-            store.send(.createButtonTapped)
-          }
+        TextField(
+          "Workspace title",
+          text: Binding(
+            get: { store.title },
+            set: { store.send(.titleChanged($0)) }
+          )
+        )
+        .textFieldStyle(.roundedBorder)
+        .focused($isTitleFieldFocused)
+        .disabled(store.isCreating)
+        .overlay {
+          invalidFieldBorder(store.validationTarget == .title)
+        }
+        .onSubmit {
+          store.send(.createButtonTapped)
+        }
+        helpText(
+          "A short name for the shared task folder shown in the sidebar and workspace metadata.")
       }
 
       VStack(alignment: .leading, spacing: 8) {
         Text("Folder")
           .foregroundStyle(.secondary)
         HStack(spacing: 8) {
-          TextField("Workspace folder", text: $store.rootPath)
-            .textFieldStyle(.roundedBorder)
-            .font(.body.monospaced())
-            .disabled(store.isCreating)
+          TextField(
+            "Workspace folder",
+            text: Binding(
+              get: { store.rootPath },
+              set: { store.send(.rootPathChanged($0)) }
+            )
+          )
+          .textFieldStyle(.roundedBorder)
+          .font(.body.monospaced())
+          .disabled(store.isCreating)
+          .overlay {
+            invalidFieldBorder(store.validationTarget == .rootPath)
+          }
           Button {
             chooseFolder()
           } label: {
@@ -55,6 +69,9 @@ struct WorkspaceCreationPromptView: View {
           .lineLimit(1)
           .truncationMode(.middle)
           .textSelection(.enabled)
+        helpText(
+          "Where Prowl creates the workspace root. Until you edit it, this path follows the workspace title."
+        )
       }
 
       VStack(alignment: .leading, spacing: 8) {
@@ -90,22 +107,28 @@ struct WorkspaceCreationPromptView: View {
           }
           .help("Add Local Repository")
           .disabled(store.isCreating)
-
-          Button {
-            chooseRepositorySource(kind: .bareRepository)
-          } label: {
-            Label("Add Bare", systemImage: "externaldrive")
-          }
-          .help("Add Bare Repository")
-          .disabled(store.isCreating)
         }
-        ScrollView {
-          VStack(spacing: 0) {
-            ForEach(store.repositories) { repository in
-              repositoryEditor(repository)
-              if repository.id != store.repositories.last?.id {
-                Divider()
+        helpText(
+          "Add at least two repositories. Opened and local repositories can be linked or materialized as worktrees."
+        )
+        ScrollViewReader { proxy in
+          ScrollView {
+            VStack(spacing: 0) {
+              ForEach(store.repositories) { repository in
+                repositoryEditor(repository)
+                  .id(repository.id)
+                if repository.id != store.repositories.last?.id {
+                  Divider()
+                }
               }
+            }
+          }
+          .onChange(of: store.validationRequestID) { _, _ in
+            guard let repositoryID = validationRepositoryID else {
+              return
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+              proxy.scrollTo(repositoryID, anchor: .center)
             }
           }
         }
@@ -182,21 +205,7 @@ struct WorkspaceCreationPromptView: View {
         .fontWeight(.medium)
         .lineLimit(1)
 
-      Picker(
-        "Source",
-        selection: Binding(
-          get: { repository.sourceKind },
-          set: { store.send(.repositorySourceKindChanged(repository.id, $0)) }
-        )
-      ) {
-        ForEach(sourceKinds(for: repository), id: \.self) { kind in
-          Text(sourceKindTitle(kind)).tag(kind)
-        }
-      }
-      .pickerStyle(.menu)
-      .labelsHidden()
-      .frame(width: 150)
-      .disabled(store.isCreating)
+      sourceKindBadge(repository.sourceKind)
 
       Spacer()
 
@@ -212,104 +221,133 @@ struct WorkspaceCreationPromptView: View {
     }
   }
 
-  private func repositoryNameAndPathFields(_ repository: ProjectWorkspaceCreationRepository) -> some View {
+  private func repositoryNameAndPathFields(_ repository: ProjectWorkspaceCreationRepository)
+    -> some View
+  {
     HStack(spacing: 8) {
-      TextField(
-        "Name",
-        text: Binding(
-          get: { repository.name },
-          set: { store.send(.repositoryNameChanged(repository.id, $0)) }
-        )
-      )
-      .textFieldStyle(.roundedBorder)
-      .disabled(store.isCreating)
-
-      TextField(
-        "Workspace path",
-        text: Binding(
-          get: { repository.path ?? "" },
-          set: { store.send(.repositoryPathChanged(repository.id, $0)) }
-        )
-      )
-      .textFieldStyle(.roundedBorder)
-      .disabled(store.isCreating)
-    }
-  }
-
-  private func repositorySourceField(_ repository: ProjectWorkspaceCreationRepository) -> some View {
-    HStack(spacing: 8) {
-      TextField(
-        sourceLocationPlaceholder(repository.sourceKind),
-        text: Binding(
-          get: { repository.sourceLocation },
-          set: { store.send(.repositorySourceLocationChanged(repository.id, $0)) }
-        )
-      )
-      .textFieldStyle(.roundedBorder)
-      .font(.body.monospaced())
-      .disabled(store.isCreating)
-
-      if repository.sourceKind != .remote {
-        Button {
-          chooseSource(for: repository)
-        } label: {
-          Image(systemName: "folder")
-            .accessibilityLabel("Choose Repository Source")
-        }
-        .help("Choose Repository Source")
-        .disabled(store.isCreating)
-      }
-    }
-  }
-
-  private func repositoryBranchFields(_ repository: ProjectWorkspaceCreationRepository) -> some View {
-    HStack(spacing: 8) {
-      Picker(
-        "Branch action",
-        selection: Binding(
-          get: { repository.checkoutMode },
-          set: { store.send(.repositoryCheckoutModeChanged(repository.id, $0)) }
-        )
-      ) {
-        if repository.sourceKind.supportsLinkCheckout {
-          Text("Link").tag(ProjectWorkspaceRepositoryCheckoutMode.link)
-        }
-        Text("Create Branch").tag(ProjectWorkspaceRepositoryCheckoutMode.createBranch)
-        Text("Use Existing").tag(ProjectWorkspaceRepositoryCheckoutMode.useExistingRef)
-      }
-      .pickerStyle(.menu)
-      .labelsHidden()
-      .frame(width: 150)
-      .help("Choose Branch Action")
-      .disabled(store.isCreating)
-
-      if repository.checkoutMode == .createBranch {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Name")
+          .foregroundStyle(.secondary)
         TextField(
-          "Branch",
+          "Repository name",
           text: Binding(
-            get: { repository.branchName ?? "" },
-            set: { store.send(.repositoryBranchNameChanged(repository.id, $0)) }
+            get: { repository.name },
+            set: { store.send(.repositoryNameChanged(repository.id, $0)) }
           )
         )
         .textFieldStyle(.roundedBorder)
         .disabled(store.isCreating)
+        .overlay {
+          invalidFieldBorder(repositoryFieldIsInvalid(repository, .name))
+        }
+        helpText("Display name for this repository in the workspace metadata.")
       }
 
-      if repository.checkoutMode == .link {
-        Text("Symlink to the repository as it is on disk")
-          .font(.footnote)
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Folder inside workspace")
           .foregroundStyle(.secondary)
-      } else {
-        WorkspaceBranchRefPickerView(
-          title: repository.checkoutMode == .createBranch ? "Base ref" : "Existing branch",
-          selection: repository.baseRef,
-          options: repository.baseRefOptions,
-          isDisabled: store.isCreating || repository.baseRefOptions.isEmpty
-        ) { ref in
-          store.send(.repositoryBaseRefChanged(repository.id, ref))
-        }
-        .disabled(store.isCreating || repository.baseRefOptions.isEmpty)
+        TextField(
+          "Folder name",
+          text: Binding(
+            get: { repository.path ?? "" },
+            set: { store.send(.repositoryPathChanged(repository.id, $0)) }
+          )
+        )
+        .textFieldStyle(.roundedBorder)
+        .disabled(store.isCreating)
+        helpText(
+          "Destination folder under the workspace root. It does not change the original source path."
+        )
+      }
+    }
+  }
 
+  private func repositorySourceField(_ repository: ProjectWorkspaceCreationRepository) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        TextField(
+          sourceLocationPlaceholder(repository.sourceKind),
+          text: Binding(
+            get: { repository.sourceLocation },
+            set: { store.send(.repositorySourceLocationChanged(repository.id, $0)) }
+          )
+        )
+        .textFieldStyle(.roundedBorder)
+        .font(.body.monospaced())
+        .disabled(store.isCreating)
+        .overlay {
+          invalidFieldBorder(repositoryFieldIsInvalid(repository, .source))
+        }
+
+        if repository.sourceKind != .remote {
+          Button {
+            chooseSource(for: repository)
+          } label: {
+            Image(systemName: "folder")
+              .accessibilityLabel("Choose Repository Source")
+          }
+          .help("Choose Repository Source")
+          .disabled(store.isCreating)
+        }
+      }
+      helpText(sourceLocationHelpText(repository.sourceKind))
+    }
+  }
+
+  private func repositoryBranchFields(_ repository: ProjectWorkspaceCreationRepository) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Picker(
+          "Branch action",
+          selection: Binding(
+            get: { repository.checkoutMode },
+            set: { store.send(.repositoryCheckoutModeChanged(repository.id, $0)) }
+          )
+        ) {
+          if repository.sourceKind.supportsLinkCheckout {
+            Text("Link").tag(ProjectWorkspaceRepositoryCheckoutMode.link)
+          }
+          Text("Create Branch").tag(ProjectWorkspaceRepositoryCheckoutMode.createBranch)
+          Text("Use Existing").tag(ProjectWorkspaceRepositoryCheckoutMode.useExistingRef)
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(width: 150)
+        .help("Choose Branch Action")
+        .disabled(store.isCreating)
+
+        if repository.checkoutMode == .createBranch {
+          TextField(
+            "Branch",
+            text: Binding(
+              get: { repository.branchName ?? "" },
+              set: { store.send(.repositoryBranchNameChanged(repository.id, $0)) }
+            )
+          )
+          .textFieldStyle(.roundedBorder)
+          .disabled(store.isCreating)
+          .overlay {
+            invalidFieldBorder(repositoryFieldIsInvalid(repository, .branchName))
+          }
+        }
+
+        if repository.checkoutMode != .link {
+          WorkspaceBranchRefPickerView(
+            title: repository.checkoutMode == .createBranch ? "Base ref" : "Existing branch",
+            selection: repository.baseRef,
+            options: repository.baseRefOptions,
+            isDisabled: store.isCreating || repository.baseRefOptions.isEmpty,
+            isInvalid: repositoryFieldIsInvalid(repository, .baseRef)
+          ) { ref in
+            store.send(.repositoryBaseRefChanged(repository.id, ref))
+          }
+          .disabled(store.isCreating || repository.baseRefOptions.isEmpty)
+        }
+      }
+
+      helpText(branchActionHelpText(repository))
+
+      if repository.checkoutMode != .link {
         if let localBranchName = repository.resettableLocalBranchName {
           VStack(alignment: .leading, spacing: 4) {
             Text("Local branch “\(localBranchName)” already exists and would be reset to this ref.")
@@ -335,14 +373,6 @@ struct WorkspaceCreationPromptView: View {
     }
   }
 
-  private func sourceKinds(
-    for repository: ProjectWorkspaceCreationRepository
-  ) -> [ProjectWorkspaceRepositorySourceKind] {
-    repository.sourceKind == .remote
-      ? sourceKinds
-      : sourceKinds.filter { $0 != .remote }
-  }
-
   @ViewBuilder
   private func remoteRepositoryPromptView() -> some View {
     if let prompt = store.remoteRepositoryPrompt {
@@ -363,6 +393,7 @@ struct WorkspaceCreationPromptView: View {
           .textFieldStyle(.roundedBorder)
           .font(.body.monospaced())
           .disabled(prompt.isLoading)
+          helpText("Remote git URL to clone into the workspace, such as SSH or HTTPS.")
         }
 
         VStack(alignment: .leading, spacing: 8) {
@@ -377,12 +408,15 @@ struct WorkspaceCreationPromptView: View {
           )
           .textFieldStyle(.roundedBorder)
           .disabled(prompt.isLoading)
+          helpText("Display name and default folder name for this remote repository.")
         }
 
         if !prompt.branchOptions.isEmpty {
           Text("\(prompt.branchOptions.count) remote branches loaded")
             .font(.footnote)
             .foregroundStyle(.secondary)
+        } else {
+          helpText("Load branches before adding so Prowl can choose an existing branch safely.")
         }
 
         if let message = prompt.validationMessage, !message.isEmpty {
@@ -402,13 +436,13 @@ struct WorkspaceCreationPromptView: View {
           }
           .keyboardShortcut(.cancelAction)
           .help("Cancel (Esc)")
-          .disabled(prompt.isLoading)
 
           Button("Load") {
             store.send(.remoteRepositoryPromptLoadButtonTapped)
           }
           .help("Load Remote Branches")
-          .disabled(prompt.isLoading || prompt.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .disabled(
+            prompt.isLoading || prompt.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
           Button("Add") {
             store.send(.remoteRepositoryPromptAddButtonTapped)
@@ -450,7 +484,8 @@ struct WorkspaceCreationPromptView: View {
   }
 
   private func chooseSource(for repository: ProjectWorkspaceCreationRepository) {
-    let panel = repositorySourcePanel(kind: repository.sourceKind, currentPath: repository.sourceLocation)
+    let panel = repositorySourcePanel(
+      kind: repository.sourceKind, currentPath: repository.sourceLocation)
     panel.begin { response in
       guard response == .OK, let url = panel.url else {
         return
@@ -472,21 +507,57 @@ struct WorkspaceCreationPromptView: View {
     if let currentPath, !currentPath.isEmpty {
       panel.directoryURL = URL(filePath: currentPath).deletingLastPathComponent()
     }
-    panel.message = kind == .bareRepository ? "Choose a bare repository folder" : "Choose a repository folder"
+    panel.message =
+      kind == .bareRepository ? "Choose a bare repository folder" : "Choose a repository folder"
     return panel
   }
 
   private func sourceKindTitle(_ kind: ProjectWorkspaceRepositorySourceKind) -> String {
     switch kind {
     case .existingPath:
-      return "Opened Path"
+      return "Opened in Prowl"
     case .localRepository:
-      return "Local Repo"
+      return "Picked from Disk"
     case .remote:
       return "Remote Clone"
     case .bareRepository:
       return "Bare Worktree"
     }
+  }
+
+  private func sourceKindIcon(_ kind: ProjectWorkspaceRepositorySourceKind) -> String {
+    switch kind {
+    case .existingPath:
+      return "folder.badge.plus"
+    case .localRepository:
+      return "folder"
+    case .remote:
+      return "network"
+    case .bareRepository:
+      return "externaldrive"
+    }
+  }
+
+  private func sourceKindBadgeHelp(_ kind: ProjectWorkspaceRepositorySourceKind) -> String {
+    switch kind {
+    case .existingPath:
+      return "Added from repositories already opened in Prowl."
+    case .localRepository:
+      return "Added by choosing a repository folder from disk."
+    case .remote:
+      return "Added from a remote URL and cloned into the workspace."
+    case .bareRepository:
+      return "Added from a local bare repository."
+    }
+  }
+
+  private func sourceKindBadge(_ kind: ProjectWorkspaceRepositorySourceKind) -> some View {
+    Label(sourceKindTitle(kind), systemImage: sourceKindIcon(kind))
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .labelStyle(.titleAndIcon)
+      .lineLimit(1)
+      .help(sourceKindBadgeHelp(kind))
   }
 
   private func sourceLocationPlaceholder(_ kind: ProjectWorkspaceRepositorySourceKind) -> String {
@@ -499,6 +570,68 @@ struct WorkspaceCreationPromptView: View {
       return "Bare repository folder"
     }
   }
+
+  private func sourceLocationHelpText(_ kind: ProjectWorkspaceRepositorySourceKind) -> String {
+    switch kind {
+    case .existingPath:
+      return
+        "Existing opened repository path. Link keeps using this checkout; "
+        + "branch actions create workspace worktrees from it."
+    case .localRepository:
+      return
+        "Local repository folder on disk. It can be linked as-is or used as the source for a workspace worktree."
+    case .remote:
+      return "Remote URL cloned into the workspace folder after branches are loaded."
+    case .bareRepository:
+      return "Advanced source: a local bare repository used only for git worktree materialization."
+    }
+  }
+
+  private func branchActionHelpText(_ repository: ProjectWorkspaceCreationRepository) -> String {
+    switch repository.checkoutMode {
+    case .link:
+      return
+        "Link adds a symlink to the source checkout, so workspace edits affect the original folder directly."
+    case .createBranch:
+      return
+        "Create Branch materializes an isolated checkout on a new branch from the selected base ref."
+    case .useExistingRef:
+      if repository.resettableLocalBranchName != nil {
+        return
+          "Use Existing checks out the selected branch. "
+          + "If a matching local branch already exists, choose whether to keep or reset it."
+      }
+      return
+        "Use Existing checks out the selected local branch or creates a local tracking branch from a remote ref."
+    }
+  }
+
+  private func helpText(_ text: String) -> some View {
+    Text(text)
+      .font(.footnote)
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var validationRepositoryID: Repository.ID? {
+    guard case .repository(let repositoryID, _) = store.validationTarget else {
+      return nil
+    }
+    return repositoryID
+  }
+
+  private func repositoryFieldIsInvalid(
+    _ repository: ProjectWorkspaceCreationRepository,
+    _ field: WorkspaceCreationPromptFeature.RepositoryField
+  ) -> Bool {
+    store.validationTarget == .repository(repository.id, field)
+  }
+
+  private func invalidFieldBorder(_ isInvalid: Bool) -> some View {
+    RoundedRectangle(cornerRadius: 5)
+      .stroke(isInvalid ? Color.red : Color.clear, lineWidth: isInvalid ? 1.5 : 0)
+      .allowsHitTesting(false)
+  }
 }
 
 private struct WorkspaceBranchRefPickerView: View {
@@ -506,6 +639,7 @@ private struct WorkspaceBranchRefPickerView: View {
   let selection: String?
   let options: [GitBranchRefOption]
   let isDisabled: Bool
+  let isInvalid: Bool
   let onSelect: (String) -> Void
 
   @State private var isPresented = false
@@ -527,6 +661,9 @@ private struct WorkspaceBranchRefPickerView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .buttonStyle(.bordered)
+    .overlay {
+      invalidFieldBorder
+    }
     .help("Choose \(title)")
     .disabled(isDisabled)
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
@@ -585,6 +722,12 @@ private struct WorkspaceBranchRefPickerView: View {
       return title
     }
     return selection
+  }
+
+  private var invalidFieldBorder: some View {
+    RoundedRectangle(cornerRadius: 5)
+      .stroke(isInvalid ? Color.red : Color.clear, lineWidth: isInvalid ? 1.5 : 0)
+      .allowsHitTesting(false)
   }
 
   private var groupedOptions: [(kind: GitBranchRefKind, options: [GitBranchRefOption])] {

@@ -160,6 +160,7 @@ extension RepositoriesFeature {
       if let effect = detectCodeHostsEffect(for: state.repositories) {
         allEffects.append(effect)
       }
+      allEffects.append(refreshWorkspaceChildrenEffect(state: state))
       return .merge(allEffects)
 
     case .requestRemoveRepository(let repositoryID):
@@ -333,6 +334,7 @@ extension RepositoriesFeature {
       state.removingRepositoryIDs.remove(repositoryID)
       if selectionWasRemoved {
         state.selection = nil
+        state.selectedWorkspaceChildID = nil
         state.shouldSelectFirstAfterReload = true
       }
       let selectedWorktree = state.worktree(for: state.selectedWorktreeID)

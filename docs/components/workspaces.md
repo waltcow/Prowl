@@ -18,11 +18,11 @@ When you open a workspace in Prowl:
 
 ## Folder layout
 
-Use **New Workspace** from the sidebar toolbar (the
-person-in-folder button next to **Add Repository**), the Worktrees menu, or the
-command palette to create a workspace. Prowl creates the shared folder, materializes the
-selected repositories, writes `.prowl/workspace.json`, and opens the workspace
-as a runnable folder. A workspace needs at least two repositories.
+Use **Add...** from the sidebar toolbar and choose **Add Workspace**, or use the
+Worktrees menu or command palette to create a workspace. Prowl creates the
+shared folder, materializes the selected repositories, writes
+`.prowl/workspace.json`, and opens the workspace as a runnable folder. A
+workspace needs at least two repositories.
 
 While a workspace is being created the prompt shows a spinner. **Cancel** stops
 the creation and rolls back everything created so far: cloned folders, created
@@ -44,12 +44,17 @@ Repository sources can be mixed in one workspace:
 - Local repository folders are selected from disk
   (`source_kind: local_repository`).
 - Remote repositories are added through a URL prompt that loads remote heads
-  before inserting the row. They are cloned into the workspace folder with
-  `source_kind: remote`. The inserted row defaults to **Use Existing** on the
-  detected default remote branch.
-- Bare repositories are materialized with `git worktree add` and recorded with
-  `source_kind: bare_repository`. If both branch and base ref are supplied,
-  Prowl creates the worktree branch from that base ref.
+  before inserting the row. Loading can be canceled while the prompt is open.
+  They are cloned into the workspace folder with `source_kind: remote`. The
+  inserted row defaults to **Use Existing** on the detected default remote
+  branch.
+- Bare repositories are supported by the metadata and materialization layer as
+  `source_kind: bare_repository`, but the first workspace UI keeps that
+  advanced source hidden.
+
+Opened and local repository rows show their source as read-only provenance
+rather than a mode selector because both follow the same materialization rules
+after they have been added.
 
 For already opened and local repositories, the branch action decides how the
 folder is materialized:
@@ -64,14 +69,21 @@ folder is materialized:
   remote-tracking ref creates a local tracking branch instead of a detached
   worktree. Git rejects a branch that is already checked out elsewhere.
 
-The creation prompt detects base-ref candidates for already opened, local, and
-bare repositories by reading local git refs, preferring the detected default
+The creation prompt detects base-ref candidates for already opened and local
+repositories by reading local git refs, preferring the detected default
 branch such as `main` or `master`. Refs are grouped as local branches, remote
 tracking branches, or fetched remote branches, and the picker supports simple
 text search. `<remote>/HEAD` symbolic pointers are omitted from the picker
 because they only alias a branch that is already listed. Base refs are selected
 from detected refs so workspace creation does not try to checkout an arbitrary,
 nonexistent branch.
+
+When creation validation fails inside a repository row, the repository list
+scrolls to that row and highlights the invalid field with a red border.
+
+The **Folder** path follows the workspace **Title** while it is still generated
+by Prowl. Once you edit or choose the folder directly, Prowl treats it as a
+manual path and stops changing it when the title changes.
 
 Branch behavior is explicit:
 
@@ -92,6 +104,12 @@ Branch behavior is explicit:
     remote ref (the `-B` behavior, which discards local-only commits on that
     branch). This prevents an unnoticed reset of a local branch that is ahead of
     the remote.
+
+Workspace rows expand to show child repository rows. Each child row displays its
+current branch, uncommitted line counts, and pull request badge when available,
+including immediately after a newly created workspace is opened. Click a child
+row to select it and focus its terminal tab rooted at that repository folder
+inside the workspace, creating that tab the first time it is selected.
 
 ## Removing a workspace
 
@@ -121,6 +139,7 @@ Example `.prowl/workspace.json`:
 
 ```json
 {
+  "schema_version": "prowl.workspace.v1",
   "title": "Checkout Flow",
   "description": "Update app UI, API contract, and shared package together.",
   "task_links": [
@@ -157,6 +176,8 @@ Example `.prowl/workspace.json`:
 
 Top-level fields:
 
+- `schema_version` — metadata format version. Defaults to
+  `prowl.workspace.v1` when omitted.
 - `id` — optional stable identifier. Defaults to the workspace root path.
 - `title` — display title. Defaults to the folder name.
 - `description` — optional task summary shown in the detail view.

@@ -38,11 +38,16 @@ struct WorkspaceDetailView: View {
           .font(.subheadline.monospaced())
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
-        Text("\(workspace.repositories.count) repositories")
+        Text(repositoryCountText)
           .font(.subheadline)
           .foregroundStyle(.tertiary)
       }
     }
+  }
+
+  private var repositoryCountText: String {
+    workspace.repositories.count == 1
+      ? "1 repository" : "\(workspace.repositories.count) repositories"
   }
 
   private var taskLinks: some View {

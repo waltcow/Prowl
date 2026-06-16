@@ -4,13 +4,20 @@ import IdentifiedCollections
 
 @Reducer
 struct WorkspaceCreationPromptFeature {
+  private enum CancelID {
+    static let remoteRepositoryPromptLoad = "workspaceCreationPrompt.remoteRepositoryPromptLoad"
+  }
+
   @ObservableState
   struct State: Equatable {
     var repositories: IdentifiedArrayOf<ProjectWorkspaceCreationRepository>
     var openedRepositoryCandidates: IdentifiedArrayOf<ProjectWorkspaceCreationRepository>
     var title: String
     var rootPath: String
+    var isRootPathDirty = false
     var validationMessage: String?
+    var validationTarget: ValidationTarget?
+    var validationRequestID = 0
     var isCreating = false
     var remoteRepositoryPrompt: RemoteRepositoryPromptState?
 
@@ -36,6 +43,30 @@ struct WorkspaceCreationPromptFeature {
       self.title = title
       self.rootPath = rootPath
     }
+
+    mutating func clearValidation() {
+      validationMessage = nil
+      validationTarget = nil
+    }
+
+    mutating func setValidation(_ message: String, target: ValidationTarget?) {
+      validationMessage = message
+      validationTarget = target
+      validationRequestID += 1
+    }
+  }
+
+  enum ValidationTarget: Equatable, Sendable {
+    case title
+    case rootPath
+    case repository(Repository.ID, RepositoryField)
+  }
+
+  enum RepositoryField: Equatable, Sendable {
+    case name
+    case source
+    case branchName
+    case baseRef
   }
 
   @ObservableState
@@ -55,6 +86,9 @@ struct WorkspaceCreationPromptFeature {
 
   enum Action: BindableAction, Equatable {
     case binding(BindingAction<State>)
+    case titleChanged(String)
+    case rootPathChanged(String)
+    case automaticRootPathResolved(path: String, requestedRootPath: String)
     case addOpenedRepository(Repository.ID)
     case addRepositoryFromURL(ProjectWorkspaceRepositorySourceKind, String)
     case addRemoteButtonTapped
@@ -96,7 +130,35 @@ struct WorkspaceCreationPromptFeature {
     Reduce { state, action in
       switch action {
       case .binding:
-        state.validationMessage = nil
+        state.clearValidation()
+        return .none
+
+      case .titleChanged(let title):
+        state.title = title
+        state.clearValidation()
+        guard !state.isRootPathDirty else {
+          return .none
+        }
+        let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)
+        let requestedRootPath = Self.workspaceRootPath(folderName: folderName, suffix: nil)
+        state.rootPath = requestedRootPath
+        return .run { send in
+          let resolved = Self.uniqueWorkspaceRootPath(folderName: folderName)
+          await send(
+            .automaticRootPathResolved(path: resolved, requestedRootPath: requestedRootPath))
+        }
+
+      case .rootPathChanged(let rootPath):
+        state.rootPath = rootPath
+        state.isRootPathDirty = true
+        state.clearValidation()
+        return .none
+
+      case .automaticRootPathResolved(let path, let requestedRootPath):
+        guard !state.isRootPathDirty, state.rootPath == requestedRootPath else {
+          return .none
+        }
+        state.rootPath = path
         return .none
 
       case .addOpenedRepository(let repositoryID):
@@ -106,12 +168,12 @@ struct WorkspaceCreationPromptFeature {
           return .none
         }
         state.repositories.append(repository)
-        state.validationMessage = nil
+        state.clearValidation()
         return .send(.delegate(.baseRefSourceChanged(repositoryID)))
 
       case .addRemoteButtonTapped:
         state.remoteRepositoryPrompt = RemoteRepositoryPromptState()
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .remoteRepositoryPromptURLChanged(let url):
@@ -119,7 +181,9 @@ struct WorkspaceCreationPromptFeature {
         state.remoteRepositoryPrompt?.validationMessage = nil
         state.remoteRepositoryPrompt?.branchOptions = []
         state.remoteRepositoryPrompt?.defaultBaseRef = nil
-        if state.remoteRepositoryPrompt?.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+        if state.remoteRepositoryPrompt?.name.trimmingCharacters(in: .whitespacesAndNewlines)
+          .isEmpty == true
+        {
           state.remoteRepositoryPrompt?.name = GitRemoteNaming.repositoryName(fromRemoteURL: url)
         }
         return .none
@@ -149,12 +213,13 @@ struct WorkspaceCreationPromptFeature {
         let gitClient = gitClient
         return .run { send in
           do {
-            let refs = try await gitClient.remoteBranchRefs(url)
+            let refs = try await Self.loadRemoteBranchRefs(url, gitClient: gitClient)
             await send(.remoteRepositoryPromptLoaded(url, refs))
           } catch {
             await send(.remoteRepositoryPromptFailed(error.localizedDescription))
           }
         }
+        .cancellable(id: CancelID.remoteRepositoryPromptLoad, cancelInFlight: true)
 
       case .remoteRepositoryPromptLoaded(let url, let refs):
         guard var prompt = state.remoteRepositoryPrompt,
@@ -204,17 +269,19 @@ struct WorkspaceCreationPromptFeature {
           )
         )
         state.remoteRepositoryPrompt = nil
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .remoteRepositoryPromptDismissed:
         state.remoteRepositoryPrompt = nil
-        return .none
+        return .cancel(id: CancelID.remoteRepositoryPromptLoad)
 
       case .addRepositoryFromURL(let sourceKind, let path):
         guard let rootPath = PathPolicy.normalizePath(path) else {
-          state.validationMessage =
-            ProjectWorkspaceCreationError.missingRepositorySource("repository").localizedDescription
+          state.setValidation(
+            ProjectWorkspaceCreationError.missingRepositorySource("repository").localizedDescription,
+            target: nil
+          )
           return .none
         }
         let url = URL(fileURLWithPath: rootPath).standardizedFileURL
@@ -227,12 +294,12 @@ struct WorkspaceCreationPromptFeature {
             sourceLocation: rootPath
           )
         )
-        state.validationMessage = nil
+        state.clearValidation()
         return .send(.delegate(.baseRefSourceChanged(id)))
 
       case .removeRepository(let repositoryID):
         state.repositories.remove(id: repositoryID)
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .repositoryCheckoutModeChanged(let repositoryID, let checkoutMode):
@@ -244,7 +311,7 @@ struct WorkspaceCreationPromptFeature {
         }
         repository.checkoutMode = checkoutMode
         state.repositories[id: repositoryID] = repository
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .repositorySourceKindChanged(let repositoryID, let sourceKind):
@@ -261,7 +328,7 @@ struct WorkspaceCreationPromptFeature {
           repository.sourceLocation = ""
         }
         state.repositories[id: repositoryID] = repository
-        state.validationMessage = nil
+        state.clearValidation()
         guard sourceKind != .remote, repository.localSourceURL != nil else {
           return .none
         }
@@ -269,18 +336,20 @@ struct WorkspaceCreationPromptFeature {
 
       case .repositoryNameChanged(let repositoryID, let name):
         state.repositories[id: repositoryID]?.name = name
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .repositoryPathChanged(let repositoryID, let path):
         state.repositories[id: repositoryID]?.path = path
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .repositorySourceChosen(let repositoryID, let sourceLocation):
         guard let rootPath = PathPolicy.normalizePath(sourceLocation) else {
-          state.validationMessage =
-            ProjectWorkspaceCreationError.missingRepositorySource("repository").localizedDescription
+          state.setValidation(
+            ProjectWorkspaceCreationError.missingRepositorySource("repository").localizedDescription,
+            target: .repository(repositoryID, .source)
+          )
           return .none
         }
         guard var repository = state.repositories[id: repositoryID] else {
@@ -293,7 +362,7 @@ struct WorkspaceCreationPromptFeature {
         repository.baseRef = nil
         repository.baseRefOptions = []
         state.repositories[id: repositoryID] = repository
-        state.validationMessage = nil
+        state.clearValidation()
         return .send(.delegate(.baseRefSourceChanged(repositoryID)))
 
       case .repositorySourceLocationChanged(let repositoryID, let sourceLocation):
@@ -307,15 +376,17 @@ struct WorkspaceCreationPromptFeature {
           repository.baseRefOptions = []
         }
         state.repositories[id: repositoryID] = repository
-        state.validationMessage = nil
-        guard sourceLocationChanged, repository.sourceKind != .remote, repository.localSourceURL != nil else {
+        state.clearValidation()
+        guard sourceLocationChanged, repository.sourceKind != .remote,
+          repository.localSourceURL != nil
+        else {
           return .none
         }
         return .send(.delegate(.baseRefSourceChanged(repositoryID)))
 
       case .repositoryBranchNameChanged(let repositoryID, let branchName):
         state.repositories[id: repositoryID]?.branchName = branchName
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .repositoryBaseRefChanged(let repositoryID, let baseRef):
@@ -323,24 +394,26 @@ struct WorkspaceCreationPromptFeature {
           return .none
         }
         let trimmed = baseRef.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.isEmpty || repository.baseRefOptions.contains(where: { $0.ref == trimmed }) else {
+        guard trimmed.isEmpty || repository.baseRefOptions.contains(where: { $0.ref == trimmed })
+        else {
           return .none
         }
         repository.baseRef = trimmed.isEmpty ? nil : trimmed
         // A new ref selection invalidates any previous keep/reset choice.
         repository.resetLocalBranchToRemote = false
         state.repositories[id: repositoryID] = repository
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .repositoryResetLocalBranchChanged(let repositoryID, let resetToRemote):
         state.repositories[id: repositoryID]?.resetLocalBranchToRemote = resetToRemote
-        state.validationMessage = nil
+        state.clearValidation()
         return .none
 
       case .rootPathChosen(let path):
         state.rootPath = path
-        state.validationMessage = nil
+        state.isRootPathDirty = true
+        state.clearValidation()
         return .none
 
       case .cancelButtonTapped:
@@ -349,15 +422,25 @@ struct WorkspaceCreationPromptFeature {
       case .createButtonTapped:
         let title = state.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else {
-          state.validationMessage = ProjectWorkspaceCreationError.missingTitle.localizedDescription
+          state.setValidation(
+            ProjectWorkspaceCreationError.missingTitle.localizedDescription,
+            target: .title
+          )
           return .none
         }
-        guard let rootPath = PathPolicy.normalizePath(state.rootPath, resolvingSymlinks: false) else {
-          state.validationMessage = ProjectWorkspaceCreationError.missingPath.localizedDescription
+        guard let rootPath = PathPolicy.normalizePath(state.rootPath, resolvingSymlinks: false)
+        else {
+          state.setValidation(
+            ProjectWorkspaceCreationError.missingPath.localizedDescription,
+            target: .rootPath
+          )
           return .none
         }
         guard state.repositories.count >= 2 else {
-          state.validationMessage = ProjectWorkspaceCreationError.notEnoughRepositories.localizedDescription
+          state.setValidation(
+            ProjectWorkspaceCreationError.notEnoughRepositories.localizedDescription,
+            target: nil
+          )
           return .none
         }
         var plans: [ProjectWorkspaceRepositoryPlan] = []
@@ -366,11 +449,14 @@ struct WorkspaceCreationPromptFeature {
           case .success(let plan):
             plans.append(plan)
           case .failure(let error):
-            state.validationMessage = error.localizedDescription
+            state.setValidation(
+              error.localizedDescription,
+              target: Self.validationTarget(for: error, repositoryID: repository.id)
+            )
             return .none
           }
         }
-        state.validationMessage = nil
+        state.clearValidation()
         return .send(
           .delegate(
             .submit(
@@ -395,6 +481,68 @@ struct WorkspaceCreationPromptFeature {
       return name
     }
     return String(name.dropLast(4))
+  }
+
+  nonisolated private static func workspaceRootPath(folderName: String, suffix: Int?) -> String {
+    let component = suffix.map { "\(folderName)-\($0)" } ?? folderName
+    return SupacodePaths.workspacesDirectory
+      .appending(path: component, directoryHint: .isDirectory)
+      .standardizedFileURL
+      .path(percentEncoded: false)
+  }
+
+  nonisolated static func uniqueWorkspaceRootPath(folderName: String) -> String {
+    var suffix: Int?
+    while true {
+      let candidate = workspaceRootPath(folderName: folderName, suffix: suffix)
+      if !FileManager.default.fileExists(atPath: candidate) {
+        return candidate
+      }
+      suffix = (suffix ?? 1) + 1
+    }
+  }
+
+  nonisolated private static func loadRemoteBranchRefs(
+    _ url: String,
+    gitClient: GitClientDependency
+  ) async throws -> GitRemoteBranchRefs {
+    try await withThrowingTaskGroup(of: GitRemoteBranchRefs.self) { group in
+      group.addTask {
+        try await gitClient.remoteBranchRefs(url)
+      }
+      group.addTask {
+        try await Task.sleep(for: .seconds(30))
+        throw RemoteBranchLoadTimeoutError()
+      }
+      guard let refs = try await group.next() else {
+        throw CancellationError()
+      }
+      group.cancelAll()
+      return refs
+    }
+  }
+
+  nonisolated static func validationTarget(
+    for error: ProjectWorkspaceCreationError,
+    repositoryID: Repository.ID
+  ) -> ValidationTarget? {
+    switch error {
+    case .missingRepositoryName:
+      return .repository(repositoryID, .name)
+    case .missingRepositorySource:
+      return .repository(repositoryID, .source)
+    case .missingBranchName:
+      return .repository(repositoryID, .branchName)
+    case .missingExistingRef:
+      return .repository(repositoryID, .baseRef)
+    case .missingTitle:
+      return .title
+    case .missingPath:
+      return .rootPath
+    case .notEnoughRepositories, .linkCheckoutUnsupported, .destinationIsFile,
+      .workspaceAlreadyExists, .repositoryDoesNotExist, .linkAlreadyExists, .gitCommandFailed:
+      return nil
+    }
   }
 
   static func plan(
@@ -434,13 +582,14 @@ struct WorkspaceCreationPromptFeature {
       if kind == .local {
         checkout = .useExistingRef(baseRef)
       } else {
-        // Remote refs are named <remote>/<branch>; materialize them as a local
-        // tracking branch instead of a detached worktree.
-        let branchName = baseRef.split(separator: "/").dropFirst().joined(separator: "/")
-        guard !branchName.isEmpty else {
+        guard
+          let branchName = ProjectWorkspaceCreationRepository.localBranchName(forRemoteRef: baseRef)
+        else {
           return .failure(.missingExistingRef(displayName))
         }
-        if let localBranchName = repository.resettableLocalBranchName, !repository.resetLocalBranchToRemote {
+        if let localBranchName = repository.resettableLocalBranchName,
+          !repository.resetLocalBranchToRemote
+        {
           // A same-named local branch already exists and the user chose to keep
           // it: check out the local branch directly rather than resetting it to
           // the remote ref with `-B`, which would discard local-only commits.
@@ -460,5 +609,11 @@ struct WorkspaceCreationPromptFeature {
         checkout: checkout
       )
     )
+  }
+}
+
+private struct RemoteBranchLoadTimeoutError: LocalizedError {
+  var errorDescription: String? {
+    "Remote branch loading timed out."
   }
 }

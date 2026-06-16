@@ -128,4 +128,9 @@ func pruneWorkspaceChildInfo(state: inout RepositoriesFeature.State) {
   let validIDs = Set(state.allResolvedWorkspaceChildren().map(\.id))
   state.workspaceChildInfoByID = state.workspaceChildInfoByID.filter { validIDs.contains($0.key) }
   state.workspaceChildBranchByID = state.workspaceChildBranchByID.filter { validIDs.contains($0.key) }
+  if let selectedWorkspaceChildID = state.selectedWorkspaceChildID,
+    !validIDs.contains(selectedWorkspaceChildID)
+  {
+    state.selectedWorkspaceChildID = nil
+  }
 }

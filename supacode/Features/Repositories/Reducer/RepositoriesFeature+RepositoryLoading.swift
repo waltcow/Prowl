@@ -310,6 +310,7 @@ extension RepositoriesFeature {
       !isSidebarSelectionValid(state.selection, state: state)
     {
       state.selection = nil
+      state.selectedWorkspaceChildID = nil
     }
     if state.shouldRestoreLastFocusedWorktree {
       state.shouldRestoreLastFocusedWorktree = false
@@ -317,11 +318,13 @@ extension RepositoriesFeature {
         isSelectionValid(state.lastFocusedWorktreeID, state: state)
       {
         state.selection = state.lastFocusedWorktreeID.map(SidebarSelection.worktree)
+        state.selectedWorkspaceChildID = nil
       }
     }
     if state.selection == nil, state.shouldSelectFirstAfterReload {
       state.selection = firstAvailableWorktreeID(from: repositories, state: state)
         .map(SidebarSelection.worktree)
+      state.selectedWorkspaceChildID = nil
       state.shouldSelectFirstAfterReload = false
     }
     pruneWorkspaceChildInfo(state: &state)

@@ -87,6 +87,8 @@ final class WorktreeTerminalManager {
       Task {
         createTabAsync(in: worktree, runSetupScriptIfNew: false, workingDirectory: directory)
       }
+    case .focusOrCreateTabInDirectory(let worktree, let directory, let title):
+      state(for: worktree).focusOrCreateTab(boundToDirectory: directory, title: title)
     case .ensureInitialTab(let worktree, let runSetupScriptIfNew, let focusing):
       let state = state(for: worktree) { runSetupScriptIfNew }
       state.ensureInitialTab(focusing: focusing)

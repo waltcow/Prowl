@@ -28,7 +28,7 @@ struct RepositorySectionView: View {
     // `supportsWorktrees` so a workspace never offers "New Worktree".
     let isExpandable = repository.capabilities.supportsWorktrees || repository.isWorkspace
     let isRemovingRepository = state.isRemovingRepository(repository)
-    let isSelected = state.selection == .repository(repository.id)
+    let isSelected = state.selection == .repository(repository.id) && state.selectedWorkspaceChildID == nil
     let openRepoSettings = {
       _ = store.send(.repositoryManagement(.openRepositorySettings(repository.id)))
     }
@@ -188,7 +188,9 @@ struct RepositorySectionView: View {
           .accessibilityLabel(Text("Repo color: \(color.displayName)"))
       }
     }
-    .frame(maxWidth: .infinity, minHeight: headerCellHeight, maxHeight: .infinity, alignment: .center)
+    .frame(
+      maxWidth: .infinity, minHeight: headerCellHeight, maxHeight: .infinity, alignment: .center
+    )
     .padding(.horizontal, 12)
     .padding(.top, hasTopSpacing ? 4 : 0)
     .padding(.bottom, hasTopSpacing && !isExpandable ? 4 : 0)
@@ -242,7 +244,14 @@ struct RepositorySectionView: View {
         .tag(SidebarSelection.repository(repository.id))
       if isExpanded {
         if repository.isWorkspace {
-          WorkspaceChildRowsView(rows: state.workspaceChildRows(in: repository))
+          WorkspaceChildRowsView(
+            rows: state.workspaceChildRows(in: repository),
+            selectedID: state.selection == .repository(repository.id)
+              ? state.selectedWorkspaceChildID : nil,
+            onSelect: { childID in
+              store.send(.openWorkspaceChild(childID))
+            }
+          )
         } else {
           WorktreeRowsView(
             repository: repository,

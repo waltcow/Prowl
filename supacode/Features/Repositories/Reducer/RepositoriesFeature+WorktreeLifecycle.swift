@@ -219,6 +219,7 @@ extension RepositoriesFeature {
         if selectionWasRemoved {
           let nextWorktreeID = nextSelection ?? firstAvailableWorktreeID(in: repositoryID, state: state)
           state.selection = nextWorktreeID.map(SidebarSelection.worktree)
+          state.selectedWorkspaceChildID = nil
         }
       }
       let archivedWorktrees = state.archivedWorktrees
@@ -457,6 +458,7 @@ extension RepositoriesFeature {
         if selectionNeedsUpdate {
           let nextWorktreeID = nextSelection ?? firstAvailableWorktreeID(in: repositoryID, state: state)
           state.selection = nextWorktreeID.map(SidebarSelection.worktree)
+          state.selectedWorkspaceChildID = nil
         }
       }
       let roots = state.repositories.map(\.rootURL)

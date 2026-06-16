@@ -76,6 +76,7 @@ final class WorktreeTerminalState {
   var lastWorkingAtBySurface: [UUID: Date] = [:]
   var lastAgentDetectionDiagnosticsBySurface: [UUID: String] = [:]
   var tabIsRunningById: [TerminalTabID: Bool] = [:]
+  var boundDirectoryTabIDs: [String: TerminalTabID] = [:]
   var surfaceRunningStartedAtById: [UUID: Date] = [:]
   var runScriptTabId: TerminalTabID?
   var pendingSetupScript: Bool
@@ -291,6 +292,7 @@ final class WorktreeTerminalState {
   @discardableResult
   func createTab(
     focusing: Bool = true,
+    title: String? = nil,
     setupScript: String? = nil,
     initialInput: String? = nil,
     inheritingFromSurfaceId: UUID? = nil,
@@ -298,7 +300,7 @@ final class WorktreeTerminalState {
   ) -> TerminalTabID? {
     let context = GHOSTTY_SURFACE_CONTEXT_TAB
     let resolvedInheritanceSurfaceId = inheritingFromSurfaceId ?? currentFocusedSurfaceId()
-    let title = "\(worktree.name) \(nextTabIndex())"
+    let title = title ?? "\(worktree.name) \(nextTabIndex())"
     let setupInput = setupScriptInput(setupScript: setupScript)
     let commandInput = initialInput.flatMap { runScriptInput($0) }
     let resolvedInput: String?
@@ -330,6 +332,36 @@ final class WorktreeTerminalState {
     )
     if shouldConsumeSetupScript, tabId != nil {
       onSetupScriptConsumed?()
+    }
+    return tabId
+  }
+
+  @discardableResult
+  func focusOrCreateTab(
+    boundToDirectory directory: URL,
+    title: String?
+  ) -> TerminalTabID? {
+    let directoryKey = boundDirectoryKey(for: directory)
+    if let tabId = boundDirectoryTabIDs[directoryKey],
+      tabManager.tabs.contains(where: { $0.id == tabId })
+    {
+      selectTab(tabId)
+      return tabId
+    }
+    boundDirectoryTabIDs.removeValue(forKey: directoryKey)
+
+    if let tabId = tabID(withWorkingDirectoryKey: directoryKey) {
+      boundDirectoryTabIDs[directoryKey] = tabId
+      selectTab(tabId)
+      return tabId
+    }
+
+    let tabId = createTab(
+      title: title,
+      workingDirectoryOverride: directory
+    )
+    if let tabId {
+      boundDirectoryTabIDs[directoryKey] = tabId
     }
     return tabId
   }
@@ -564,6 +596,7 @@ final class WorktreeTerminalState {
     guard confirmCloseIfNeeded(tabIds: [tabId], mode: confirmation) else { return false }
     let wasRunScriptTab = tabId == runScriptTabId
     removeTree(for: tabId)
+    removeBoundDirectoryTab(tabId)
     tabManager.closeTab(tabId)
     if let selected = tabManager.selectedTabId {
       focusSurface(in: selected)
@@ -619,6 +652,35 @@ final class WorktreeTerminalState {
   private func setupScriptInput(setupScript: String?) -> String? {
     guard pendingSetupScript, let script = setupScript else { return nil }
     return formatCommandInput(script)
+  }
+
+  func removeBoundDirectoryTab(_ tabId: TerminalTabID) {
+    boundDirectoryTabIDs = boundDirectoryTabIDs.filter { $0.value != tabId }
+  }
+
+  private func tabID(withWorkingDirectoryKey directoryKey: String) -> TerminalTabID? {
+    for tab in tabManager.tabs {
+      let paneIDs = trees[tab.id]?.leaves().map(\.id) ?? []
+      let hasMatchingPane = paneIDs.contains { paneID in
+        guard
+          let workingDirectory = inheritedSurfaceConfig(
+            fromSurfaceId: paneID,
+            context: GHOSTTY_SURFACE_CONTEXT_TAB
+          ).workingDirectory
+        else {
+          return false
+        }
+        return boundDirectoryKey(for: workingDirectory) == directoryKey
+      }
+      if hasMatchingPane {
+        return tab.id
+      }
+    }
+    return nil
+  }
+
+  private func boundDirectoryKey(for url: URL) -> String {
+    url.standardizedFileURL.path(percentEncoded: false)
   }
 
   // Env vars are injected into the surface's shell process via

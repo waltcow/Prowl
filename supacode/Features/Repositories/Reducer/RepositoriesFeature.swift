@@ -292,6 +292,7 @@ struct RepositoriesFeature {
     // folder. Refreshed by `refreshWorkspaceChildrenEffect` on each repo reload.
     var workspaceChildInfoByID: [String: WorktreeInfoEntry] = [:]
     var workspaceChildBranchByID: [String: String] = [:]
+    var selectedWorkspaceChildID: String?
     var worktreeOrderByRepository: [Repository.ID: [Worktree.ID]] = [:]
     var isOpenPanelPresented = false
     var isInitialLoadComplete = false
@@ -419,6 +420,7 @@ struct RepositoriesFeature {
     case markWorktreeClosed(Worktree.ID)
     case setSidebarSelectedWorktreeIDs(Set<Worktree.ID>)
     case selectRepository(Repository.ID?)
+    case openWorkspaceChild(String)
     case selectWorktree(Worktree.ID?, focusTerminal: Bool = false, recordHistory: Bool = true)
     case focusCanvasRepository(Repository.ID)
     case focusCanvasWorktree(Worktree.ID)
@@ -486,8 +488,10 @@ struct RepositoriesFeature {
     case confirmArchiveWorktrees([ArchiveWorktreeTarget])
     case confirmForceDeleteBranch(ForceDeleteBranchRequest)
     case confirmRemoveRepository(Repository.ID)
-    case confirmWorkspaceRootDeletion(repositoryID: Repository.ID, rootPath: String, selectionWasRemoved: Bool)
-    case keepWorkspaceFolderAfterCleanupFailure(repositoryID: Repository.ID, selectionWasRemoved: Bool)
+    case confirmWorkspaceRootDeletion(
+      repositoryID: Repository.ID, rootPath: String, selectionWasRemoved: Bool)
+    case keepWorkspaceFolderAfterCleanupFailure(
+      repositoryID: Repository.ID, selectionWasRemoved: Bool)
   }
 
   enum PullRequestAction: Equatable {

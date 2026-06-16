@@ -36,9 +36,13 @@ struct ProjectWorkspaceTests {
   }
 
   @Test func remoteNamingStripsOnlyTrailingGitSuffix() {
-    #expect(GitRemoteNaming.repositoryName(fromRemoteURL: "git@github.com:onevcat/x.github.io.git") == "x.github.io")
-    #expect(GitRemoteNaming.repositoryName(fromRemoteURL: "https://github.com/onevcat/app.git") == "app")
-    #expect(GitRemoteNaming.repositoryName(fromRemoteURL: "https://github.com/onevcat/app") == "app")
+    #expect(
+      GitRemoteNaming.repositoryName(fromRemoteURL: "git@github.com:onevcat/x.github.io.git")
+        == "x.github.io")
+    #expect(
+      GitRemoteNaming.repositoryName(fromRemoteURL: "https://github.com/onevcat/app.git") == "app")
+    #expect(
+      GitRemoteNaming.repositoryName(fromRemoteURL: "https://github.com/onevcat/app") == "app")
   }
 
   @Test func loadsWorkspaceMetadataWithDefaultsAndSnakeCaseSources() throws {
@@ -78,6 +82,7 @@ struct ProjectWorkspaceTests {
     let rootPath = rootURL.standardizedFileURL.path(percentEncoded: false)
 
     #expect(workspace.id == rootPath)
+    #expect(workspace.schemaVersion == ProjectWorkspace.currentSchemaVersion)
     #expect(workspace.title == "Multi Repo Task")
     #expect(workspace.description == "")
     #expect(workspace.taskLinks == [])
@@ -208,13 +213,16 @@ struct ProjectWorkspaceTests {
         createdAt: createdAt
       ),
       gitRunner: ProjectWorkspaceGitRunner { command in
-        throw ProjectWorkspaceCreationError.gitCommandFailed(command: command.displayCommand, message: "unexpected")
+        throw ProjectWorkspaceCreationError.gitCommandFailed(
+          command: command.displayCommand, message: "unexpected")
       }
     )
 
     #expect(workspace.title == "Checkout Flow")
+    #expect(workspace.schemaVersion == ProjectWorkspace.currentSchemaVersion)
     #expect(workspace.createdAt == createdAt)
     let loaded = try #require(ProjectWorkspace.load(from: rootURL))
+    #expect(loaded.schemaVersion == ProjectWorkspace.currentSchemaVersion)
     #expect(loaded.repositories.map(\.path) == ["App-Repo", "App-Repo-2"])
     #expect(loaded.repositories.map(\.sourceKind) == [.existingPath, .existingPath])
     let appPath = normalizedTestPath(appURL)
@@ -228,8 +236,12 @@ struct ProjectWorkspaceTests {
 
     let appLinkPath = rootURL.appending(path: "App-Repo").path(percentEncoded: false)
     let apiLinkPath = rootURL.appending(path: "App-Repo-2").path(percentEncoded: false)
-    #expect(URL(fileURLWithPath: appLinkPath).resolvingSymlinksInPath().path(percentEncoded: false) == appPath)
-    #expect(URL(fileURLWithPath: apiLinkPath).resolvingSymlinksInPath().path(percentEncoded: false) == apiPath)
+    #expect(
+      URL(fileURLWithPath: appLinkPath).resolvingSymlinksInPath().path(percentEncoded: false)
+        == appPath)
+    #expect(
+      URL(fileURLWithPath: apiLinkPath).resolvingSymlinksInPath().path(percentEncoded: false)
+        == apiPath)
   }
 
   @Test func createWorkspaceMaterializesRemoteCloneAndBareWorktree() async throws {
@@ -280,12 +292,18 @@ struct ProjectWorkspaceTests {
     #expect(
       commands.value.map(\.arguments) == [
         ["clone", "--end-of-options", "git@github.com:onevcat/app.git", "\(rootPath)/app"],
-        ["-C", "\(rootPath)/app", "checkout", "-B", "codex/app", "--end-of-options", "origin/main"],
-        ["-C", barePath, "worktree", "add", "-b", "codex/api", "\(rootPath)/api", "--end-of-options", "main"],
+        [
+          "-C", "\(rootPath)/app", "checkout", "-B", "codex/app", "--end-of-options", "origin/main",
+        ],
+        [
+          "-C", barePath, "worktree", "add", "-b", "codex/api", "\(rootPath)/api",
+          "--end-of-options", "main",
+        ],
       ])
 
     let loaded = try #require(ProjectWorkspace.load(from: rootURL))
-    #expect(loaded.repositories.map(\.sourceLocation) == ["git@github.com:onevcat/app.git", barePath])
+    #expect(
+      loaded.repositories.map(\.sourceLocation) == ["git@github.com:onevcat/app.git", barePath])
     #expect(loaded.repositories.map(\.branchName) == ["codex/app", "codex/api"])
     #expect(loaded.repositories.map(\.baseRef) == ["origin/main", "main"])
   }
@@ -367,7 +385,8 @@ struct ProjectWorkspaceTests {
               path: "app",
               sourceKind: .remote,
               sourceLocation: "git@github.com:onevcat/app.git",
-              checkout: .trackRemoteRef(remoteRef: "origin/chore/disable-spine", branchName: "chore/disable-spine")
+              checkout: .trackRemoteRef(
+                remoteRef: "origin/chore/disable-spine", branchName: "chore/disable-spine")
             ),
             ProjectWorkspaceRepositoryPlan(
               id: "maker",
@@ -375,7 +394,8 @@ struct ProjectWorkspaceTests {
               path: nil,
               sourceKind: .bareRepository,
               sourceLocation: bareURL.path(percentEncoded: false),
-              checkout: .trackRemoteRef(remoteRef: "origin/chore/disable-spine", branchName: "chore/disable-spine")
+              checkout: .trackRemoteRef(
+                remoteRef: "origin/chore/disable-spine", branchName: "chore/disable-spine")
             ),
           ]
         ),
@@ -398,7 +418,8 @@ struct ProjectWorkspaceTests {
         ],
       ])
     #expect(workspace.repositories.map(\.path) == ["app", "maker"])
-    #expect(workspace.repositories.map(\.branchName) == ["chore/disable-spine", "chore/disable-spine"])
+    #expect(
+      workspace.repositories.map(\.branchName) == ["chore/disable-spine", "chore/disable-spine"])
     #expect(
       workspace.repositories.map(\.baseRef)
         == ["origin/chore/disable-spine", "origin/chore/disable-spine"]
@@ -445,6 +466,15 @@ struct ProjectWorkspaceTests {
     )
   }
 
+  @Test func localBranchNameForRemoteRefKeepsSlashedBranchName() {
+    #expect(
+      ProjectWorkspaceCreationRepository.localBranchName(forRemoteRef: "origin/chore/x")
+        == "chore/x")
+    #expect(
+      ProjectWorkspaceCreationRepository.localBranchName(forRemoteRef: "upstream/main") == "main")
+    #expect(ProjectWorkspaceCreationRepository.localBranchName(forRemoteRef: "main") == nil)
+  }
+
   @Test func planResetsLocalBranchToRemoteWhenChosen() {
     var repository = ProjectWorkspaceCreationRepository(
       id: "maker",
@@ -468,7 +498,8 @@ struct ProjectWorkspaceTests {
 
   @Test func defaultRepositoryNameStripsGitSuffix() {
     #expect(
-      WorkspaceCreationPromptFeature.defaultRepositoryName(for: URL(fileURLWithPath: "/tmp/maker.git"))
+      WorkspaceCreationPromptFeature.defaultRepositoryName(
+        for: URL(fileURLWithPath: "/tmp/maker.git"))
         == "maker"
     )
     #expect(
@@ -525,7 +556,10 @@ struct ProjectWorkspaceTests {
     let apiPath = normalizedTestPath(apiURL)
     #expect(
       commands.value.map(\.arguments) == [
-        ["-C", appPath, "worktree", "add", "-b", "codex/app", "\(rootPath)/app", "--end-of-options", "main"],
+        [
+          "-C", appPath, "worktree", "add", "-b", "codex/app", "\(rootPath)/app",
+          "--end-of-options", "main",
+        ],
         ["-C", apiPath, "worktree", "add", "\(rootPath)/api", "--end-of-options", "origin/main"],
       ])
     #expect(workspace.repositories.map(\.branchName) == ["codex/app", nil])
@@ -571,7 +605,8 @@ struct ProjectWorkspaceTests {
         gitRunner: ProjectWorkspaceGitRunner { command in
           commands.withValue { $0.append(command) }
           if command.arguments.first == "clone" {
-            try FileManager.default.createDirectory(at: cloneDestination, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+              at: cloneDestination, withIntermediateDirectories: true)
           }
           if command.arguments.contains("checkout") {
             throw ProjectWorkspaceCreationError.gitCommandFailed(
@@ -851,7 +886,8 @@ struct ProjectWorkspaceTests {
       workspace,
       rootURL: rootURL,
       gitRunner: ProjectWorkspaceGitRunner { _ in
-        throw ProjectWorkspaceCreationError.gitCommandFailed(command: "git worktree remove", message: "broken")
+        throw ProjectWorkspaceCreationError.gitCommandFailed(
+          command: "git worktree remove", message: "broken")
       }
     )
 
@@ -904,7 +940,8 @@ struct ProjectWorkspaceTests {
 
   private func writeWorkspaceJSON(_ json: String, to rootURL: URL) throws {
     let metadataDirectoryURL = rootURL.appending(path: ProjectWorkspace.metadataDirectoryName)
-    try FileManager.default.createDirectory(at: metadataDirectoryURL, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: metadataDirectoryURL, withIntermediateDirectories: true)
     try Data(json.utf8).write(to: ProjectWorkspace.metadataURL(for: rootURL))
   }
 
