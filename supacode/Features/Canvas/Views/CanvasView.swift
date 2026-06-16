@@ -326,6 +326,10 @@ struct CanvasView: View {
         isFocused: selectionState.primaryTabID == tab.id,
         isSelected: selectionState.selectedTabIDs.contains(tab.id),
         hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
+        tabIcon: tab.iconLock != .auto ? tab.icon : nil,
+        tabId: tab.id,
+        tabs: state.tabManager.tabs,
+        tabContextMenuActions: tabContextMenuActions(for: state),
         cardSize: renderSize,
         isExpanded: isCardExpanded,
         expandHelp: expandHelp,
@@ -379,6 +383,9 @@ struct CanvasView: View {
           state.closeTab(tab.id)
         }
       )
+      .sheet(item: iconPickerBinding(for: tab.id, in: state)) { tabId in
+        iconPickerSheet(state: state, tabId: tabId)
+      }
     }
     // Animatable progress is interpolated by binding the animation to this
     // card's expanded state. A plain withAnimation around expandedTabID doesn't
@@ -387,6 +394,39 @@ struct CanvasView: View {
     // value changes, so the rest stay put.
     .animation(expandAnimation, value: isCardExpanded)
     .zIndex(zIndex(for: tab.id, cardKey: cardKey))
+  }
+
+  func tabContextMenuActions(for state: WorktreeTerminalState) -> TerminalTabContextMenuActions {
+    TerminalTabContextMenuActions(
+      renameTab: { state.promptChangeTabTitle($0) },
+      changeIcon: { state.presentIconPicker(for: $0) },
+      closeTab: { state.closeTab($0) },
+      closeOthers: { state.closeOtherTabs(keeping: $0) },
+      closeToRight: { state.closeTabsToRight(of: $0) },
+      closeAll: { state.closeAllTabs() }
+    )
+  }
+
+  func iconPickerBinding(for tabId: TerminalTabID, in state: WorktreeTerminalState) -> Binding<TerminalTabID?> {
+    Binding(
+      get: { state.iconPickerTabId == tabId ? tabId : nil },
+      set: { state.iconPickerTabId = $0 }
+    )
+  }
+
+  func iconPickerSheet(state: WorktreeTerminalState, tabId: TerminalTabID) -> some View {
+    let currentIcon = state.tabManager.tabs.first(where: { $0.id == tabId })?.icon
+    return TabIconPickerView(
+      initialIcon: currentIcon,
+      defaultIcon: state.defaultIcon(for: tabId),
+      onApply: { newIcon in
+        state.applyIconChange(tabId, icon: newIcon)
+        state.dismissIconPicker()
+      },
+      onCancel: {
+        state.dismissIconPicker()
+      }
+    )
   }
 
   // MARK: - Canvas Gestures

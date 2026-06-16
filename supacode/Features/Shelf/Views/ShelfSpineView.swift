@@ -332,7 +332,8 @@ struct ShelfSpineView: View {
             closeOthers: { terminalState.closeOtherTabs(keeping: $0) },
             closeToRight: { terminalState.closeTabsToRight(of: $0) },
             closeAll: { terminalState.closeAllTabs() }
-          )
+          ),
+          variant: .shelf
         )
       }
     }

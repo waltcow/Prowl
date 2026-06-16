@@ -22,6 +22,10 @@ struct CanvasCardView: View {
   let isFocused: Bool
   let isSelected: Bool
   let hasUnseenNotification: Bool
+  let tabIcon: String?
+  let tabId: TerminalTabID
+  let tabs: [TerminalTabItem]
+  let tabContextMenuActions: TerminalTabContextMenuActions
   let cardSize: CGSize
   /// Whether this card is currently expanded in place (near-fullscreen). When
   /// true the title-bar button restores instead of expands, resize handles and
@@ -141,10 +145,16 @@ struct CanvasCardView: View {
       Text(repositoryName)
         .font(.caption.bold())
         .lineLimit(1)
-      Text("/ \(worktreeName)")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
+      HStack(spacing: 3) {
+        Text("/")
+        if let tabIcon {
+          TabIconImage(rawName: tabIcon, pointSize: 10)
+        }
+        Text(worktreeName)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .lineLimit(1)
       Spacer()
       titleBarActions
     }
@@ -170,6 +180,12 @@ struct CanvasCardView: View {
             ))
         },
       isEnabled: !isExpanded
+    )
+    .terminalTabContextMenu(
+      tabId: tabId,
+      tabs: tabs,
+      actions: tabContextMenuActions,
+      variant: .canvas
     )
   }
 
