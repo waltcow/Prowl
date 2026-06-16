@@ -47,6 +47,10 @@ struct BatchedPullRequestRefreshReducerTests {
     }
     await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
       $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "github.com/khoi/alpha": 0,
+        "github.com/khoi/upstream": 1,
+      ]
     }
     await store.finish()
 
@@ -90,6 +94,10 @@ struct BatchedPullRequestRefreshReducerTests {
     }
     await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
       $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 2
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "ghe.example/khoi/alpha": 1,
+        "github.com/khoi/alpha": 0,
+      ]
     }
 
     #expect(Set(enqueued.value.map(\.host)) == ["github.com", "ghe.example"])
@@ -107,6 +115,7 @@ struct BatchedPullRequestRefreshReducerTests {
     ) {
       $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
       $0.prRefreshResultsByRepositoryID[context.repository.id] = ["feature": githubPullRequest]
+      $0.prRefreshResultPrioritiesByRepositoryID[context.repository.id] = ["feature": .max]
     }
 
     await store.send(
@@ -122,6 +131,7 @@ struct BatchedPullRequestRefreshReducerTests {
     ) {
       $0.prRefreshBatchCountsByRepositoryID = [:]
       $0.prRefreshResultsByRepositoryID = [:]
+      $0.prRefreshResultPrioritiesByRepositoryID = [:]
     }
     await store.receive(\.githubIntegration.repositoryPullRequestsLoaded) {
       var entry = WorktreeInfoEntry()
@@ -131,6 +141,98 @@ struct BatchedPullRequestRefreshReducerTests {
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
       $0.inFlightPullRequestRefreshRepositoryIDs = []
       $0.prRefreshBatchCountsByRepositoryID = [:]
+      $0.prRefreshRemotePrioritiesByRepositoryID = [:]
+    }
+    await store.finish()
+  }
+
+  @Test func refreshPrefersHigherPriorityRemoteWhenHostBatchResultsRace() async {
+    let context = makeContext()
+    let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
+    let enterpriseInfo = GithubRemoteInfo(host: "github.enterprise.test", owner: "khoi", repo: "alpha")
+    let enterprisePullRequest = makePullRequestFixture(
+      title: "Enterprise PR",
+      url: "https://github.enterprise.test/khoi/alpha/pull/8"
+    )
+    let originPullRequest = makePullRequestFixture(
+      title: "Origin PR",
+      url: "https://github.com/khoi/alpha/pull/7"
+    )
+
+    let store = TestStore(initialState: context.state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.githubRemoteInfos = { _ in [context.remoteInfo, enterpriseInfo] }
+      $0.pullRequestRefreshCoordinator = PullRequestRefreshCoordinatorClient(
+        enqueue: { request in
+          enqueued.withValue { $0.append(request) }
+        },
+        cancelHost: { _ in },
+        reset: {}
+      )
+    }
+
+    await store.send(
+      .worktreeInfoEvent(
+        .repositoryPullRequestRefresh(
+          repositoryRootURL: context.repoRootURL,
+          worktreeIDs: context.worktreeIDs
+        )
+      )
+    )
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = [context.repository.id]
+    }
+    await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 2
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "github.com/khoi/alpha": 0,
+        "github.enterprise.test/khoi/alpha": 1,
+      ]
+    }
+
+    #expect(Set(enqueued.value.map(\.host)) == ["github.com", "github.enterprise.test"])
+
+    await store.send(
+      .githubIntegration(
+        .pullRequestRefreshBatchOutcome(
+          .refreshed(
+            repositoryID: context.repository.id,
+            repositoryRootURL: context.repoRootURL,
+            worktreeIDs: context.worktreeIDs,
+            prsByBranch: ["feature": enterprisePullRequest]
+          )
+        ))
+    ) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
+      $0.prRefreshResultsByRepositoryID[context.repository.id] = ["feature": enterprisePullRequest]
+      $0.prRefreshResultPrioritiesByRepositoryID[context.repository.id] = ["feature": 1]
+    }
+
+    await store.send(
+      .githubIntegration(
+        .pullRequestRefreshBatchOutcome(
+          .refreshed(
+            repositoryID: context.repository.id,
+            repositoryRootURL: context.repoRootURL,
+            worktreeIDs: context.worktreeIDs,
+            prsByBranch: ["feature": originPullRequest]
+          )
+        ))
+    ) {
+      $0.prRefreshBatchCountsByRepositoryID = [:]
+      $0.prRefreshResultsByRepositoryID = [:]
+      $0.prRefreshResultPrioritiesByRepositoryID = [:]
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestsLoaded) {
+      var entry = WorktreeInfoEntry()
+      entry.pullRequest = originPullRequest
+      $0.worktreeInfoByID[context.featureWorktree.id] = entry
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = []
+      $0.prRefreshBatchCountsByRepositoryID = [:]
+      $0.prRefreshRemotePrioritiesByRepositoryID = [:]
     }
     await store.finish()
   }
@@ -170,6 +272,9 @@ struct BatchedPullRequestRefreshReducerTests {
     }
     await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
       $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "github.com/khoi/alpha": 0
+      ]
     }
     await store.finish()
 
@@ -317,10 +422,13 @@ private struct RefreshTestContext {
   var worktreeIDs: [Worktree.ID] { [mainWorktree.id, featureWorktree.id] }
 }
 
-nonisolated private func makePullRequestFixture() -> GithubPullRequest {
+nonisolated private func makePullRequestFixture(
+  title: String = "Coord PR",
+  url: String = "https://example.com/coord-pr/7"
+) -> GithubPullRequest {
   GithubPullRequest(
     number: 7,
-    title: "Coord PR",
+    title: title,
     state: "OPEN",
     additions: 0,
     deletions: 0,
@@ -329,7 +437,7 @@ nonisolated private func makePullRequestFixture() -> GithubPullRequest {
     mergeable: nil,
     mergeStateStatus: nil,
     updatedAt: nil,
-    url: "https://example.com/coord-pr/7",
+    url: url,
     headRefName: "feature",
     baseRefName: "main",
     commitsCount: 1,

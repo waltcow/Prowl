@@ -185,7 +185,11 @@ struct RepositoriesFeature {
     case refreshGithubIntegrationAvailability
     case githubIntegrationAvailabilityUpdated(Bool)
     case repositoryPullRequestRefreshCompleted(Repository.ID)
-    case pullRequestRefreshBatchCountResolved(repositoryID: Repository.ID, count: Int)
+    case pullRequestRefreshBatchCountResolved(
+      repositoryID: Repository.ID,
+      count: Int,
+      remotePriorities: [String: Int]
+    )
     case repositoryPullRequestsLoaded(
       repositoryID: Repository.ID,
       pullRequestsByWorktreeID: [Worktree.ID: GithubPullRequest?]
@@ -265,6 +269,10 @@ struct RepositoriesFeature {
     var inFlightPullRequestRefreshRepositoryIDs: Set<Repository.ID> = []
     var prRefreshBatchCountsByRepositoryID: [Repository.ID: Int] = [:]
     var prRefreshResultsByRepositoryID: [Repository.ID: [String: GithubPullRequest]] = [:]
+    /// Cross-host PR refresh batches complete independently; keep the intended remote
+    /// order so same-branch collisions are resolved by priority, not arrival time.
+    var prRefreshRemotePrioritiesByRepositoryID: [Repository.ID: [String: Int]] = [:]
+    var prRefreshResultPrioritiesByRepositoryID: [Repository.ID: [String: Int]] = [:]
     var queuedPullRequestRefreshByRepositoryID: [Repository.ID: PendingPullRequestRefresh] = [:]
     var codeHostByRepositoryID: [Repository.ID: CodeHost] = [:]
     var sidebarSelectedWorktreeIDs: Set<Worktree.ID> = []

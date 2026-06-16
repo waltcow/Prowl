@@ -178,8 +178,7 @@ extension RepositoriesFeature {
         }
         state.queuedPullRequestRefreshByRepositoryID.removeAll()
         state.inFlightPullRequestRefreshRepositoryIDs.removeAll()
-        state.prRefreshBatchCountsByRepositoryID.removeAll()
-        state.prRefreshResultsByRepositoryID.removeAll()
+        clearAllPullRequestRefreshTracking(state: &state)
         return .run { send in
           while !Task.isCancelled {
             try? await ContinuousClock().sleep(for: githubIntegrationRecoveryInterval)
@@ -214,8 +213,7 @@ extension RepositoriesFeature {
 
     case .repositoryPullRequestRefreshCompleted(let repositoryID):
       state.inFlightPullRequestRefreshRepositoryIDs.remove(repositoryID)
-      state.prRefreshBatchCountsByRepositoryID.removeValue(forKey: repositoryID)
-      state.prRefreshResultsByRepositoryID.removeValue(forKey: repositoryID)
+      clearPullRequestRefreshTracking(repositoryID: repositoryID, state: &state)
       guard state.githubIntegrationAvailability == .available,
         let pending = state.queuedPullRequestRefreshByRepositoryID.removeValue(
           forKey: repositoryID
@@ -232,11 +230,13 @@ extension RepositoriesFeature {
         )
       )
 
-    case .pullRequestRefreshBatchCountResolved(let repositoryID, let count):
+    case .pullRequestRefreshBatchCountResolved(let repositoryID, let count, let remotePriorities):
       guard state.inFlightPullRequestRefreshRepositoryIDs.contains(repositoryID) else {
         return .none
       }
       state.prRefreshBatchCountsByRepositoryID[repositoryID] = max(1, count)
+      state.prRefreshRemotePrioritiesByRepositoryID[repositoryID] = remotePriorities
+      state.prRefreshResultPrioritiesByRepositoryID.removeValue(forKey: repositoryID)
       return .none
 
     case .repositoryPullRequestsLoaded(let repositoryID, let pullRequestsByWorktreeID):
@@ -686,8 +686,7 @@ extension RepositoriesFeature {
         state.pendingPullRequestRefreshByRepositoryID.removeAll()
         state.queuedPullRequestRefreshByRepositoryID.removeAll()
         state.inFlightPullRequestRefreshRepositoryIDs.removeAll()
-        state.prRefreshBatchCountsByRepositoryID.removeAll()
-        state.prRefreshResultsByRepositoryID.removeAll()
+        clearAllPullRequestRefreshTracking(state: &state)
         return .merge(
           .cancel(id: CancelID.githubIntegrationRecovery),
           .send(.githubIntegration(.refreshGithubIntegrationAvailability))
@@ -697,8 +696,7 @@ extension RepositoriesFeature {
       state.pendingPullRequestRefreshByRepositoryID.removeAll()
       state.queuedPullRequestRefreshByRepositoryID.removeAll()
       state.inFlightPullRequestRefreshRepositoryIDs.removeAll()
-      state.prRefreshBatchCountsByRepositoryID.removeAll()
-      state.prRefreshResultsByRepositoryID.removeAll()
+      clearAllPullRequestRefreshTracking(state: &state)
       let worktreeIDs = Array(state.worktreeInfoByID.keys)
       for worktreeID in worktreeIDs {
         updateWorktreePullRequest(
@@ -729,8 +727,7 @@ extension RepositoriesFeature {
     case .refreshed(let repositoryID, _, let worktreeIDs, let prsByBranch):
       guard let repository = state.repositories[id: repositoryID] else {
         state.inFlightPullRequestRefreshRepositoryIDs.remove(repositoryID)
-        state.prRefreshBatchCountsByRepositoryID.removeValue(forKey: repositoryID)
-        state.prRefreshResultsByRepositoryID.removeValue(forKey: repositoryID)
+        clearPullRequestRefreshTracking(repositoryID: repositoryID, state: &state)
         return .none
       }
       mergePullRequestRefreshResults(
@@ -745,6 +742,7 @@ extension RepositoriesFeature {
         state.prRefreshResultsByRepositoryID.removeValue(
           forKey: repositoryID
         ) ?? [:]
+      state.prRefreshResultPrioritiesByRepositoryID.removeValue(forKey: repositoryID)
       let prsByWorktreeID = pullRequestsByWorktreeID(
         repository: repository,
         worktreeIDs: worktreeIDs,
@@ -769,6 +767,7 @@ extension RepositoriesFeature {
         state.prRefreshResultsByRepositoryID.removeValue(
           forKey: repositoryID
         ) ?? [:]
+      state.prRefreshResultPrioritiesByRepositoryID.removeValue(forKey: repositoryID)
       guard !mergedPRsByBranch.isEmpty,
         let repository = state.repositories[id: repositoryID]
       else {
@@ -801,10 +800,46 @@ extension RepositoriesFeature {
       return
     }
     var merged = state.prRefreshResultsByRepositoryID[repositoryID] ?? [:]
-    for (branch, pullRequest) in prsByBranch where merged[branch] == nil {
-      merged[branch] = pullRequest
+    var resultPriorities = state.prRefreshResultPrioritiesByRepositoryID[repositoryID] ?? [:]
+    let remotePriorities = state.prRefreshRemotePrioritiesByRepositoryID[repositoryID] ?? [:]
+    // Host batches race independently. Use the returned PR URL to recover its
+    // source repo, then compare against the original remote order before replacing.
+    for (branch, pullRequest) in prsByBranch {
+      let priority = remotePriority(for: pullRequest, remotePriorities: remotePriorities)
+      if merged[branch] == nil || priority < (resultPriorities[branch] ?? .max) {
+        merged[branch] = pullRequest
+        resultPriorities[branch] = priority
+      }
     }
     state.prRefreshResultsByRepositoryID[repositoryID] = merged
+    state.prRefreshResultPrioritiesByRepositoryID[repositoryID] = resultPriorities
+  }
+
+  private func remotePriority(
+    for pullRequest: GithubPullRequest,
+    remotePriorities: [String: Int]
+  ) -> Int {
+    guard let remoteInfo = GitClient.parseGithubRemoteInfo(pullRequest.url) else {
+      return .max
+    }
+    return remotePriorities[Self.pullRequestRefreshRemotePriorityKey(remoteInfo)] ?? .max
+  }
+
+  private func clearPullRequestRefreshTracking(
+    repositoryID: Repository.ID,
+    state: inout State
+  ) {
+    state.prRefreshBatchCountsByRepositoryID.removeValue(forKey: repositoryID)
+    state.prRefreshResultsByRepositoryID.removeValue(forKey: repositoryID)
+    state.prRefreshRemotePrioritiesByRepositoryID.removeValue(forKey: repositoryID)
+    state.prRefreshResultPrioritiesByRepositoryID.removeValue(forKey: repositoryID)
+  }
+
+  private func clearAllPullRequestRefreshTracking(state: inout State) {
+    state.prRefreshBatchCountsByRepositoryID.removeAll()
+    state.prRefreshResultsByRepositoryID.removeAll()
+    state.prRefreshRemotePrioritiesByRepositoryID.removeAll()
+    state.prRefreshResultPrioritiesByRepositoryID.removeAll()
   }
 
   private func consumePullRequestRefreshBatch(
@@ -860,7 +895,8 @@ extension RepositoriesFeature {
         .githubIntegration(
           .pullRequestRefreshBatchCountResolved(
             repositoryID: repositoryID,
-            count: remoteInfosByHost.count
+            count: remoteInfosByHost.count,
+            remotePriorities: Self.pullRequestRefreshRemotePriorities(remoteInfos)
           )
         )
       )
@@ -888,6 +924,29 @@ extension RepositoriesFeature {
       return nil
     }
     return pullRequest
+  }
+
+  nonisolated private static func pullRequestRefreshRemotePriorities(
+    _ remoteInfos: [GithubRemoteInfo]
+  ) -> [String: Int] {
+    var priorities: [String: Int] = [:]
+    for (index, remoteInfo) in remoteInfos.enumerated() {
+      let key = pullRequestRefreshRemotePriorityKey(remoteInfo)
+      if priorities[key] == nil {
+        priorities[key] = index
+      }
+    }
+    return priorities
+  }
+
+  nonisolated private static func pullRequestRefreshRemotePriorityKey(
+    _ remoteInfo: GithubRemoteInfo
+  ) -> String {
+    [
+      remoteInfo.host.lowercased(),
+      remoteInfo.owner.lowercased(),
+      remoteInfo.repo.lowercased(),
+    ].joined(separator: "/")
   }
 
   nonisolated private static func validWebURL(_ raw: String) -> URL? {
