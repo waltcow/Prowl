@@ -152,7 +152,10 @@ struct AppFeature {
           )
         case .inactive, .background:
           var effects: [Effect<Action>] = [.cancel(id: CancelID.periodicRefresh)]
-          if state.settings.restoreTerminalLayoutOnLaunch, !state.suppressLayoutSaveUntilRelaunch {
+          if state.settings.restoreTerminalLayoutOnLaunch,
+            !state.suppressLayoutSaveUntilRelaunch,
+            state.launchRestoreMode != .restoreLayout
+          {
             appLogger.info("[LayoutRestore] scenePhase=\(String(describing: phase)), saving layout snapshot")
             effects.append(.run { _ in await terminalClient.send(.saveLayoutSnapshot) })
           }

@@ -372,7 +372,43 @@ struct AppFeatureTerminalLayoutRestoreTests {
     await store.finish()
   }
 
-  @Test(.dependencies) func scenePhaseInactiveSavesLayoutSnapshot() async {
+  @Test(.dependencies) func scenePhaseInactiveSavesLayoutSnapshotAfterRestoreConsumed() async {
+    let worktree = makeWorktree()
+    let repository = makeRepository(worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State(repositories: [repository])
+    repositoriesState.snapshotPersistencePhase = .active
+    var settings = SettingsFeature.State()
+    settings.restoreTerminalLayoutOnLaunch = true
+    let sentCommands = LockIsolated<[TerminalClient.Command]>([])
+
+    let store = TestStore(
+      initialState: AppFeature.State(repositories: repositoriesState, settings: settings)
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.send = { command in
+        sentCommands.withValue { $0.append(command) }
+      }
+      $0.worktreeInfoWatcher.send = { _ in }
+    }
+    store.exhaustivity = .off
+
+    // Consume the restore mode via repositoriesChanged
+    await store.send(.repositories(.delegate(.repositoriesChanged([repository])))) {
+      $0.launchRestoreMode = .lastFocusedWorktree
+      $0.repositories.selection = nil
+    }
+    await store.finish()
+    sentCommands.withValue { $0.removeAll() }
+
+    // Now scenePhase inactive should trigger save
+    await store.send(.scenePhaseChanged(.inactive))
+    await store.finish()
+
+    #expect(sentCommands.value == [.saveLayoutSnapshot])
+  }
+
+  @Test(.dependencies) func scenePhaseInactiveSkipsSaveDuringPendingRestore() async {
     let sentCommands = LockIsolated<[TerminalClient.Command]>([])
     var settings = SettingsFeature.State()
     settings.restoreTerminalLayoutOnLaunch = true
@@ -385,10 +421,12 @@ struct AppFeatureTerminalLayoutRestoreTests {
     }
     store.exhaustivity = .off
 
+    // launchRestoreMode is .restoreLayout — save must be skipped
+    // to prevent clearing a snapshot before restore has a chance to load it
     await store.send(.scenePhaseChanged(.inactive))
     await store.finish()
 
-    #expect(sentCommands.value == [.saveLayoutSnapshot])
+    #expect(!sentCommands.value.contains(.saveLayoutSnapshot))
   }
 
   @Test(.dependencies) func scenePhaseInactiveSkipsSaveWhenRestoreDisabled() async {
