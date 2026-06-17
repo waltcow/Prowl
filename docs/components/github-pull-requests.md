@@ -14,6 +14,11 @@ with a worktree's branch and exposes its status and actions. It works through th
 **`gh` CLI**, so it uses your existing `gh auth` — Prowl never handles tokens
 itself.
 
+If a repository has multiple GitHub remotes, Prowl checks each remote for a PR on
+the worktree branch. `origin` is preferred, `upstream` comes next, and other
+named remotes are used alphabetically, so fork-based worktrees can show upstream
+PRs without changing `origin` or restarting the app.
+
 ## What it shows
 
 - PR number, title, state (open/closed/merged), draft status.

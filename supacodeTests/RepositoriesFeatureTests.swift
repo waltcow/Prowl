@@ -4065,6 +4065,104 @@ struct RepositoriesFeatureTests {
     await store.finish()
   }
 
+  @Test func pullRequestMergeUsesPullRequestURLRemoteInfo() async {
+    let fixture = makePullRequestURLRemoteInfoFixture(repoRoot: "/tmp/repo-pr-url-merge")
+    let remoteInfos = LockIsolated<[GithubRemoteInfo]>([])
+    let store = TestStore(initialState: fixture.state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.githubIntegration.isAvailable = { true }
+      $0.gitClient.remoteInfo = { _ in
+        Issue.record("git remoteInfo should not run when PR URL resolves")
+        return nil
+      }
+      $0.githubCLI.resolveRemoteInfo = { _ in
+        Issue.record("gh resolveRemoteInfo should not run when PR URL resolves")
+        return nil
+      }
+      $0.githubCLI.mergePullRequest = { _, remoteInfo, _, _, _ in
+        remoteInfos.withValue { $0.append(remoteInfo) }
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.githubIntegration(.pullRequestAction(fixture.featureWorktree.id, .merge)))
+    await store.receive(\.showToast) {
+      $0.statusToast = .inProgress("Merging pull request…")
+    }
+    await store.receive(\.showToast) {
+      $0.statusToast = .success("Pull request merged")
+    }
+    await store.receive(\.worktreeInfoEvent)
+    #expect(remoteInfos.value == [fixture.expectedRemoteInfo])
+    await store.finish()
+  }
+
+  @Test func pullRequestCloseUsesPullRequestURLRemoteInfo() async {
+    let fixture = makePullRequestURLRemoteInfoFixture(repoRoot: "/tmp/repo-pr-url-close")
+    let remoteInfos = LockIsolated<[GithubRemoteInfo]>([])
+    let store = TestStore(initialState: fixture.state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.githubIntegration.isAvailable = { true }
+      $0.gitClient.remoteInfo = { _ in
+        Issue.record("git remoteInfo should not run when PR URL resolves")
+        return nil
+      }
+      $0.githubCLI.resolveRemoteInfo = { _ in
+        Issue.record("gh resolveRemoteInfo should not run when PR URL resolves")
+        return nil
+      }
+      $0.githubCLI.closePullRequest = { _, remoteInfo, _, _ in
+        remoteInfos.withValue { $0.append(remoteInfo) }
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.githubIntegration(.pullRequestAction(fixture.featureWorktree.id, .close)))
+    await store.receive(\.showToast) {
+      $0.statusToast = .inProgress("Closing pull request…")
+    }
+    await store.receive(\.showToast) {
+      $0.statusToast = .success("Pull request closed")
+    }
+    await store.receive(\.worktreeInfoEvent)
+    #expect(remoteInfos.value == [fixture.expectedRemoteInfo])
+    await store.finish()
+  }
+
+  @Test func pullRequestMarkReadyUsesPullRequestURLRemoteInfo() async {
+    let fixture = makePullRequestURLRemoteInfoFixture(repoRoot: "/tmp/repo-pr-url-ready")
+    let remoteInfos = LockIsolated<[GithubRemoteInfo]>([])
+    let store = TestStore(initialState: fixture.state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.githubIntegration.isAvailable = { true }
+      $0.gitClient.remoteInfo = { _ in
+        Issue.record("git remoteInfo should not run when PR URL resolves")
+        return nil
+      }
+      $0.githubCLI.resolveRemoteInfo = { _ in
+        Issue.record("gh resolveRemoteInfo should not run when PR URL resolves")
+        return nil
+      }
+      $0.githubCLI.markPullRequestReady = { _, remoteInfo, _, _ in
+        remoteInfos.withValue { $0.append(remoteInfo) }
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.githubIntegration(.pullRequestAction(fixture.featureWorktree.id, .markReadyForReview)))
+    await store.receive(\.showToast) {
+      $0.statusToast = .inProgress("Marking PR ready…")
+    }
+    await store.receive(\.showToast) {
+      $0.statusToast = .success("Pull request marked ready")
+    }
+    #expect(remoteInfos.value == [fixture.expectedRemoteInfo])
+    await store.finish()
+  }
+
   @Test func pullRequestActionMergeRequiresResolvedRemoteInfo() async {
     let repoRoot = "/tmp/repo"
     let mainWorktree = makeWorktree(id: repoRoot, name: "main", repoRoot: repoRoot)
@@ -5320,6 +5418,40 @@ struct RepositoriesFeatureTests {
     state.repositories = IdentifiedArray(uniqueElements: repositories)
     state.repositoryRoots = repositories.map(\.rootURL)
     return state
+  }
+
+  private func makePullRequestURLRemoteInfoFixture(repoRoot: String) -> PullRequestURLRemoteInfoFixture {
+    let mainWorktree = makeWorktree(id: repoRoot, name: "main", repoRoot: repoRoot)
+    let featureWorktree = makeWorktree(
+      id: "\(repoRoot)/feature",
+      name: "feature",
+      repoRoot: repoRoot
+    )
+    let repository = makeRepository(id: repoRoot, worktrees: [mainWorktree, featureWorktree])
+    let pullRequest = makePullRequest(
+      state: "OPEN",
+      headRefName: featureWorktree.name,
+      number: 456,
+      url: "https://github.com/onevcat/Prowl/pull/456"
+    )
+    var state = makeState(repositories: [repository])
+    state.githubIntegrationAvailability = .disabled
+    state.worktreeInfoByID[featureWorktree.id] = WorktreeInfoEntry(
+      addedLines: nil,
+      removedLines: nil,
+      pullRequest: pullRequest
+    )
+    return PullRequestURLRemoteInfoFixture(
+      featureWorktree: featureWorktree,
+      state: state,
+      expectedRemoteInfo: GithubRemoteInfo(host: "github.com", owner: "onevcat", repo: "Prowl")
+    )
+  }
+
+  private struct PullRequestURLRemoteInfoFixture {
+    let featureWorktree: Worktree
+    let state: RepositoriesFeature.State
+    let expectedRemoteInfo: GithubRemoteInfo
   }
 
   @Test func loadPersistedRepositoriesStartsFetchesConcurrentlyAndPreservesRootOrder() async {

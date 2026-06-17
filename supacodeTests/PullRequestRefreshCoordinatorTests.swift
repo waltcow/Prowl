@@ -299,6 +299,47 @@ struct PullRequestRefreshCoordinatorTests {
     #expect(refreshed.first { $0.0 == "alpha-b" }?.1 == ["feat-2"])
   }
 
+  @Test func sameLocalRepositoryWithDifferentRemoteReposQueriesAllCandidatesBeforeEmitting() async throws {
+    let clock = TestClock()
+    let probe = CoordinatorProbe()
+    let outcomes = OutcomeCollector()
+    let coordinator = makeCoordinator(
+      probe: probe,
+      clock: clock,
+      outcomes: outcomes,
+      batched: { _, requests in
+        var dict: [RepoKey: [String: GithubPullRequest]] = [:]
+        for request in requests {
+          if request.repo == "upstream" {
+            dict[request.key] = ["feat-1": makeFixturePullRequest(repo: "upstream")]
+          } else {
+            dict[request.key] = [:]
+          }
+        }
+        return CrossRepoPullRequestResult(successByRepo: dict)
+      }
+    )
+
+    coordinator.enqueue(request(repo: "fork", repositoryID: "local"))
+    coordinator.enqueue(request(repo: "upstream", repositoryID: "local"))
+    await clock.advance(by: .milliseconds(250))
+    await Task.yield()
+    await Task.yield()
+
+    let calls = await probe.batchedCalls()
+    #expect(calls.count == 1)
+    #expect(Set(calls.first?.requests.map(\.repo) ?? []) == ["fork", "upstream"])
+
+    let refreshed = await outcomes.snapshot().compactMap { outcome -> [String: GithubPullRequest]? in
+      if case .refreshed("local", _, _, let prsByBranch) = outcome {
+        return prsByBranch
+      }
+      return nil
+    }
+    #expect(refreshed.count == 1)
+    #expect(refreshed.first?["feat-1"]?.title == "PR-upstream")
+  }
+
   @Test func duplicateRepoKeysFallbackOnceAndFanOutToEachRepository() async throws {
     let clock = TestClock()
     let probe = CoordinatorProbe()

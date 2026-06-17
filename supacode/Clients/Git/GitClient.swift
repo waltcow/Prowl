@@ -462,6 +462,20 @@ struct GitClient {
     await remoteWebInfo(for: repositoryRoot)?.repositoryURL
   }
 
+  nonisolated func githubRemoteInfos(for repositoryRoot: URL) async -> [GithubRemoteInfo] {
+    let candidates = await remoteWebCandidates(for: repositoryRoot).compactMap {
+      candidate -> (
+        name: String,
+        info: GithubRemoteInfo
+      )? in
+      guard let info = Self.parseGithubRemoteInfo(candidate.info) else {
+        return nil
+      }
+      return (name: candidate.name, info: info)
+    }
+    return Self.prioritizedGithubRemoteInfos(candidates)
+  }
+
   nonisolated func remoteInfo(for repositoryRoot: URL) async -> GithubRemoteInfo? {
     guard let remoteWebInfo = await remoteWebInfo(for: repositoryRoot) else {
       return nil
@@ -470,6 +484,13 @@ struct GitClient {
   }
 
   nonisolated private func remoteWebInfo(for repositoryRoot: URL) async -> GitRemoteWebInfo? {
+    let candidates = await remoteWebCandidates(for: repositoryRoot)
+    return Self.originFirstRemoteWebCandidates(candidates).first?.info
+  }
+
+  nonisolated private func remoteWebCandidates(
+    for repositoryRoot: URL
+  ) async -> [(name: String, info: GitRemoteWebInfo)] {
     let path = repositoryRoot.path(percentEncoded: false)
     guard
       let remotesOutput = try? await runGit(
@@ -477,20 +498,15 @@ struct GitClient {
         arguments: ["-C", path, "remote"]
       )
     else {
-      return nil
+      return []
     }
     let remotes =
       remotesOutput
       .split(whereSeparator: \.isNewline)
       .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-    let orderedRemotes: [String]
-    if remotes.contains("origin") {
-      orderedRemotes = ["origin"] + remotes.filter { $0 != "origin" }
-    } else {
-      orderedRemotes = remotes
-    }
-    for remote in orderedRemotes {
+    var candidates: [(name: String, info: GitRemoteWebInfo)] = []
+    for remote in remotes {
       guard
         let remoteURL = try? await runGit(
           operation: .remoteInfo,
@@ -500,10 +516,63 @@ struct GitClient {
         continue
       }
       if let info = Self.parseRepositoryWebInfo(remoteURL) {
-        return info
+        candidates.append((name: remote, info: info))
       }
     }
-    return nil
+    return candidates
+  }
+
+  nonisolated private static func originFirstRemoteWebCandidates(
+    _ candidates: [(name: String, info: GitRemoteWebInfo)]
+  ) -> [(name: String, info: GitRemoteWebInfo)] {
+    guard candidates.contains(where: { $0.name == "origin" }) else {
+      return candidates
+    }
+    return candidates.filter { $0.name == "origin" } + candidates.filter { $0.name != "origin" }
+  }
+
+  nonisolated static func prioritizedGithubRemoteInfos(
+    _ candidates: [(name: String, info: GithubRemoteInfo)]
+  ) -> [GithubRemoteInfo] {
+    var seen = Set<String>()
+    return
+      candidates
+      .enumerated()
+      .sorted { lhs, rhs in
+        let lhsPriority = githubPullRequestRemotePriority(lhs.element.name)
+        let rhsPriority = githubPullRequestRemotePriority(rhs.element.name)
+        if lhsPriority != rhsPriority {
+          return lhsPriority < rhsPriority
+        }
+        let nameComparison = lhs.element.name.localizedStandardCompare(rhs.element.name)
+        if nameComparison != .orderedSame {
+          return nameComparison == .orderedAscending
+        }
+        return lhs.offset < rhs.offset
+      }
+      .compactMap { entry in
+        let info = entry.element.info
+        let key = [
+          info.host.lowercased(),
+          info.owner.lowercased(),
+          info.repo.lowercased(),
+        ].joined(separator: "/")
+        guard seen.insert(key).inserted else {
+          return nil
+        }
+        return info
+      }
+  }
+
+  nonisolated private static func githubPullRequestRemotePriority(_ name: String) -> Int {
+    switch name.lowercased() {
+    case "origin":
+      0
+    case "upstream":
+      1
+    default:
+      2
+    }
   }
 
   nonisolated func remoteNames(for repoRoot: URL) async throws -> [String] {

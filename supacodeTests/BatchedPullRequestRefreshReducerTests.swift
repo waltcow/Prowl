@@ -8,17 +8,17 @@ import Testing
 
 @MainActor
 struct BatchedPullRequestRefreshReducerTests {
-  @Test func refreshDispatchesViaCoordinatorWhenRemoteInfoCached() async {
+  @Test func refreshDispatchesViaCoordinatorUsingCurrentRemoteInfos() async {
     let context = makeContext()
     let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
-    var initialState = context.state
-    initialState.remoteInfoByRepositoryID[context.repository.id] = context.remoteInfo
+    let upstreamInfo = GithubRemoteInfo(host: "github.com", owner: "khoi", repo: "upstream")
 
-    let store = TestStore(initialState: initialState) {
+    let store = TestStore(initialState: context.state) {
       RepositoriesFeature()
     } withDependencies: {
+      $0.gitClient.githubRemoteInfos = { _ in [context.remoteInfo, upstreamInfo] }
       $0.githubCLI.resolveRemoteInfo = { _ in
-        Issue.record("Should not resolve when cache hit")
+        Issue.record("gh resolveRemoteInfo should not run when git remotes resolve")
         return nil
       }
       $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
@@ -45,18 +45,199 @@ struct BatchedPullRequestRefreshReducerTests {
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
       $0.inFlightPullRequestRefreshRepositoryIDs = [context.repository.id]
     }
+    await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "github.com/khoi/alpha": 0,
+        "github.com/khoi/upstream": 1,
+      ]
+    }
     await store.finish()
 
     let snapshot = enqueued.value
     #expect(snapshot.count == 1)
     let request = snapshot[0]
     #expect(request.host == "github.com")
-    #expect(request.owner == "khoi")
-    #expect(request.repo == "alpha")
+    #expect(request.repositories == [context.remoteInfo, upstreamInfo])
     #expect(request.branches == ["main", "feature"])
   }
 
-  @Test func refreshResolvesAndCachesRemoteInfoOnFirstRun() async {
+  @Test func refreshWaitsForAllHostBatchesBeforeCompleting() async {
+    let context = makeContext()
+    let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
+    let githubPullRequest = makePullRequestFixture()
+    let enterpriseInfo = GithubRemoteInfo(host: "ghe.example", owner: "khoi", repo: "alpha")
+
+    let store = TestStore(initialState: context.state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.githubRemoteInfos = { _ in [context.remoteInfo, enterpriseInfo] }
+      $0.pullRequestRefreshCoordinator = PullRequestRefreshCoordinatorClient(
+        enqueue: { request in
+          enqueued.withValue { $0.append(request) }
+        },
+        cancelHost: { _ in },
+        reset: {}
+      )
+    }
+
+    await store.send(
+      .worktreeInfoEvent(
+        .repositoryPullRequestRefresh(
+          repositoryRootURL: context.repoRootURL,
+          worktreeIDs: context.worktreeIDs
+        )
+      )
+    )
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = [context.repository.id]
+    }
+    await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 2
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "ghe.example/khoi/alpha": 1,
+        "github.com/khoi/alpha": 0,
+      ]
+    }
+
+    #expect(Set(enqueued.value.map(\.host)) == ["github.com", "ghe.example"])
+
+    await store.send(
+      .githubIntegration(
+        .pullRequestRefreshBatchOutcome(
+          .refreshed(
+            repositoryID: context.repository.id,
+            repositoryRootURL: context.repoRootURL,
+            worktreeIDs: context.worktreeIDs,
+            prsByBranch: ["feature": githubPullRequest]
+          )
+        ))
+    ) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
+      $0.prRefreshResultsByRepositoryID[context.repository.id] = ["feature": githubPullRequest]
+      $0.prRefreshResultPrioritiesByRepositoryID[context.repository.id] = ["feature": .max]
+    }
+
+    await store.send(
+      .githubIntegration(
+        .pullRequestRefreshBatchOutcome(
+          .refreshed(
+            repositoryID: context.repository.id,
+            repositoryRootURL: context.repoRootURL,
+            worktreeIDs: context.worktreeIDs,
+            prsByBranch: [:]
+          )
+        ))
+    ) {
+      $0.prRefreshBatchCountsByRepositoryID = [:]
+      $0.prRefreshResultsByRepositoryID = [:]
+      $0.prRefreshResultPrioritiesByRepositoryID = [:]
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestsLoaded) {
+      var entry = WorktreeInfoEntry()
+      entry.pullRequest = githubPullRequest
+      $0.worktreeInfoByID[context.featureWorktree.id] = entry
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = []
+      $0.prRefreshBatchCountsByRepositoryID = [:]
+      $0.prRefreshRemotePrioritiesByRepositoryID = [:]
+    }
+    await store.finish()
+  }
+
+  @Test func refreshPrefersHigherPriorityRemoteWhenHostBatchResultsRace() async {
+    let context = makeContext()
+    let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
+    let enterpriseInfo = GithubRemoteInfo(host: "github.enterprise.test", owner: "khoi", repo: "alpha")
+    let enterprisePullRequest = makePullRequestFixture(
+      title: "Enterprise PR",
+      url: "https://github.enterprise.test/khoi/alpha/pull/8"
+    )
+    let originPullRequest = makePullRequestFixture(
+      title: "Origin PR",
+      url: "https://github.com/khoi/alpha/pull/7"
+    )
+
+    let store = TestStore(initialState: context.state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.githubRemoteInfos = { _ in [context.remoteInfo, enterpriseInfo] }
+      $0.pullRequestRefreshCoordinator = PullRequestRefreshCoordinatorClient(
+        enqueue: { request in
+          enqueued.withValue { $0.append(request) }
+        },
+        cancelHost: { _ in },
+        reset: {}
+      )
+    }
+
+    await store.send(
+      .worktreeInfoEvent(
+        .repositoryPullRequestRefresh(
+          repositoryRootURL: context.repoRootURL,
+          worktreeIDs: context.worktreeIDs
+        )
+      )
+    )
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = [context.repository.id]
+    }
+    await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 2
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "github.com/khoi/alpha": 0,
+        "github.enterprise.test/khoi/alpha": 1,
+      ]
+    }
+
+    #expect(Set(enqueued.value.map(\.host)) == ["github.com", "github.enterprise.test"])
+
+    await store.send(
+      .githubIntegration(
+        .pullRequestRefreshBatchOutcome(
+          .refreshed(
+            repositoryID: context.repository.id,
+            repositoryRootURL: context.repoRootURL,
+            worktreeIDs: context.worktreeIDs,
+            prsByBranch: ["feature": enterprisePullRequest]
+          )
+        ))
+    ) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
+      $0.prRefreshResultsByRepositoryID[context.repository.id] = ["feature": enterprisePullRequest]
+      $0.prRefreshResultPrioritiesByRepositoryID[context.repository.id] = ["feature": 1]
+    }
+
+    await store.send(
+      .githubIntegration(
+        .pullRequestRefreshBatchOutcome(
+          .refreshed(
+            repositoryID: context.repository.id,
+            repositoryRootURL: context.repoRootURL,
+            worktreeIDs: context.worktreeIDs,
+            prsByBranch: ["feature": originPullRequest]
+          )
+        ))
+    ) {
+      $0.prRefreshBatchCountsByRepositoryID = [:]
+      $0.prRefreshResultsByRepositoryID = [:]
+      $0.prRefreshResultPrioritiesByRepositoryID = [:]
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestsLoaded) {
+      var entry = WorktreeInfoEntry()
+      entry.pullRequest = originPullRequest
+      $0.worktreeInfoByID[context.featureWorktree.id] = entry
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = []
+      $0.prRefreshBatchCountsByRepositoryID = [:]
+      $0.prRefreshRemotePrioritiesByRepositoryID = [:]
+    }
+    await store.finish()
+  }
+
+  @Test func refreshResolvesRemoteInfosOnFirstRun() async {
     let context = makeContext()
     let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
     let initialState = context.state
@@ -64,9 +245,9 @@ struct BatchedPullRequestRefreshReducerTests {
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.gitClient.remoteInfo = { _ in context.remoteInfo }
+      $0.gitClient.githubRemoteInfos = { _ in [context.remoteInfo] }
       $0.githubCLI.resolveRemoteInfo = { _ in
-        Issue.record("gh resolveRemoteInfo should not run when git remote resolves")
+        Issue.record("gh resolveRemoteInfo should not run when git remotes resolve")
         return nil
       }
       $0.pullRequestRefreshCoordinator = PullRequestRefreshCoordinatorClient(
@@ -89,8 +270,11 @@ struct BatchedPullRequestRefreshReducerTests {
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
       $0.inFlightPullRequestRefreshRepositoryIDs = [context.repository.id]
     }
-    await store.receive(\.githubIntegration.cacheRemoteInfo) {
-      $0.remoteInfoByRepositoryID[context.repository.id] = context.remoteInfo
+    await store.receive(\.githubIntegration.pullRequestRefreshBatchCountResolved) {
+      $0.prRefreshBatchCountsByRepositoryID[context.repository.id] = 1
+      $0.prRefreshRemotePrioritiesByRepositoryID[context.repository.id] = [
+        "github.com/khoi/alpha": 0
+      ]
     }
     await store.finish()
 
@@ -152,34 +336,14 @@ struct BatchedPullRequestRefreshReducerTests {
     await store.finish()
   }
 
-  @Test func cacheRemoteInfoStoresMappingInState() async {
-    let context = makeContext()
-    let store = TestStore(initialState: context.state) {
-      RepositoriesFeature()
-    } withDependencies: {
-      $0.pullRequestRefreshCoordinator = .unimplemented
-    }
-
-    await store.send(
-      .githubIntegration(
-        .cacheRemoteInfo(repositoryID: context.repository.id, remoteInfo: context.remoteInfo)
-      )
-    ) {
-      $0.remoteInfoByRepositoryID[context.repository.id] = context.remoteInfo
-    }
-    await store.finish()
-  }
-
   @Test(.dependencies) func refreshSkippedWhenPullRequestStateFetchDisabled() async {
     let context = makeContext()
     let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
-    var initialState = context.state
-    initialState.remoteInfoByRepositoryID[context.repository.id] = context.remoteInfo
 
     @Shared(.repositorySettings(context.repoRootURL)) var repositorySettings
     $repositorySettings.withLock { $0.fetchPullRequestState = false }
 
-    let store = TestStore(initialState: initialState) {
+    let store = TestStore(initialState: context.state) {
       RepositoriesFeature()
     } withDependencies: {
       $0.pullRequestRefreshCoordinator = PullRequestRefreshCoordinatorClient(
@@ -210,7 +374,7 @@ struct BatchedPullRequestRefreshReducerTests {
 
 @MainActor
 private func makeContext() -> RefreshTestContext {
-  let repoRoot = "/tmp/coord-repo"
+  let repoRoot = "/tmp/coord-repo-\(UUID().uuidString)"
   let mainWorktree = Worktree(
     id: repoRoot,
     name: "main",
@@ -258,10 +422,13 @@ private struct RefreshTestContext {
   var worktreeIDs: [Worktree.ID] { [mainWorktree.id, featureWorktree.id] }
 }
 
-nonisolated private func makePullRequestFixture() -> GithubPullRequest {
+nonisolated private func makePullRequestFixture(
+  title: String = "Coord PR",
+  url: String = "https://example.com/coord-pr/7"
+) -> GithubPullRequest {
   GithubPullRequest(
     number: 7,
-    title: "Coord PR",
+    title: title,
     state: "OPEN",
     additions: 0,
     deletions: 0,
@@ -270,7 +437,7 @@ nonisolated private func makePullRequestFixture() -> GithubPullRequest {
     mergeable: nil,
     mergeStateStatus: nil,
     updatedAt: nil,
-    url: "https://example.com/coord-pr/7",
+    url: url,
     headRefName: "feature",
     baseRefName: "main",
     commitsCount: 1,
