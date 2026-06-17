@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026.6.18](https://github.com/onevcat/Prowl/releases/tag/v2026.6.18)
+
+### New
+
+- Canvas card title bars now have a tab context menu matching the one in Default and Shelf layouts. Right-click or use the title bar button to rename the tab, change its icon, or close it.
+
+### Fixed
+
+- PR status now refreshes automatically when a repository's git remotes change — adding, removing, or updating a remote URL no longer requires a restart to see updated PR badges.
+- PR refresh now works correctly in fork setups with multiple remotes (e.g. `origin` + `upstream`). Prowl queries all GitHub-connected remotes and resolves PR actions against the repo that owns the PR.
+- Tabs now restore correctly after quitting and relaunching the app. A race condition on launch could cause the saved layout snapshot to be cleared before restore had a chance to read it.
+- The branch name icon in the toolbar no longer causes a layout jump on hover. The pencil edit icon now replaces the branch icon in place rather than appearing alongside it.
+
 ## [2026.6.16](https://github.com/onevcat/Prowl/releases/tag/v2026.6.16)
 
 ### New
