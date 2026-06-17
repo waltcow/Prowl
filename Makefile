@@ -28,6 +28,10 @@ VERSION ?=
 BUILD ?=
 XCODEBUILD_FLAGS ?=
 FORMAT_BASE_REF ?= origin/main
+DEBUG_PRODUCT_NAME ?= Prowl Debug
+DEBUG_BUNDLE_IDENTIFIER ?= com.onevcat.prowl.debug
+DEBUG_SIGNING_IDENTITY ?=
+DEBUG_APP_NAME := $(DEBUG_PRODUCT_NAME).app
 
 # Release-only analytics/crash credentials. Included from Config/Secrets.env if present,
 # or overridable from the environment (e.g. CI). Debug builds skip SDK init regardless.
@@ -165,8 +169,22 @@ run-app: build-app # Build then launch (Debug) with log streaming
 	app_path="$$build_dir/$$product/Contents/MacOS/$$exec_name"; \
 	"$$app_path"
 
-install-dev-build: build-app # install dev build to /Applications
+install-dev-build: build-app # Build Debug and install to /Applications/Prowl Debug.app
 	@set -euo pipefail; \
+	signing_identity="$(DEBUG_SIGNING_IDENTITY)"; \
+	if [ -z "$$signing_identity" ]; then \
+		signing_identity="$$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' ' \
+			/Apple Development/ { print $$2; found=1; exit } \
+			/Developer ID Application/ && fallback == "" { fallback=$$2 } \
+			END { if (!found && fallback != "") print fallback } \
+		')"; \
+	fi; \
+	if [ -z "$$signing_identity" ]; then \
+		echo "error: no Apple Development or Developer ID Application signing identity found"; \
+		echo "Install a development signing certificate, or pass DEBUG_SIGNING_IDENTITY explicitly."; \
+		exit 1; \
+	fi; \
+	echo "debug install signing identity: $$signing_identity"; \
 	settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
 	build_dir="$$(echo "$$settings" | jq -er '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -er '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
@@ -183,7 +201,7 @@ install-dev-build: build-app # install dev build to /Applications
 		exit 1; \
 	fi; \
 	src="$$build_dir/$$product"; \
-	dst="/Applications/$$product"; \
+	dst="/Applications/$(DEBUG_APP_NAME)"; \
 	dst_parent="$$(cd "$$(dirname "$$dst")" && pwd -P)"; \
 	if [ "$$dst_parent" != "/Applications" ]; then \
 		echo "error: refusing to install outside /Applications: $$dst"; \
@@ -218,7 +236,13 @@ install-dev-build: build-app # install dev build to /Applications
 		trash "$$dst"; \
 	fi; \
 	ditto "$$src" "$$dst"; \
-	echo "installed $$dst"
+	/usr/libexec/PlistBuddy -c 'Set :CFBundleName $(DEBUG_PRODUCT_NAME)' "$$dst/Contents/Info.plist"; \
+	/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName $(DEBUG_PRODUCT_NAME)' "$$dst/Contents/Info.plist" 2>/dev/null \
+		|| /usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string $(DEBUG_PRODUCT_NAME)' "$$dst/Contents/Info.plist"; \
+	/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier $(DEBUG_BUNDLE_IDENTIFIER)' "$$dst/Contents/Info.plist"; \
+	codesign -f --deep -s "$$signing_identity" --timestamp=none "$$dst"; \
+	echo "installed $$dst"; \
+	codesign -dv --verbose=4 "$$dst" 2>&1 | sed -n -E '/Identifier=|Authority=|TeamIdentifier=|Signature=|Info.plist=/p'
 
 install-release: build-ghostty-xcframework # Build Release, sign locally, install to /Applications
 	@set -euo pipefail; \
