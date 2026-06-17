@@ -13,6 +13,11 @@ protocol WorktreeRegistryMonitoring: AnyObject {
   func cancel()
 }
 
+@MainActor
+protocol RemoteConfigMonitoring: AnyObject {
+  func cancel()
+}
+
 final class FSEventsWorktreeFileEventMonitor: WorktreeFileEventMonitoring {
   private let onEvent: @MainActor @Sendable () -> Void
   private var stream: FSEventStreamRef?
@@ -76,9 +81,71 @@ final class FSEventsWorktreeFileEventMonitor: WorktreeFileEventMonitoring {
   }
 }
 
+private enum GitCommonDirectory {
+  static func url(for repositoryRootURL: URL, fileManager: FileManager) -> URL? {
+    let repositoryRootURL = repositoryRootURL.standardizedFileURL
+    let dotGitURL = repositoryRootURL.appending(path: ".git")
+    var isDirectory = ObjCBool(false)
+    if fileManager.fileExists(atPath: dotGitURL.path(percentEncoded: false), isDirectory: &isDirectory) {
+      if isDirectory.boolValue {
+        return dotGitURL.standardizedFileURL
+      }
+      guard let gitdirURL = gitdirURL(from: dotGitURL, relativeTo: repositoryRootURL) else {
+        return nil
+      }
+      return commonDirectoryURL(from: gitdirURL)
+    }
+    if fileManager.fileExists(atPath: repositoryRootURL.appending(path: "HEAD").path(percentEncoded: false)),
+      fileManager.fileExists(atPath: repositoryRootURL.appending(path: "config").path(percentEncoded: false))
+    {
+      return repositoryRootURL
+    }
+    return nil
+  }
+
+  static func isDirectory(_ url: URL, fileManager: FileManager) -> Bool {
+    var isDirectory = ObjCBool(false)
+    return fileManager.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory)
+      && isDirectory.boolValue
+  }
+
+  private static func gitdirURL(from dotGitURL: URL, relativeTo repositoryRootURL: URL) -> URL? {
+    guard let contents = try? String(contentsOf: dotGitURL, encoding: .utf8),
+      let line = contents.split(whereSeparator: \.isNewline).first
+    else {
+      return nil
+    }
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    let prefix = "gitdir:"
+    guard trimmed.hasPrefix(prefix) else {
+      return nil
+    }
+    let pathPart = trimmed.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !pathPart.isEmpty else {
+      return nil
+    }
+    return URL(fileURLWithPath: String(pathPart), relativeTo: repositoryRootURL)
+      .standardizedFileURL
+  }
+
+  private static func commonDirectoryURL(from gitdirURL: URL) -> URL {
+    let commondirURL = gitdirURL.appending(path: "commondir")
+    guard let contents = try? String(contentsOf: commondirURL, encoding: .utf8),
+      let line = contents.split(whereSeparator: \.isNewline).first
+    else {
+      return gitdirURL.standardizedFileURL
+    }
+    let pathPart = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !pathPart.isEmpty else {
+      return gitdirURL.standardizedFileURL
+    }
+    return URL(fileURLWithPath: pathPart, relativeTo: gitdirURL)
+      .standardizedFileURL
+  }
+}
+
 @MainActor
 final class GitWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
-  private let commonGitDirectoryURL: URL
   private let worktreesDirectoryURL: URL
   private let onEvent: @MainActor @Sendable () -> Void
   private var commonDirectorySource: DispatchSourceFileSystemObject?
@@ -90,18 +157,12 @@ final class GitWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
     onEvent: @escaping @MainActor @Sendable () -> Void,
     fileManager: FileManager = .default
   ) {
-    guard
-      let commonGitDirectoryURL = Self.commonGitDirectoryURL(
-        for: repositoryRootURL,
-        fileManager: fileManager
-      )
-    else {
+    guard let commonGitDirectoryURL = GitCommonDirectory.url(for: repositoryRootURL, fileManager: fileManager) else {
       return nil
     }
-    self.commonGitDirectoryURL = commonGitDirectoryURL
     worktreesDirectoryURL = commonGitDirectoryURL.appending(path: "worktrees")
     self.onEvent = onEvent
-    isWorktreesDirectoryPresent = Self.isDirectory(worktreesDirectoryURL, fileManager: fileManager)
+    isWorktreesDirectoryPresent = GitCommonDirectory.isDirectory(worktreesDirectoryURL, fileManager: fileManager)
     commonDirectorySource = Self.makeDirectorySource(url: commonGitDirectoryURL) { [weak self] in
       self?.handleCommonDirectoryEvent()
     }
@@ -121,7 +182,7 @@ final class GitWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
   }
 
   private func handleCommonDirectoryEvent() {
-    let isPresent = Self.isDirectory(worktreesDirectoryURL, fileManager: .default)
+    let isPresent = GitCommonDirectory.isDirectory(worktreesDirectoryURL, fileManager: .default)
     guard isPresent != isWorktreesDirectoryPresent else {
       return
     }
@@ -136,7 +197,7 @@ final class GitWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
   }
 
   private func handleWorktreesDirectoryEvent() {
-    guard Self.isDirectory(worktreesDirectoryURL, fileManager: .default) else {
+    guard GitCommonDirectory.isDirectory(worktreesDirectoryURL, fileManager: .default) else {
       if isWorktreesDirectoryPresent {
         isWorktreesDirectoryPresent = false
         worktreesDirectorySource?.cancel()
@@ -179,68 +240,105 @@ final class GitWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
     source.resume()
     return source
   }
+}
 
-  private static func commonGitDirectoryURL(
-    for repositoryRootURL: URL,
-    fileManager: FileManager
-  ) -> URL? {
-    let repositoryRootURL = repositoryRootURL.standardizedFileURL
-    let dotGitURL = repositoryRootURL.appending(path: ".git")
-    var isDirectory = ObjCBool(false)
-    if fileManager.fileExists(atPath: dotGitURL.path(percentEncoded: false), isDirectory: &isDirectory) {
-      if isDirectory.boolValue {
-        return dotGitURL.standardizedFileURL
-      }
-      guard let gitdirURL = gitdirURL(from: dotGitURL, relativeTo: repositoryRootURL) else {
-        return nil
-      }
-      return commonDirectoryURL(from: gitdirURL, fileManager: fileManager)
-    }
-    if fileManager.fileExists(atPath: repositoryRootURL.appending(path: "HEAD").path(percentEncoded: false)),
-      fileManager.fileExists(atPath: repositoryRootURL.appending(path: "config").path(percentEncoded: false))
-    {
-      return repositoryRootURL
-    }
-    return nil
-  }
+@MainActor
+final class GitRemoteConfigMonitor: RemoteConfigMonitoring {
+  private let configURL: URL
+  private let onEvent: @MainActor @Sendable () -> Void
+  private var commonDirectorySource: DispatchSourceFileSystemObject?
+  private var configSource: DispatchSourceFileSystemObject?
+  private var configFingerprint: Data?
 
-  private static func gitdirURL(from dotGitURL: URL, relativeTo repositoryRootURL: URL) -> URL? {
-    guard let contents = try? String(contentsOf: dotGitURL, encoding: .utf8),
-      let line = contents.split(whereSeparator: \.isNewline).first
-    else {
+  init?(
+    repositoryRootURL: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void,
+    fileManager: FileManager = .default
+  ) {
+    guard let commonGitDirectoryURL = GitCommonDirectory.url(for: repositoryRootURL, fileManager: fileManager) else {
       return nil
     }
-    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-    let prefix = "gitdir:"
-    guard trimmed.hasPrefix(prefix) else {
+    configURL = commonGitDirectoryURL.appending(path: "config")
+    self.onEvent = onEvent
+    configFingerprint = Self.configFingerprint(configURL)
+    commonDirectorySource = Self.makeFileSource(
+      url: commonGitDirectoryURL, eventMask: [.write, .rename, .delete, .attrib]
+    ) {
+      [weak self] in
+      self?.handleCommonDirectoryEvent()
+    }
+    startConfigSourceIfNeeded()
+    guard commonDirectorySource != nil || configSource != nil else {
       return nil
     }
-    let pathPart = trimmed.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !pathPart.isEmpty else {
+  }
+
+  func cancel() {
+    commonDirectorySource?.cancel()
+    configSource?.cancel()
+    commonDirectorySource = nil
+    configSource = nil
+  }
+
+  private func handleCommonDirectoryEvent() {
+    restartConfigSource()
+    emitIfConfigChanged()
+  }
+
+  private func handleConfigEvent() {
+    emitIfConfigChanged()
+    restartConfigSource()
+  }
+
+  private func startConfigSourceIfNeeded() {
+    guard configSource == nil else {
+      return
+    }
+    configSource = Self.makeFileSource(url: configURL, eventMask: [.write, .rename, .delete, .attrib]) { [weak self] in
+      self?.handleConfigEvent()
+    }
+  }
+
+  private func restartConfigSource() {
+    configSource?.cancel()
+    configSource = nil
+    startConfigSourceIfNeeded()
+  }
+
+  private func emitIfConfigChanged() {
+    let latestFingerprint = Self.configFingerprint(configURL)
+    guard latestFingerprint != configFingerprint else {
+      return
+    }
+    configFingerprint = latestFingerprint
+    onEvent()
+  }
+
+  private static func configFingerprint(_ url: URL) -> Data? {
+    try? Data(contentsOf: url)
+  }
+
+  private static func makeFileSource(
+    url: URL,
+    eventMask: DispatchSource.FileSystemEvent,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> DispatchSourceFileSystemObject? {
+    let fileDescriptor = open(url.path(percentEncoded: false), O_EVTONLY)
+    guard fileDescriptor >= 0 else {
       return nil
     }
-    return URL(fileURLWithPath: String(pathPart), relativeTo: repositoryRootURL)
-      .standardizedFileURL
-  }
-
-  private static func commonDirectoryURL(from gitdirURL: URL, fileManager: FileManager) -> URL {
-    let commondirURL = gitdirURL.appending(path: "commondir")
-    guard let contents = try? String(contentsOf: commondirURL, encoding: .utf8),
-      let line = contents.split(whereSeparator: \.isNewline).first
-    else {
-      return gitdirURL.standardizedFileURL
+    let source = DispatchSource.makeFileSystemObjectSource(
+      fileDescriptor: fileDescriptor,
+      eventMask: eventMask,
+      queue: .main
+    )
+    source.setEventHandler {
+      onEvent()
     }
-    let pathPart = line.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !pathPart.isEmpty else {
-      return gitdirURL.standardizedFileURL
+    source.setCancelHandler {
+      close(fileDescriptor)
     }
-    return URL(fileURLWithPath: pathPart, relativeTo: gitdirURL)
-      .standardizedFileURL
-  }
-
-  private static func isDirectory(_ url: URL, fileManager: FileManager) -> Bool {
-    var isDirectory = ObjCBool(false)
-    return fileManager.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory)
-      && isDirectory.boolValue
+    source.resume()
+    return source
   }
 }

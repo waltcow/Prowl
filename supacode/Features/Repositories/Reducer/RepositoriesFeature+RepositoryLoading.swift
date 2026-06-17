@@ -4,7 +4,10 @@ import IdentifiedCollections
 import SwiftUI
 
 extension RepositoriesFeature {
-  func detectCodeHostsEffect(for repositories: IdentifiedArrayOf<Repository>) -> Effect<Action>? {
+  func detectCodeHostsEffect(
+    for repositories: IdentifiedArrayOf<Repository>,
+    includeUnknown: Bool = false
+  ) -> Effect<Action>? {
     let targets =
       repositories
       .filter { $0.capabilities.supportsCodeHost }
@@ -26,7 +29,7 @@ extension RepositoriesFeature {
       }
       // `codeHost(for:)` defaults to `.unknown`, so storing `.unknown`
       // explicitly is a no-op. Skip the round trip when nothing is known.
-      let meaningful = detected.filter { $0.value != .unknown }
+      let meaningful = includeUnknown ? detected : detected.filter { $0.value != .unknown }
       guard !meaningful.isEmpty else { return }
       await send(.codeHostsDetected(meaningful))
     }

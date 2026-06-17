@@ -808,6 +808,32 @@ extension RepositoriesFeature {
         }
       case .repositoryWorktreesChanged:
         return .send(.reloadRepositories(animated: true))
+      case .repositoryRemoteConfigurationChanged(let repositoryRootURL):
+        guard
+          let repository = state.repositories.first(where: {
+            $0.rootURL.standardizedFileURL == repositoryRootURL.standardizedFileURL
+          })
+        else {
+          return .none
+        }
+        let repositories = IdentifiedArrayOf(uniqueElements: [repository])
+        var effects: [Effect<Action>] = []
+        let worktreeIDs = repository.worktrees.map(\.id)
+        if repository.capabilities.supportsPullRequests, !worktreeIDs.isEmpty {
+          effects.append(
+            .send(
+              .githubIntegration(
+                .repositoryPullRequestRefreshRequested(
+                  repositoryRootURL: repository.rootURL,
+                  worktreeIDs: worktreeIDs
+                )
+              ))
+          )
+        }
+        if let effect = detectCodeHostsEffect(for: repositories, includeUnknown: true) {
+          effects.append(effect)
+        }
+        return effects.isEmpty ? .none : .concatenate(effects)
       case .repositoryPullRequestRefresh(let repositoryRootURL, let worktreeIDs):
         return .send(
           .githubIntegration(

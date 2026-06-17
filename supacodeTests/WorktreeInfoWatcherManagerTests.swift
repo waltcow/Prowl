@@ -242,6 +242,40 @@ struct WorktreeInfoWatcherManagerTests {
     try FileManager.default.removeItem(at: tempRepository.tempRoot)
   }
 
+  @Test func repositoryRemoteConfigEventEmitsChangedEventAfterDebounce() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow"])
+    let remoteConfigMonitorStore = TestRemoteConfigMonitorStore()
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      remoteConfigEventDebounceInterval: .milliseconds(80),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      remoteConfigMonitorFactory: remoteConfigMonitorStore.makeMonitor,
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setWorktrees(tempRepository.worktrees))
+    await drainAsyncEvents(120)
+    #expect(await collector.repositoryRemoteConfigurationChangedCount(repositoryRootURL: tempRepository.tempRoot) == 0)
+
+    let monitor = try #require(remoteConfigMonitorStore.monitor(for: tempRepository.tempRoot))
+    monitor.emit()
+    await clock.advance(by: .milliseconds(79))
+    await drainAsyncEvents(120)
+    #expect(await collector.repositoryRemoteConfigurationChangedCount(repositoryRootURL: tempRepository.tempRoot) == 0)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.repositoryRemoteConfigurationChangedCount(repositoryRootURL: tempRepository.tempRoot) == 1)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
   @Test func removedRepositoryCancelsRegistryMonitor() async throws {
     let firstRepository = try makeTempRepository(worktreeNames: ["sparrow"])
     let secondRepository = try makeTempRepository(worktreeNames: ["swift"])
@@ -445,6 +479,17 @@ actor EventCollector {
       }
     }
   }
+
+  func repositoryRemoteConfigurationChangedCount(repositoryRootURL: URL) -> Int {
+    let expectedURL = repositoryRootURL.standardizedFileURL
+    return events.reduce(into: 0) { result, event in
+      if case .repositoryRemoteConfigurationChanged(let rootURL) = event,
+        rootURL.standardizedFileURL == expectedURL
+      {
+        result += 1
+      }
+    }
+  }
 }
 
 private struct TempWorktree {
@@ -575,6 +620,42 @@ private final class TestWorktreeRegistryMonitorStore {
 
 @MainActor
 private final class TestWorktreeRegistryMonitor: WorktreeRegistryMonitoring {
+  private let onEvent: @MainActor @Sendable () -> Void
+  private(set) var isCanceled = false
+
+  init(onEvent: @escaping @MainActor @Sendable () -> Void) {
+    self.onEvent = onEvent
+  }
+
+  func emit() {
+    onEvent()
+  }
+
+  func cancel() {
+    isCanceled = true
+  }
+}
+
+@MainActor
+private final class TestRemoteConfigMonitorStore {
+  private var monitors: [URL: TestRemoteConfigMonitor] = [:]
+
+  func makeMonitor(
+    repositoryRootURL: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> RemoteConfigMonitoring? {
+    let monitor = TestRemoteConfigMonitor(onEvent: onEvent)
+    monitors[repositoryRootURL.standardizedFileURL] = monitor
+    return monitor
+  }
+
+  func monitor(for repositoryRootURL: URL) -> TestRemoteConfigMonitor? {
+    monitors[repositoryRootURL.standardizedFileURL]
+  }
+}
+
+@MainActor
+private final class TestRemoteConfigMonitor: RemoteConfigMonitoring {
   private let onEvent: @MainActor @Sendable () -> Void
   private(set) var isCanceled = false
 

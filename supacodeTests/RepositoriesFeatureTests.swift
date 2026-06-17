@@ -346,6 +346,36 @@ struct RepositoriesFeatureTests {
     await store.receive(\.delegate.repositoriesChanged)
   }
 
+  @Test func repositoryRemoteConfigurationChangedRefreshesPullRequestsAndCodeHost() async {
+    let repoRoot = "/tmp/repo"
+    let mainWorktree = makeWorktree(id: repoRoot, name: "main", repoRoot: repoRoot)
+    let featureWorktree = makeWorktree(id: "\(repoRoot)/feature", name: "feature", repoRoot: repoRoot)
+    let repository = makeRepository(id: repoRoot, worktrees: [mainWorktree, featureWorktree])
+    var initialState = makeState(repositories: [repository])
+    initialState.githubIntegrationAvailability = .unavailable
+    initialState.codeHostByRepositoryID[repository.id] = .github
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.repositoryWebURL = { _ in nil }
+    }
+
+    await store.send(
+      .worktreeInfoEvent(
+        .repositoryRemoteConfigurationChanged(repositoryRootURL: repository.rootURL)
+      )
+    )
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
+      $0.pendingPullRequestRefreshByRepositoryID[repository.id] = RepositoriesFeature.PendingPullRequestRefresh(
+        repositoryRootURL: repository.rootURL,
+        worktreeIDs: [mainWorktree.id, featureWorktree.id]
+      )
+    }
+    await store.receive(\.codeHostsDetected) {
+      $0.codeHostByRepositoryID[repository.id] = .unknown
+    }
+  }
+
   @Test func repositoriesLoadedEmitsChangedDelegateWhenTransitioningFromRestoring() async {
     let worktree = makeWorktree(id: "/tmp/repo/main", name: "main")
     let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
@@ -4411,10 +4441,10 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.gitClient.remoteInfo = { _ in nil }
-      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
-        Issue.record("batchPullRequests should not run when remoteInfo is unavailable")
-        return [:]
+      $0.gitClient.githubRemoteInfos = { _ in [] }
+      $0.githubCLI.resolveRemoteInfo = { _ in nil }
+      $0.pullRequestRefreshCoordinator.enqueue = { _ in
+        Issue.record("Coordinator should not enqueue when GitHub remotes are unavailable")
       }
     }
 
@@ -4429,6 +4459,7 @@ struct RepositoriesFeatureTests {
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
       $0.inFlightPullRequestRefreshRepositoryIDs = [repository.id]
     }
+    await store.receive(\.githubIntegration.repositoryPullRequestsLoaded)
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
       $0.inFlightPullRequestRefreshRepositoryIDs = []
     }
@@ -4539,10 +4570,10 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.gitClient.remoteInfo = { _ in nil }
-      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
-        Issue.record("batchPullRequests should not run when remoteInfo is unavailable")
-        return [:]
+      $0.gitClient.githubRemoteInfos = { _ in [] }
+      $0.githubCLI.resolveRemoteInfo = { _ in nil }
+      $0.pullRequestRefreshCoordinator.enqueue = { _ in
+        Issue.record("Coordinator should not enqueue when GitHub remotes are unavailable")
       }
     }
 
@@ -4554,6 +4585,7 @@ struct RepositoriesFeatureTests {
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
       $0.inFlightPullRequestRefreshRepositoryIDs = [repository.id]
     }
+    await store.receive(\.githubIntegration.repositoryPullRequestsLoaded)
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
       $0.inFlightPullRequestRefreshRepositoryIDs = []
     }
@@ -4637,10 +4669,10 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.gitClient.remoteInfo = { _ in nil }
-      $0.githubCLI.batchPullRequests = { _, _, _, _, _ in
-        Issue.record("batchPullRequests should not run when remoteInfo is unavailable")
-        return [:]
+      $0.gitClient.githubRemoteInfos = { _ in [] }
+      $0.githubCLI.resolveRemoteInfo = { _ in nil }
+      $0.pullRequestRefreshCoordinator.enqueue = { _ in
+        Issue.record("Coordinator should not enqueue when GitHub remotes are unavailable")
       }
     }
 
@@ -4654,6 +4686,7 @@ struct RepositoriesFeatureTests {
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
       $0.inFlightPullRequestRefreshRepositoryIDs = [repository.id]
     }
+    await store.receive(\.githubIntegration.repositoryPullRequestsLoaded)
     await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
       $0.inFlightPullRequestRefreshRepositoryIDs = []
     }

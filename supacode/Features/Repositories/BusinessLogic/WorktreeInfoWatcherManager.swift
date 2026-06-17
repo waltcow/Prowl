@@ -16,6 +16,11 @@ final class WorktreeInfoWatcherManager {
       _ repositoryRootURL: URL,
       _ onEvent: @escaping @MainActor @Sendable () -> Void
     ) -> WorktreeRegistryMonitoring?
+  typealias RemoteConfigMonitorFactory =
+    @MainActor @Sendable (
+      _ repositoryRootURL: URL,
+      _ onEvent: @escaping @MainActor @Sendable () -> Void
+    ) -> RemoteConfigMonitoring?
 
   private struct HeadWatcher {
     let headURL: URL
@@ -48,6 +53,7 @@ final class WorktreeInfoWatcherManager {
 
   private let filesChangedDebounceInterval: Duration
   private let repositoryWorktreesEventDebounceInterval: Duration
+  private let remoteConfigEventDebounceInterval: Duration
   private let lineChangesEventDebounceInterval: Duration
   private let lineChangesSafetyRefreshInterval: Duration
   private let pullRequestSelectionRefreshCooldown: Duration
@@ -56,14 +62,17 @@ final class WorktreeInfoWatcherManager {
   private let pullRequestPhaseOffset: RepositoryPhaseOffset
   private let worktreeFileEventMonitorFactory: WorktreeFileEventMonitorFactory
   private let worktreeRegistryMonitorFactory: WorktreeRegistryMonitorFactory
+  private let remoteConfigMonitorFactory: RemoteConfigMonitorFactory
   private let sleep: @Sendable (Duration) async throws -> Void
   private var worktrees: [Worktree.ID: Worktree] = [:]
   private var headWatchers: [Worktree.ID: HeadWatcher] = [:]
   private var worktreeFileEventMonitors: [Worktree.ID: WorktreeFileEventMonitoring] = [:]
   private var worktreeRegistryMonitors: [URL: WorktreeRegistryMonitoring] = [:]
+  private var remoteConfigMonitors: [URL: RemoteConfigMonitoring] = [:]
   private var branchDebounceTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var filesDebounceTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var repositoryWorktreesDebounceTasks: [URL: Task<Void, Never>] = [:]
+  private var repositoryRemoteConfigDebounceTasks: [URL: Task<Void, Never>] = [:]
   private var restartTasks: [Worktree.ID: Task<Void, Never>] = [:]
   private var pullRequestTasks: [URL: RefreshTask] = [:]
   private var lineChangeSafetyTasks: [Worktree.ID: RefreshTask] = [:]
@@ -81,6 +90,7 @@ final class WorktreeInfoWatcherManager {
     unfocusedInterval: Duration = .seconds(60),
     filesChangedDebounceInterval: Duration = .seconds(5),
     repositoryWorktreesEventDebounceInterval: Duration = .seconds(2),
+    remoteConfigEventDebounceInterval: Duration = .seconds(2),
     lineChangesEventDebounceInterval: Duration = .seconds(30),
     lineChangesSafetyRefreshInterval: Duration = .seconds(300),
     pullRequestSelectionRefreshCooldown: Duration = .seconds(5),
@@ -90,11 +100,14 @@ final class WorktreeInfoWatcherManager {
       WorktreeInfoWatcherManager.defaultWorktreeFileEventMonitorFactory,
     worktreeRegistryMonitorFactory: @escaping WorktreeRegistryMonitorFactory =
       WorktreeInfoWatcherManager.defaultWorktreeRegistryMonitorFactory,
+    remoteConfigMonitorFactory: @escaping RemoteConfigMonitorFactory =
+      WorktreeInfoWatcherManager.defaultRemoteConfigMonitorFactory,
     clock: C = ContinuousClock()
   ) {
     refreshTiming = RefreshTiming(focused: focusedInterval, unfocused: unfocusedInterval)
     self.filesChangedDebounceInterval = filesChangedDebounceInterval
     self.repositoryWorktreesEventDebounceInterval = repositoryWorktreesEventDebounceInterval
+    self.remoteConfigEventDebounceInterval = remoteConfigEventDebounceInterval
     self.lineChangesEventDebounceInterval = lineChangesEventDebounceInterval
     self.lineChangesSafetyRefreshInterval = lineChangesSafetyRefreshInterval
     self.pullRequestSelectionRefreshCooldown = pullRequestSelectionRefreshCooldown
@@ -102,6 +115,7 @@ final class WorktreeInfoWatcherManager {
     self.pullRequestPhaseOffset = pullRequestPhaseOffset
     self.worktreeFileEventMonitorFactory = worktreeFileEventMonitorFactory
     self.worktreeRegistryMonitorFactory = worktreeRegistryMonitorFactory
+    self.remoteConfigMonitorFactory = remoteConfigMonitorFactory
     self.sleep = { duration in
       try await clock.sleep(for: duration)
     }
@@ -163,6 +177,7 @@ final class WorktreeInfoWatcherManager {
     }
     let repositoryRoots = Set(worktrees.map(\.repositoryRootURL))
     syncWorktreeRegistryMonitors(repositoryRoots: repositoryRoots)
+    syncRemoteConfigMonitors(repositoryRoots: repositoryRoots)
     for repositoryRootURL in repositoryRoots {
       updatePullRequestSchedule(repositoryRootURL: repositoryRootURL, immediate: true)
     }
@@ -373,15 +388,23 @@ final class WorktreeInfoWatcherManager {
     for monitor in worktreeRegistryMonitors.values {
       monitor.cancel()
     }
+    for monitor in remoteConfigMonitors.values {
+      monitor.cancel()
+    }
     for task in repositoryWorktreesDebounceTasks.values {
+      task.cancel()
+    }
+    for task in repositoryRemoteConfigDebounceTasks.values {
       task.cancel()
     }
     headWatchers.removeAll()
     worktreeFileEventMonitors.removeAll()
     worktreeRegistryMonitors.removeAll()
+    remoteConfigMonitors.removeAll()
     branchDebounceTasks.removeAll()
     filesDebounceTasks.removeAll()
     repositoryWorktreesDebounceTasks.removeAll()
+    repositoryRemoteConfigDebounceTasks.removeAll()
     restartTasks.removeAll()
     pullRequestTasks.removeAll()
     lineChangeSafetyTasks.removeAll()
@@ -592,6 +615,20 @@ final class WorktreeInfoWatcherManager {
     }
   }
 
+  private func syncRemoteConfigMonitors(repositoryRoots: Set<URL>) {
+    let normalizedRoots = Set(repositoryRoots.map { $0.standardizedFileURL })
+    let obsoleteRoots = remoteConfigMonitors.keys.filter { !normalizedRoots.contains($0) }
+    for repositoryRootURL in obsoleteRoots {
+      remoteConfigMonitors.removeValue(forKey: repositoryRootURL)?.cancel()
+      repositoryRemoteConfigDebounceTasks.removeValue(forKey: repositoryRootURL)?.cancel()
+    }
+    for repositoryRootURL in normalizedRoots where remoteConfigMonitors[repositoryRootURL] == nil {
+      remoteConfigMonitors[repositoryRootURL] = remoteConfigMonitorFactory(repositoryRootURL) { [weak self] in
+        self?.scheduleRepositoryRemoteConfigurationChanged(repositoryRootURL: repositoryRootURL)
+      }
+    }
+  }
+
   private func scheduleRepositoryWorktreesChanged(repositoryRootURL: URL) {
     let normalizedRootURL = repositoryRootURL.standardizedFileURL
     repositoryWorktreesDebounceTasks[normalizedRootURL]?.cancel()
@@ -609,6 +646,25 @@ final class WorktreeInfoWatcherManager {
       }
     }
     repositoryWorktreesDebounceTasks[normalizedRootURL] = task
+  }
+
+  private func scheduleRepositoryRemoteConfigurationChanged(repositoryRootURL: URL) {
+    let normalizedRootURL = repositoryRootURL.standardizedFileURL
+    repositoryRemoteConfigDebounceTasks[normalizedRootURL]?.cancel()
+    let debounceInterval = remoteConfigEventDebounceInterval
+    let sleep = self.sleep
+    let task = Task { [weak self, sleep] in
+      do {
+        try await sleep(debounceInterval)
+      } catch {
+        return
+      }
+      await MainActor.run {
+        self?.repositoryRemoteConfigDebounceTasks.removeValue(forKey: normalizedRootURL)
+        self?.emit(.repositoryRemoteConfigurationChanged(repositoryRootURL: normalizedRootURL))
+      }
+    }
+    repositoryRemoteConfigDebounceTasks[normalizedRootURL] = task
   }
 
   private func updateRepeatingTask(
@@ -684,6 +740,13 @@ final class WorktreeInfoWatcherManager {
     onEvent: @escaping @MainActor @Sendable () -> Void
   ) -> WorktreeRegistryMonitoring? {
     GitWorktreeRegistryMonitor(repositoryRootURL: repositoryRootURL, onEvent: onEvent)
+  }
+
+  private static func defaultRemoteConfigMonitorFactory(
+    repositoryRootURL: URL,
+    onEvent: @escaping @MainActor @Sendable () -> Void
+  ) -> RemoteConfigMonitoring? {
+    GitRemoteConfigMonitor(repositoryRootURL: repositoryRootURL, onEvent: onEvent)
   }
 
   nonisolated private static func stablePhaseOffset(seed: String, interval: Duration) -> Duration {

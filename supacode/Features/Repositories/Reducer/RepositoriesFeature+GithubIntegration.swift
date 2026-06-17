@@ -886,6 +886,17 @@ extension RepositoriesFeature {
         gitClient: gitClient
       )
       guard !remoteInfos.isEmpty else {
+        let clearedPullRequestsByWorktreeID = Dictionary(
+          uniqueKeysWithValues: worktreeIDs.map { ($0, Optional<GithubPullRequest>.none) }
+        )
+        await send(
+          .githubIntegration(
+            .repositoryPullRequestsLoaded(
+              repositoryID: repositoryID,
+              pullRequestsByWorktreeID: clearedPullRequestsByWorktreeID
+            )
+          )
+        )
         await send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
         return
       }

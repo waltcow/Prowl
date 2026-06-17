@@ -281,6 +281,51 @@ struct BatchedPullRequestRefreshReducerTests {
     #expect(enqueued.value.count == 1)
   }
 
+  @Test func refreshClearsStalePullRequestsWhenGithubRemotesDisappear() async {
+    let context = makeContext()
+    let enqueued = LockIsolated<[PullRequestRefreshCoordinator.Request]>([])
+    let stalePullRequest = makePullRequestFixture(url: "https://github.com/khoi/alpha/pull/7")
+    var initialState = context.state
+    var staleEntry = WorktreeInfoEntry()
+    staleEntry.pullRequest = stalePullRequest
+    initialState.worktreeInfoByID[context.featureWorktree.id] = staleEntry
+
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.gitClient.githubRemoteInfos = { _ in [] }
+      $0.githubCLI.resolveRemoteInfo = { _ in nil }
+      $0.pullRequestRefreshCoordinator = PullRequestRefreshCoordinatorClient(
+        enqueue: { request in
+          enqueued.withValue { $0.append(request) }
+        },
+        cancelHost: { _ in },
+        reset: {}
+      )
+    }
+
+    await store.send(
+      .worktreeInfoEvent(
+        .repositoryPullRequestRefresh(
+          repositoryRootURL: context.repoRootURL,
+          worktreeIDs: context.worktreeIDs
+        )
+      )
+    )
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshRequested) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = [context.repository.id]
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestsLoaded) {
+      $0.worktreeInfoByID.removeValue(forKey: context.featureWorktree.id)
+    }
+    await store.receive(\.githubIntegration.repositoryPullRequestRefreshCompleted) {
+      $0.inFlightPullRequestRefreshRepositoryIDs = []
+    }
+    await store.finish()
+
+    #expect(enqueued.value.isEmpty)
+  }
+
   @Test func coordinatorOutcomeRefreshedTranslatesToLoadedAndCompleted() async {
     let context = makeContext()
     var initialState = context.state
