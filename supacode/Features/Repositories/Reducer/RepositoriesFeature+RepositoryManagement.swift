@@ -220,9 +220,10 @@ extension RepositoriesFeature {
       }
       state.removingRepositoryIDs.insert(repository.id)
       let selectionWasRemoved =
-        state.selectedWorktreeID.map { id in
+        state.selection == .repository(repository.id)
+        || (state.selectedWorktreeID.map { id in
           repository.worktrees.contains(where: { $0.id == id })
-        } ?? false
+        } ?? false)
       guard confirmation.deleteFiles, let workspace = repository.workspace else {
         return .send(
           .repositoryManagement(

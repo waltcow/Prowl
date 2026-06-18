@@ -1337,6 +1337,49 @@ struct RepositoriesFeatureTests {
     await store.finish()
   }
 
+  @Test func removeSelectedWorkspaceSelectsNextRepository() async {
+    let workspaceID = "/tmp/ws"
+    let otherWorktree = makeWorktree(id: "/tmp/other/main", name: "main", repoRoot: "/tmp/other")
+    let otherRepo = makeRepository(id: "/tmp/other", name: "other", worktrees: [otherWorktree])
+    let wsRepo = makeRepository(
+      id: workspaceID,
+      name: "WS",
+      kind: .plain,
+      worktrees: [],
+      workspace: ProjectWorkspace(title: "WS")
+    )
+    var state = makeState(repositories: [wsRepo, otherRepo])
+    state.selection = .repository(workspaceID)
+    state.selectedWorkspaceChildID = "child-1"
+    let otherEntry = PersistedRepositoryEntry(path: "/tmp/other", kind: .git)
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.repositoryPersistence.loadRepositoryEntries = { [otherEntry] }
+      $0.repositoryPersistence.saveRepositoryEntries = { _ in }
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+      $0.gitClient.repoRoot = { @Sendable url in url }
+      $0.gitClient.worktrees = { @Sendable _ in [otherWorktree] }
+      $0.gitClient.isBareRepository = { @Sendable _ in false }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.repositoryManagement(.requestRemoveRepository(workspaceID)))
+    await store.send(.repositoryManagement(.removeWorkspacePromptConfirmed))
+    await store.receive(\.repositoryManagement.repositoryRemoved)
+    await store.receive(\.repositoriesLoaded)
+    await store.finish()
+
+    #expect(store.state.selectedWorkspaceChildID == nil)
+    #expect(store.state.selectedWorkspaceChildID == nil)
+    // After removing the currently-selected workspace with another repo available,
+    // the sidebar should auto-select the next item — not leave an empty selection.
+    #expect(
+      store.state.selection == .worktree(otherWorktree.id),
+      "Expected auto-selection of next worktree, got \(String(describing: store.state.selection))"
+    )
+  }
+
   @Test func removeWorkspaceRoutesBranchDeletionThroughGuardedClient() async throws {
     let rootURL = FileManager.default.temporaryDirectory
       .appending(path: "prowl-ws-\(UUID().uuidString)")
