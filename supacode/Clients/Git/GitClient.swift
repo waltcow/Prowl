@@ -129,11 +129,7 @@ struct GitClient {
   }
 
   nonisolated func branchRefs(for repoRoot: URL) async throws -> [String] {
-    let options = try await branchRefOptions(for: repoRoot)
-    let refs = options.map(\.ref)
-      .filter { !$0.hasSuffix("/HEAD") }
-      .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-    return deduplicated(refs)
+    try await branchRefOptions(for: repoRoot).map(\.ref)
   }
 
   nonisolated func branchRefOptions(for repoRoot: URL) async throws -> [GitBranchRefOption] {
@@ -159,7 +155,6 @@ struct GitClient {
       ]
     )
     let localRefs = parseRefLines(localOutput, prefix: "refs/heads/")
-      .filter { !$0.hasSuffix("/HEAD") }
       .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     let remoteRefs = parseRefLines(remoteOutput, prefix: "refs/remotes/")
       // Drop `<remote>/HEAD` symbolic pointers: they resolve to a branch that is

@@ -107,6 +107,39 @@ struct GitClientBranchRefsTests {
     #expect(options.contains(GitBranchRefOption(ref: "origin/main", kind: .remoteTracking)))
   }
 
+  @Test func branchRefOptionsPreservesLocalBranchNamedHEAD() async throws {
+    let shell = ShellClient(
+      run: { _, arguments, _ in
+        if arguments.contains("refs/heads") {
+          return ShellOutput(
+            stdout: "refs/heads/main\nrefs/heads/fix/HEAD\n",
+            stderr: "",
+            exitCode: 0
+          )
+        }
+        return ShellOutput(
+          stdout: "refs/remotes/origin/HEAD\nrefs/remotes/origin/main\n",
+          stderr: "",
+          exitCode: 0
+        )
+      },
+      runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
+    )
+    let client = GitClient(shell: shell)
+    let repoRoot = URL(fileURLWithPath: "/tmp/repo")
+
+    let options = try await client.branchRefOptions(for: repoRoot)
+
+    #expect(
+      options.contains(GitBranchRefOption(ref: "fix/HEAD", kind: .local)),
+      "Local branch fix/HEAD must not be filtered out"
+    )
+    #expect(
+      !options.contains(GitBranchRefOption(ref: "origin/HEAD", kind: .remoteTracking)),
+      "Remote HEAD pointer should still be filtered"
+    )
+  }
+
   @Test func remoteBranchRefsParsesDefaultHeadAndBranches() async throws {
     let output = """
       ref: refs/heads/main\tHEAD
