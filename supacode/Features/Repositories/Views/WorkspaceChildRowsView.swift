@@ -48,7 +48,7 @@ private struct WorkspaceChildRowButton: View {
       name: row.branchName ?? row.repositoryName,
       worktreeName: row.branchName == nil ? "" : row.repositoryName,
       info: row.info,
-      iconSystemName: "folder",
+      iconSystemName: nil,
       showsPullRequestInfo: true,
       isHovered: false,
       isPinned: false,
