@@ -7104,16 +7104,7 @@ func defaultWorkspaceBaseRootPath(for title: String) -> String {
     .path(percentEncoded: false)
 }
 
-// Mirrors RepositoriesFeature.uniqueWorkspaceRootPath: the default folder name
-// is uniqued against directories that already exist on the test machine.
 func expectedDefaultWorkspaceRootPath(for title: String) -> String {
   let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)
-  let baseURL = SupacodePaths.workspacesDirectory
-  var candidateURL = baseURL.appending(path: folderName, directoryHint: .isDirectory)
-  var suffix = 2
-  while FileManager.default.fileExists(atPath: candidateURL.path(percentEncoded: false)) {
-    candidateURL = baseURL.appending(path: "\(folderName)-\(suffix)", directoryHint: .isDirectory)
-    suffix += 1
-  }
-  return candidateURL.standardizedFileURL.path(percentEncoded: false)
+  return ProjectWorkspace.uniqueWorkspaceRootPath(folderName: folderName)
 }

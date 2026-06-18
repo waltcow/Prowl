@@ -693,6 +693,25 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     return sanitized.isEmpty ? "workspace" : sanitized
   }
 
+  nonisolated static func workspaceRootPath(folderName: String, suffix: Int?) -> String {
+    let component = suffix.map { "\(folderName)-\($0)" } ?? folderName
+    return SupacodePaths.workspacesDirectory
+      .appending(path: component, directoryHint: .isDirectory)
+      .standardizedFileURL
+      .path(percentEncoded: false)
+  }
+
+  nonisolated static func uniqueWorkspaceRootPath(folderName: String) -> String {
+    var suffix: Int?
+    while true {
+      let candidate = workspaceRootPath(folderName: folderName, suffix: suffix)
+      if !FileManager.default.fileExists(atPath: candidate) {
+        return candidate
+      }
+      suffix = (suffix ?? 1) + 1
+    }
+  }
+
   private static func materialize(
     _ repository: ProjectWorkspaceRepositoryPlan,
     workspaceRootURL: URL,

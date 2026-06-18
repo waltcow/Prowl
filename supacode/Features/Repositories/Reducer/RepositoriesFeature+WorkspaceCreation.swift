@@ -38,7 +38,7 @@ extension RepositoriesFeature {
       // then resolve a unique, non-colliding folder name off the main actor so
       // the reducer body performs no filesystem I/O.
       let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)
-      let requestedRootPath = Self.workspaceRootPath(folderName: folderName, suffix: nil)
+      let requestedRootPath = ProjectWorkspace.workspaceRootPath(folderName: folderName, suffix: nil)
       state.workspaceCreationPrompt = WorkspaceCreationPromptFeature.State(
         repositories: [],
         title: title,
@@ -46,7 +46,7 @@ extension RepositoriesFeature {
         openedRepositoryCandidates: candidates
       )
       return .run { send in
-        let resolved = Self.uniqueWorkspaceRootPath(folderName: folderName)
+        let resolved = ProjectWorkspace.uniqueWorkspaceRootPath(folderName: folderName)
         await send(.workspaceCreation(.defaultRootPathResolved(path: resolved, requestedRootPath: requestedRootPath)))
       }
 
@@ -137,28 +137,6 @@ extension RepositoriesFeature {
         return .none
       }
       return reduceWorkspaceCreation(state: &state, action: action)
-    }
-  }
-
-  nonisolated private static func workspaceRootPath(folderName: String, suffix: Int?) -> String {
-    let component = suffix.map { "\(folderName)-\($0)" } ?? folderName
-    return SupacodePaths.workspacesDirectory
-      .appending(path: component, directoryHint: .isDirectory)
-      .standardizedFileURL
-      .path(percentEncoded: false)
-  }
-
-  // Resolves a workspace folder path that does not collide with an existing
-  // directory. Touches the filesystem, so it must run inside an effect rather
-  // than the reducer body.
-  nonisolated static func uniqueWorkspaceRootPath(folderName: String) -> String {
-    var suffix: Int?
-    while true {
-      let candidate = workspaceRootPath(folderName: folderName, suffix: suffix)
-      if !FileManager.default.fileExists(atPath: candidate) {
-        return candidate
-      }
-      suffix = (suffix ?? 1) + 1
     }
   }
 

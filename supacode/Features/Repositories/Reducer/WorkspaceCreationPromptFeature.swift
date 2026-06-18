@@ -140,10 +140,10 @@ struct WorkspaceCreationPromptFeature {
           return .none
         }
         let folderName = ProjectWorkspace.defaultWorkspaceFolderName(for: title)
-        let requestedRootPath = Self.workspaceRootPath(folderName: folderName, suffix: nil)
+        let requestedRootPath = ProjectWorkspace.workspaceRootPath(folderName: folderName, suffix: nil)
         state.rootPath = requestedRootPath
         return .run { send in
-          let resolved = Self.uniqueWorkspaceRootPath(folderName: folderName)
+          let resolved = ProjectWorkspace.uniqueWorkspaceRootPath(folderName: folderName)
           await send(
             .automaticRootPathResolved(path: resolved, requestedRootPath: requestedRootPath))
         }
@@ -481,25 +481,6 @@ struct WorkspaceCreationPromptFeature {
       return name
     }
     return String(name.dropLast(4))
-  }
-
-  nonisolated private static func workspaceRootPath(folderName: String, suffix: Int?) -> String {
-    let component = suffix.map { "\(folderName)-\($0)" } ?? folderName
-    return SupacodePaths.workspacesDirectory
-      .appending(path: component, directoryHint: .isDirectory)
-      .standardizedFileURL
-      .path(percentEncoded: false)
-  }
-
-  nonisolated static func uniqueWorkspaceRootPath(folderName: String) -> String {
-    var suffix: Int?
-    while true {
-      let candidate = workspaceRootPath(folderName: folderName, suffix: suffix)
-      if !FileManager.default.fileExists(atPath: candidate) {
-        return candidate
-      }
-      suffix = (suffix ?? 1) + 1
-    }
   }
 
   nonisolated private static func loadRemoteBranchRefs(
