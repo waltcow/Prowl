@@ -150,6 +150,7 @@ extension WorktreeTerminalState {
     }
     guard next != previous else { return true }
     surfaceAgentStates[surfaceID] = next
+    updateTabAgentBusyState(for: tabId)
     emitAgentEntry(surfaceID: surfaceID, tabId: tabId, state: next)
     return true
   }
@@ -168,6 +169,23 @@ extension WorktreeTerminalState {
     surfaceAgentStates[surfaceID] = PaneAgentState(lastChangedAt: Date())
     lastWorkingAtBySurface.removeValue(forKey: surfaceID)
     onAgentEntryRemoved?(surfaceID)
+    if let tabId = tabId(containing: surfaceID) {
+      updateTabAgentBusyState(for: tabId)
+    }
+  }
+
+  /// Recompute `tabAgentBusyById[tabId]` from the stabilized state of every
+  /// surface in the tab, emitting a task-status change only when the aggregate
+  /// flips. Driven by `detectAgentState` (state change), agent release, and
+  /// surface teardown so the sidebar/`prowl list` running indicator tracks agent
+  /// activity. Uses `displayState` (post-stabilization) so the 3 s working-hold
+  /// absorbs raw oscillation; `emitTaskStatusIfChanged` dedupes emissions.
+  func updateTabAgentBusyState(for tabId: TerminalTabID) {
+    let surfaceIDs = trees[tabId]?.leaves().map(\.id) ?? []
+    let isBusy = surfaceIDs.contains { surfaceAgentStates[$0]?.isBusy == true }
+    guard (tabAgentBusyById[tabId] ?? false) != isBusy else { return }
+    tabAgentBusyById[tabId] = isBusy
+    emitTaskStatusIfChanged()
   }
 
   /// Re-emit Active Agents entries for every pane in `tabId` so the panel picks

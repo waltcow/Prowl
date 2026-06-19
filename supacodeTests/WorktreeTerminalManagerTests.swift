@@ -588,6 +588,55 @@ struct WorktreeTerminalManagerTests {
     )
   }
 
+  @Test func busyAgentFoldsIntoTaskStatusAndEmits() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    #expect(state.taskStatus == .idle)
+
+    var emissions: [WorktreeTaskStatus] = []
+    state.onTaskStatusChanged = { emissions.append($0) }
+
+    // A working agent on the tab makes the worktree run, with one emission.
+    state.surfaceAgentStates[surfaceId] = PaneAgentState(detectedAgent: .claude, state: .working)
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(state.taskStatus == .running)
+    #expect(emissions == [.running])
+
+    // Idempotent while it stays busy — no duplicate emission.
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(emissions == [.running])
+
+    // Returning to idle clears the indicator and emits once more.
+    state.surfaceAgentStates[surfaceId] = PaneAgentState(detectedAgent: .claude, state: .idle)
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(state.taskStatus == .idle)
+    #expect(emissions == [.running, .idle])
+
+    state.cleanupAllAgentDetectionState()
+  }
+
+  @Test func tabTeardownClearsAgentBusyTaskStatus() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    state.surfaceAgentStates[surfaceId] = PaneAgentState(detectedAgent: .claude, state: .working)
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(state.taskStatus == .running)
+
+    state.closeAllSurfaces()
+    #expect(state.tabAgentBusyById.isEmpty)
+    #expect(state.taskStatus == .idle)
+  }
+
   private func nextEvent(
     _ stream: AsyncStream<TerminalClient.Event>,
     matching predicate: (TerminalClient.Event) -> Bool

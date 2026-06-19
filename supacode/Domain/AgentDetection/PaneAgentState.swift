@@ -36,6 +36,16 @@ struct PaneAgentState: Equatable, Sendable {
       return .idle
     }
   }
+
+  /// Whether this pane should count toward the worktree running indicator: a
+  /// detected agent that is working or blocked (awaiting permission). Folded
+  /// into `taskStatus` so the sidebar spinner and `prowl list` light up on agent
+  /// activity even when no OSC 9;4 command progress is reported (Claude Code
+  /// does not emit OSC 9;4 while it works).
+  var isBusy: Bool {
+    guard detectedAgent != nil else { return false }
+    return displayState == .working || displayState == .blocked
+  }
 }
 
 struct AgentDetectionPresence: Equatable, Sendable {

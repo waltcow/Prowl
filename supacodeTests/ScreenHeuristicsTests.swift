@@ -277,6 +277,48 @@ struct ScreenHeuristicsTests {
     )
   }
 
+  @Test func claudeDetectsRunningWorkflowFooterBelowPrompt() {
+    // A running background workflow: the turn has ended (no spinner / "esc to
+    // interrupt" above the prompt), but Claude keeps a status line BELOW the
+    // input box. The "<done>/<total> agents done" segment marks active work.
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ⏺ Kicked off the scout workflow in the background.
+          ─────────
+          ❯
+          ─────────
+          ◯ scout-prowl-idle  Map idle detection   3/5 agents done · 7m 29s · ↓ 288.5k tokens
+          """
+      ) == .working
+    )
+    // Idle with an ordinary footer (no workflow line) stays idle.
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          Task complete.
+          ─────────
+          ❯
+          ─────────
+          ? for shortcuts
+          """
+      ) == .idle
+    )
+    // The marker quoted in conversation (above the prompt) must NOT force
+    // working — the check is anchored to the below-prompt footer.
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ⏺ The run showed 3/5 agents done before it wrapped up.
+          ─────────
+          ❯
+          ─────────
+          ? for shortcuts
+          """
+      ) == .idle
+    )
+  }
+
   @Test func codexDetection() {
     #expect(DetectedAgent.codex.detectState(in: "press enter to confirm or esc to cancel") == .blocked)
     #expect(DetectedAgent.codex.detectState(in: "• Working (12s)\nesc to interrupt") == .working)

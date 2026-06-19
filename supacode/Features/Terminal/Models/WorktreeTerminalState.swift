@@ -76,6 +76,12 @@ final class WorktreeTerminalState {
   var lastWorkingAtBySurface: [UUID: Date] = [:]
   var lastAgentDetectionDiagnosticsBySurface: [UUID: String] = [:]
   var tabIsRunningById: [TerminalTabID: Bool] = [:]
+  /// Per-tab aggregate of agent busy-state: `true` when at least one surface in
+  /// the tab has a detected agent whose stabilized `displayState` is `.working`
+  /// or `.blocked`. OR-ed into `taskStatus` alongside `tabIsRunningById` so the
+  /// sidebar spinner and `prowl list` reflect agent activity, not just OSC 9;4
+  /// command progress (which Claude Code does not emit while it works).
+  var tabAgentBusyById: [TerminalTabID: Bool] = [:]
   var boundDirectoryTabIDs: [String: TerminalTabID] = [:]
   var surfaceRunningStartedAtById: [UUID: Date] = [:]
   var runScriptTabId: TerminalTabID?
@@ -253,7 +259,9 @@ final class WorktreeTerminalState {
   }
 
   var taskStatus: WorktreeTaskStatus {
-    tabIsRunningById.values.contains(true) ? .running : .idle
+    let hasRunningCommand = tabIsRunningById.values.contains(true)
+    let hasBusyAgent = tabAgentBusyById.values.contains(true)
+    return (hasRunningCommand || hasBusyAgent) ? .running : .idle
   }
 
   var isRunScriptRunning: Bool {

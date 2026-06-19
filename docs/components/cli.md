@@ -71,9 +71,12 @@ Each item contains:
 - `pane`: `id`, `title`, `cwd`, `focused`
 - `task`: `status` (`running` | `idle` | null)
 
-`task.status` is the same agent activity signal described in
-[agent-detection](agent-detection.md). It's good for coordination but can flip to
-idle **before** a TUI finishes painting — confirm with `read --wait-stable`.
+`task.status` is **running** when any pane in the worktree is busy — a terminal
+command reporting progress, or a detected agent that is Working/Blocked (including
+Claude running a background **workflow**); otherwise **idle**. See the
+[worktree running indicator](agent-detection.md#worktree-running-indicator). It's
+good for coordination but lags a screen by ~2–3 s and can flip to idle **before** a
+TUI finishes painting — confirm with `read --wait-stable`.
 
 Find your own pane (to avoid operating on yourself):
 ```bash
