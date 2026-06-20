@@ -86,6 +86,12 @@ extension WorktreeTerminalState {
       }
     }
 
+    // Re-evaluate running state: a command finished, so the tab may have
+    // transitioned from .running back to .idle.
+    if let tabId = tabId(containing: surfaceId) {
+      updateRunningState(for: tabId)
+    }
+
     guard commandFinishedNotificationEnabled else { return }
     let durationSeconds = Int(durationNs / 1_000_000_000)
     guard durationSeconds >= commandFinishedNotificationThreshold else { return }

@@ -374,6 +374,10 @@ extension WorktreeTerminalState {
         }
       }
       self.noteTitleForCommandDetection(title, surfaceId: view.id, tabId: tabId)
+      // Title changes when a command starts (shell sets it to the command name)
+      // and when it ends (precmd resets to prompt). This is our trigger to
+      // re-evaluate the foreground process state for non-OSC 9;4 commands.
+      self.updateRunningState(for: tabId)
     }
     view.bridge.onSplitAction = { [weak self, weak view] action in
       guard let self, let view else { return false }
@@ -659,6 +663,15 @@ extension WorktreeTerminalState {
         if surfaceRunningStartedAtById[surface.id] == nil {
           surfaceRunningStartedAtById[surface.id] = now
         }
+      } else if let pgid = surface.bridge.foregroundProcessGroupID(),
+        hasRunningForegroundProcess(processGroupID: pgid, shellPID: surface.bridge.childPID())
+      {
+        // Fallback: detect active commands that don't emit OSC 9;4
+        // (npm run build, git clone, sleep, etc.)
+        isRunningNow = true
+        if surfaceRunningStartedAtById[surface.id] == nil {
+          surfaceRunningStartedAtById[surface.id] = now
+        }
       } else {
         surfaceRunningStartedAtById.removeValue(forKey: surface.id)
       }
@@ -666,6 +679,24 @@ extension WorktreeTerminalState {
     tabIsRunningById[tabId] = isRunningNow
     tabManager.updateDirty(tabId, isDirty: isRunningNow)
     emitTaskStatusIfChanged()
+  }
+
+  /// Check whether the foreground process group contains active processes
+  /// beyond the idle shell. Returns `true` when a command (e.g. npm run build,
+  /// git clone, sleep) is running, `false` when the shell is sitting at a
+  /// prompt.
+  ///
+  /// When a shell executes `sleep 60`, both shell and sleep are in the **same**
+  /// process group (the shell's, since the shell is the pgid leader). The
+  /// foreground pgid from `tcgetpgrp` does NOT change — it stays equal to the
+  /// shell's PID. So comparing pgids can't distinguish "shell at prompt" from
+  /// "shell running a command". Instead, we enumerate the foreground process
+  /// group and check whether any member is alive **besides the shell itself**:
+  /// - pgid contains only shell PID → idle prompt → not running
+  /// - pgid contains shell PID + sleep PID → command running → true
+  private func hasRunningForegroundProcess(processGroupID: pid_t, shellPID: pid_t?) -> Bool {
+    let pids = ProcessDetection.processGroupPIDs(processGroupID)
+    return pids.contains { $0 > 0 && $0 != shellPID && ProcessDetection.processBSDInfo(pid: $0) != nil }
   }
 
   func emitTaskStatusIfChanged() {
