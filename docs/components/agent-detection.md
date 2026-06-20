@@ -32,6 +32,10 @@ icon where Prowl shows detected command icons, including terminal tabs.
    loader or braille spinner status line (working), confirmation/permission prompts
    (blocked), idle prompts. Each agent family has its own patterns (including spinner glyphs:
    braille frames, symbol cycles, Cursor's hexagons, Kimi's moon phases, etc.).
+   For Claude, a running **background workflow** keeps a status line *below* the
+   input box (e.g. `3/5 agents done · 7m 29s · ↓ 288.5k tokens`) after the turn has
+   ended; Prowl reads that footer as **Working**, so a churning workflow isn't
+   mistaken for idle.
 
 To avoid flicker, detection **stabilizes**: it tolerates several consecutive
 misses before declaring an agent gone, and a working agent gets a short (~3s)
@@ -74,6 +78,22 @@ In tabs and the Active Agents panel, a **Working** agent shows an animated spinn
 attention color; **Idle/Done** are static. The "working" animation style is also
 configurable in spirit — Prowl uses a bagua/trigram-style spinner in the agents
 list.
+
+## Worktree running indicator
+
+The sidebar worktree row spinner and `prowl list`'s `task.status` report
+**running** whenever any pane in the worktree is busy. A pane is busy when:
+
+- a terminal command reports progress (OSC 9;4 / ConEmu-style, e.g. a long shell
+  command), **or**
+- a detected agent is **Working** or **Blocked** — including Claude running a
+  background **workflow**, detected from its below-prompt `… agents done …` status
+  line even while the input box looks idle.
+
+It's a single coarse running/idle bit (it can't distinguish a background workflow
+from a long command). For the agent's finer state use the
+[Active Agents panel](active-agents.md) or [`prowl agents`](cli.md). Expect up to
+~2 s before it lights on a warm pane, and the ~3 s working-hold before it clears.
 
 ## Settings
 

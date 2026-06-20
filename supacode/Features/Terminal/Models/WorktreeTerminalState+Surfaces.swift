@@ -320,6 +320,7 @@ extension WorktreeTerminalState {
     focusedSurfaceIdByTab.removeAll()
     cleanupAllAgentDetectionState()
     tabIsRunningById.removeAll()
+    tabAgentBusyById.removeAll()
     boundDirectoryTabIDs.removeAll()
     autoCloseSurfaceIds.removeAll()
     pendingCustomCommands.removeAll()
@@ -611,6 +612,9 @@ extension WorktreeTerminalState {
     pendingCustomCommands.removeValue(forKey: surfaceID)
     cleanupCommandDetectorState(forSurfaceId: surfaceID)
     cleanupAgentDetectionState(forSurfaceId: surfaceID)
+    if let tabId = tabId(containing: surfaceID) {
+      updateTabAgentBusyState(for: tabId)
+    }
     let previousHasUnseen = hasUnseenNotification
     notifications = Self.prunedNotifications(from: notifications, removingSurfaceID: surfaceID)
     emitNotificationIndicatorIfNeeded(previousHasUnseen: previousHasUnseen)
@@ -624,6 +628,7 @@ extension WorktreeTerminalState {
     }
     focusedSurfaceIdByTab.removeValue(forKey: tabId)
     tabIsRunningById.removeValue(forKey: tabId)
+    tabAgentBusyById.removeValue(forKey: tabId)
   }
 
   func tabID(containing surfaceId: UUID) -> TerminalTabID? {

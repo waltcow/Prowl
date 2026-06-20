@@ -92,8 +92,10 @@ sequences:
   finishes** and its **exit code**. This powers command-finished notifications,
   auto-close-on-success, and the `prowl send --capture` output capture.
 - **OSC 2** (title) — feeds tab titles and agent/icon detection.
-- **Progress reports** — agents/commands report busy/idle, feeding the tab's
-  activity indicator and task status.
+- **Progress reports (OSC 9;4)** — long commands report busy/idle, feeding the
+  tab's activity indicator and task status. Task status *also* folds in detected
+  agent activity (Working/Blocked, incl. background workflows) — see
+  [agent-detection](agent-detection.md#worktree-running-indicator).
 - **Bell / desktop notification** — increments unread indicators.
 
 `--capture` in the CLI **requires OSC 133** on the target pane; without it you get

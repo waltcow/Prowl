@@ -13,6 +13,11 @@ import ProwlCLIShared
 #endif
 
 enum AppLauncher {
+  private static let prowlAppBundleIdentifiers: Set<String> = [
+    "com.onevcat.prowl",
+    "com.onevcat.prowl.debug",
+  ]
+
   /// Maximum time to wait for the socket after launching the app.
   private static let socketTimeoutSeconds: TimeInterval = 15
   /// Interval between socket availability checks.
@@ -59,8 +64,13 @@ enum AppLauncher {
   /// Check whether a Prowl app instance is currently running.
   private static func isAppProcessRunning() -> Bool {
     NSWorkspace.shared.runningApplications.contains { application in
-      application.bundleIdentifier == "com.onevcat.prowl"
+      isProwlAppBundleIdentifier(application.bundleIdentifier)
     }
+  }
+
+  static func isProwlAppBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
+    guard let bundleIdentifier else { return false }
+    return prowlAppBundleIdentifiers.contains(bundleIdentifier)
   }
 
   // MARK: - App launch

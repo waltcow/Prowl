@@ -126,4 +126,14 @@ struct PaneAgentStateTests {
     #expect(presence.update(detectedAgent: nil) == nil)
     #expect(presence.currentAgent == nil)
   }
+
+  @Test func isBusyReflectsWorkingAndBlockedDetectedAgents() {
+    #expect(PaneAgentState(detectedAgent: .claude, state: .working).isBusy)
+    #expect(PaneAgentState(detectedAgent: .claude, state: .blocked).isBusy)
+    #expect(!PaneAgentState(detectedAgent: .claude, state: .idle).isBusy)
+    // Unseen idle surfaces display as `.done`, which must not count as busy.
+    #expect(!PaneAgentState(detectedAgent: .claude, state: .idle, seen: false).isBusy)
+    // A plain shell (no detected agent) is never busy, even mid-output.
+    #expect(!PaneAgentState(detectedAgent: nil, state: .working).isBusy)
+  }
 }

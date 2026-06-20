@@ -475,6 +475,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
@@ -487,6 +488,7 @@
 				EXECUTABLE_NAME = ProwlApp;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = supacode/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Prowl Debug";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -499,9 +501,9 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -Wno-incomplete-umbrella";
-				PRODUCT_BUNDLE_IDENTIFIER = com.onevcat.prowl;
+				PRODUCT_BUNDLE_IDENTIFIER = com.onevcat.prowl.debug;
 				PRODUCT_MODULE_NAME = supacode;
-				PRODUCT_NAME = Prowl;
+				PRODUCT_NAME = "Prowl Debug";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -594,7 +596,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Prowl.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ProwlApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Prowl Debug.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ProwlApp";
 			};
 			name = Debug;
 		};

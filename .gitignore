@@ -71,6 +71,7 @@ Resources/terminfo
 Resources/docs
 .ghostty_hash
 .ghostty_build_stamp
+.build_settings_cache.json
 *.profraw
 .env
 build/

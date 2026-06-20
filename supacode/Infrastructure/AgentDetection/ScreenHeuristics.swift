@@ -101,6 +101,9 @@ nonisolated private func detectClaude(_ content: String) -> AgentRawState {
   if hasSpinnerActivity(above) {
     return .working
   }
+  if hasClaudeBackgroundWork(content) {
+    return .working
+  }
   return .idle
 }
 
@@ -292,6 +295,31 @@ nonisolated private func isBoxBorderLine(_ line: String) -> Bool {
   let trimmed = line.trimmingCharacters(in: .whitespaces)
   guard trimmed.count >= 3 else { return false }
   return trimmed.allSatisfy { $0 == "─" || $0 == "-" }
+}
+
+// Everything rendered AFTER the input prompt line — i.e. the footer area where
+// Claude shows its persistent background-work / workflow status. Mirrors
+// `contentAbovePromptBox` so the background-work check can stay anchored to the
+// footer and never trip on transcript text that merely mentions the marker.
+nonisolated private func contentBelowPromptBox(_ content: String) -> String {
+  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+  guard let promptIndex = lines.lastIndex(where: { $0.contains("❯") }) else {
+    return ""
+  }
+  let startIndex = lines.index(after: promptIndex)
+  guard startIndex < lines.endIndex else { return "" }
+  return lines[startIndex...].joined(separator: "\n")
+}
+
+// While a background workflow runs, Claude's turn has ended (so the spinner and
+// "esc to interrupt" hint above the prompt are gone) but it keeps a persistent
+// status line BELOW the input box, e.g.
+//   "◯ my-workflow  <desc>  3/5 agents done · 7m 29s · ↓ 288.5k tokens"
+// The "<done>/<total> agents done" segment is Claude's stable statusText
+// template, so "agents done" is a distinctive marker. Anchored to the
+// below-prompt footer so it can't be tripped by conversation text.
+nonisolated private func hasClaudeBackgroundWork(_ content: String) -> Bool {
+  contentBelowPromptBox(content).lowercased().contains("agents done")
 }
 
 nonisolated private func claudeCurrentInteractionRegion(_ content: String) -> String {

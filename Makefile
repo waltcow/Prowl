@@ -28,6 +28,8 @@ VERSION ?=
 BUILD ?=
 XCODEBUILD_FLAGS ?=
 FORMAT_BASE_REF ?= origin/main
+BUILD_SETTINGS_CACHE := $(CURRENT_MAKEFILE_DIR)/.build_settings_cache.json
+PBXPROJ_PATH := $(CURRENT_MAKEFILE_DIR)/supacode.xcodeproj/project.pbxproj
 
 # Release-only analytics/crash credentials. Included from Config/Secrets.env if present,
 # or overridable from the environment (e.g. CI). Debug builds skip SDK init regardless.
@@ -107,7 +109,7 @@ embed-docs: # Stage docs/ into Resources for bundling into the app (.app/Content
 	echo "embedded docs at $$dst"
 
 build-app: ensure-ghostty embed-cli-debug embed-docs # Build the macOS app (Debug)
-	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) 2>&1 | mise exec -- xcsift -w --format toon'
+	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon'
 
 sync-cli-version: # Sync app MARKETING_VERSION into ProwlCLIShared/ProwlVersion.swift
 	@version="$$(/usr/bin/awk -F' = ' '/MARKETING_VERSION = [0-9.]*;/{gsub(/;/,"",$$2);print $$2; exit}' \
@@ -154,7 +156,14 @@ embed-cli: build-cli-release # Build release CLI and copy into Resources for dis
 
 run-app: build-app # Build then launch (Debug) with log streaming
 	@set -euo pipefail; \
-	settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+	cache="$(BUILD_SETTINGS_CACHE)"; \
+	pbxproj="$(PBXPROJ_PATH)"; \
+	if [ -f "$$cache" ] && [ "$$cache" -nt "$$pbxproj" ]; then \
+		settings="$$(cat "$$cache")"; \
+	else \
+		settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+		printf '%s' "$$settings" > "$$cache"; \
+	fi; \
 	build_dir="$$(echo "$$settings" | jq -er '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -er '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
 	exec_name="$$(echo "$$settings" | jq -r '.[0].buildSettings.EXECUTABLE_NAME')"; \
@@ -165,9 +174,16 @@ run-app: build-app # Build then launch (Debug) with log streaming
 	app_path="$$build_dir/$$product/Contents/MacOS/$$exec_name"; \
 	"$$app_path"
 
-install-dev-build: build-app # install dev build to /Applications
+install-dev-build: build-app # Build Debug and install to /Applications
 	@set -euo pipefail; \
-	settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+	cache="$(BUILD_SETTINGS_CACHE)"; \
+	pbxproj="$(PBXPROJ_PATH)"; \
+	if [ -f "$$cache" ] && [ "$$cache" -nt "$$pbxproj" ]; then \
+		settings="$$(cat "$$cache")"; \
+	else \
+		settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+		printf '%s' "$$settings" > "$$cache"; \
+	fi; \
 	build_dir="$$(echo "$$settings" | jq -er '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -er '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
 	if [ -z "$$build_dir" ] || [ -z "$$product" ] || [ "$$build_dir" = "null" ] || [ "$$product" = "null" ]; then \
@@ -313,7 +329,7 @@ test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	mkdir -p "$$(dirname "$$result_bundle")"; \
 	rm -rf "$$result_bundle"; \
 	set +e; \
-	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) 2>&1 | mise exec -- xcsift -w --format toon; \
+	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon; \
 	xcodebuild_status=$${PIPESTATUS[0]}; \
 	set -e; \
 	if [ "$$xcodebuild_status" -ne 0 ]; then \
