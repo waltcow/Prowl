@@ -1,5 +1,24 @@
 # Changelog
 
+## [2026.6.20](https://github.com/onevcat/Prowl/releases/tag/v2026.6.20)
+
+This release adds project workspace support, bringing multi-repository orchestration to Prowl's core workflow.
+
+### New
+
+- **Project workspaces**: Group multiple repositories into a single workspace. Open the "Add Repository" menu to create a workspace, choosing from three checkout modes — link existing worktrees, create a new branch, or use an existing one. Child repos appear as collapsible rows in the sidebar with their branch, diff, and PR status at a glance. Removing a workspace offers optional file cleanup and per-repo branch deletion.
+- Qwen Code is now recognized as a detectable agent, with working, blocked, and idle state detection.
+
+### Improved
+
+- The sidebar running indicator and `prowl list` task status now reflect agent activity more accurately: a pane is shown as running whenever an agent is working or blocked, including during background Claude Code workflow runs where the input box is visible but subagents are still active.
+
+### Fixed
+
+- Workspace and folder names in the toolbar navigation area now have consistent padding and width, matching the appearance of branch names.
+- Clicking anywhere on a workspace child row in the sidebar now selects it, not just the label text.
+- "Collapse all" and "Expand all" in the sidebar header now correctly apply to workspace sections.
+
 ## [2026.6.18](https://github.com/onevcat/Prowl/releases/tag/v2026.6.18)
 
 ### New
