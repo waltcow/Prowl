@@ -13,6 +13,7 @@ enum DetectedAgent: String, CaseIterable, Equatable, Identifiable, Sendable {
   case kimi
   case droid
   case amp
+  case qwen
 
   var id: String { rawValue }
 

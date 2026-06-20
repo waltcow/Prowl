@@ -24,6 +24,8 @@ func identifyAgent(processName: String) -> DetectedAgent? {
     return .droid
   case "amp", "amp-local":
     return .amp
+  case "qwen":
+    return .qwen
   default:
     return nil
   }

@@ -23,6 +23,7 @@ struct AgentClassifierTests {
     #expect(identifyAgent(processName: "droid") == .droid)
     #expect(identifyAgent(processName: "amp") == .amp)
     #expect(identifyAgent(processName: "amp-local") == .amp)
+    #expect(identifyAgent(processName: "qwen") == .qwen)
   }
 
   @Test func identifiesOhMyPiCommandNames() throws {

@@ -28,6 +28,8 @@ extension DetectedAgent {
       return detectDroid(screen)
     case .amp:
       return detectAmp(screen)
+    case .qwen:
+      return detectQwen(screen)
     }
   }
 }
@@ -495,4 +497,30 @@ nonisolated private func hasOpenCodeQuestionPrompt(_ content: String) -> Bool {
     || content.contains("⇆ tab")
 
   return lower.contains("esc dismiss") && hasEnterAction && hasQuestionNavigation
+}
+
+nonisolated private func detectQwen(_ content: String) -> AgentRawState {
+  let lower = content.lowercased()
+  if lower.contains("waiting for user confirmation")
+    || lower.contains("do you want to proceed?")
+    || hasConfirmationPrompt(lower)
+  {
+    return .blocked
+  }
+  if lower.contains("esc to cancel")
+    || lower.contains("ctrl+c to cancel")
+    || hasBrailleSpinner(content)
+  {
+    return .working
+  }
+  return .idle
+}
+
+nonisolated private func hasBrailleSpinner(_ content: String) -> Bool {
+  content.split(separator: "\n", omittingEmptySubsequences: false).contains { line in
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard let first = trimmed.unicodeScalars.first else { return false }
+    return (0x2800...0x28FF).contains(Int(first.value))
+      && trimmed.contains(where: \.isLetter)
+  }
 }

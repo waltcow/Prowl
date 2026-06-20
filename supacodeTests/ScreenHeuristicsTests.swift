@@ -510,4 +510,34 @@ struct ScreenHeuristicsTests {
     #expect(DetectedAgent.amp.detectState(in: "esc to cancel") == .working)
     #expect(DetectedAgent.amp.detectState(in: "done") == .idle)
   }
+
+  @Test func qwenDetection() {
+    #expect(DetectedAgent.qwen.detectState(in: "Waiting for user confirmation...") == .blocked)
+    #expect(
+      DetectedAgent.qwen.detectState(
+        in: """
+          Do you want to proceed?
+          > Yes, allow once
+            Always allow in this project
+            No (esc)
+          """
+      ) == .blocked
+    )
+    #expect(
+      DetectedAgent.qwen.detectState(
+        in: """
+          ┌─ Shell Command Execution ──────────────────────┐
+          │ Do you want to proceed?                        │
+          │  > Yes, allow once                             │
+          │    No (esc)                                    │
+          └────────────────────────────────────────────────┘
+          """
+      ) == .blocked
+    )
+    #expect(DetectedAgent.qwen.detectState(in: "⠏ I'm Feeling Lucky (5s · esc to cancel)") == .working)
+    #expect(DetectedAgent.qwen.detectState(in: "Thinking... (12s · ctrl+c to cancel)") == .working)
+    #expect(DetectedAgent.qwen.detectState(in: "⠸ Writing file... (3s · ↓ 200 tokens · esc to cancel)") == .working)
+    #expect(DetectedAgent.qwen.detectState(in: "done") == .idle)
+    #expect(DetectedAgent.qwen.detectState(in: "> Type your message") == .idle)
+  }
 }

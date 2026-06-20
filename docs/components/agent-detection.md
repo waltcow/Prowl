@@ -17,7 +17,8 @@ running and what state it's in. That signal drives the
 ## Agents it recognizes
 
 Claude (Claude Code), Codex, Gemini, Cursor, Cline, OpenCode, GitHub Copilot,
-Kimi, Droid, Amp, Pi (`pi`), and Oh My Pi (`omp`, `oh-my-pi`). Detection covers
+Kimi, Droid, Amp, Pi (`pi`), Oh My Pi (`omp`, `oh-my-pi`), and Qwen Code (`qwen`).
+Detection covers
 common wrappers (node, python, bun, bash, etc.) so agents launched indirectly are
 still found. Oh My Pi reuses Pi-derived screen heuristics but uses its own command
 icon where Prowl shows detected command icons, including terminal tabs.
