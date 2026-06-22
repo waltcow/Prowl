@@ -7,11 +7,13 @@ nonisolated func shouldFallbackToLoginShell(_ error: Error) -> Bool {
   guard let shellError = error as? ShellClientError else {
     return false
   }
-  if shellError.exitCode == 127 {
-    return true
-  }
   let output = "\(shellError.stderr)\n\(shellError.stdout)".lowercased()
-  return output.contains("command not found")
+  // When git itself ran fine but confirmed this isn't a repo, retrying
+  // under a login shell won't change the answer.
+  if output.contains("not a git repository") {
+    return false
+  }
+  return true
 }
 
 nonisolated func wrapShellError(
