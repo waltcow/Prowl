@@ -209,7 +209,43 @@ struct GitClientWorktreeDiscoveryTests {
     }
   }
 
-  @Test func worktreesDoNotFallbackToLoginShellForRegularFailures() async {
+  @Test func worktreesDoNotFallbackToLoginShellForNonGitDirectory() async {
+    let recorder = GitWorktreeDiscoveryRecorder()
+    let shell = ShellClient(
+      run: { executableURL, arguments, currentDirectoryURL in
+        recorder.recordRun(
+          executableURL: executableURL,
+          arguments: arguments,
+          currentDirectoryURL: currentDirectoryURL
+        )
+        throw ShellClientError(
+          command: "wt ls --json",
+          stdout: "",
+          stderr: "fatal: not a git repository (or any of the parent directories): .git",
+          exitCode: 128
+        )
+      },
+      runLoginImpl: { executableURL, arguments, currentDirectoryURL, _ in
+        recorder.recordLogin(
+          executableURL: executableURL,
+          arguments: arguments,
+          currentDirectoryURL: currentDirectoryURL
+        )
+        Issue.record("worktrees should not fallback to runLogin for non-git directories")
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      }
+    )
+    let client = GitClient(shell: shell)
+
+    await #expect(throws: GitClientError.self) {
+      _ = try await client.worktrees(for: URL(fileURLWithPath: "/tmp/not-a-repo"))
+    }
+
+    #expect(recorder.runInvocations().count == 1)
+    #expect(recorder.loginInvocations().isEmpty)
+  }
+
+  @Test func worktreesFallbackToLoginShellForEnvironmentErrors() async throws {
     let recorder = GitWorktreeDiscoveryRecorder()
     let shell = ShellClient(
       run: { executableURL, arguments, currentDirectoryURL in
@@ -231,17 +267,21 @@ struct GitClientWorktreeDiscoveryTests {
           arguments: arguments,
           currentDirectoryURL: currentDirectoryURL
         )
-        Issue.record("worktrees should not fallback to runLogin for regular command failures")
-        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+        return ShellOutput(
+          stdout: """
+            [{"branch":"main","path":"/tmp/repo","head":"abc","is_bare":false}]
+            """,
+          stderr: "",
+          exitCode: 0
+        )
       }
     )
     let client = GitClient(shell: shell)
 
-    await #expect(throws: GitClientError.self) {
-      _ = try await client.worktrees(for: URL(fileURLWithPath: "/tmp/repo"))
-    }
+    let worktrees = try await client.worktrees(for: URL(fileURLWithPath: "/tmp/repo"))
 
+    #expect(worktrees.count == 1)
     #expect(recorder.runInvocations().count == 1)
-    #expect(recorder.loginInvocations().isEmpty)
+    #expect(recorder.loginInvocations().count == 1)
   }
 }
