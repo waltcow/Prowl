@@ -41,6 +41,7 @@ struct GitClientLineChangesTests {
     let untrackedArgs = try #require(calls.first { $0.contains("ls-files") })
     #expect(untrackedArgs.contains("--others"))
     #expect(untrackedArgs.contains("--exclude-standard"))
+    #expect(untrackedArgs.contains("-z"))
   }
 
   @Test func lineChangesHandlesMissingDeletions() async {
@@ -112,7 +113,7 @@ struct GitClientLineChangesTests {
             stdout: " 1 file changed, 10 insertions(+), 2 deletions(-)\n", stderr: "", exitCode: 0)
         }
         if arguments.contains("ls-files") {
-          return ShellOutput(stdout: "new_file.swift\n", stderr: "", exitCode: 0)
+          return ShellOutput(stdout: "new_file.swift\0", stderr: "", exitCode: 0)
         }
         return ShellOutput(stdout: "", stderr: "", exitCode: 0)
       },
@@ -150,7 +151,39 @@ struct GitClientLineChangesTests {
           return ShellOutput(stdout: "", stderr: "", exitCode: 0)
         }
         if arguments.contains("ls-files") {
-          return ShellOutput(stdout: "image.png\nreadme.txt\n", stderr: "", exitCode: 0)
+          return ShellOutput(stdout: "image.png\0readme.txt\0", stderr: "", exitCode: 0)
+        }
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      },
+      runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
+    )
+    let client = GitClient(shell: shell)
+
+    let changes = await client.lineChanges(at: tempRoot)
+
+    #expect(changes?.added == 2)
+    #expect(changes?.removed == 0)
+  }
+
+  @Test func lineChangesParsesNULSeparatedUntrackedFilePaths() async throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    let gitDirectory = tempRoot.appending(path: ".git")
+    try fileManager.createDirectory(at: gitDirectory, withIntermediateDirectories: true)
+    let headURL = gitDirectory.appending(path: "HEAD")
+    try "ref: refs/heads/main\n".write(to: headURL, atomically: true, encoding: .utf8)
+
+    let relativePath = " leading space\nname.txt"
+    try "alpha\nbeta".write(to: tempRoot.appending(path: relativePath), atomically: true, encoding: .utf8)
+
+    let shell = ShellClient(
+      run: { _, arguments, _ in
+        if arguments.contains("--shortstat") {
+          return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+        }
+        if arguments.contains("ls-files") {
+          return ShellOutput(stdout: "\(relativePath)\0", stderr: "", exitCode: 0)
         }
         return ShellOutput(stdout: "", stderr: "", exitCode: 0)
       },
@@ -198,16 +231,30 @@ struct GitClientLineChangesTests {
     let gitDirectory = tempRoot.appending(path: ".git")
     try fileManager.createDirectory(at: gitDirectory, withIntermediateDirectories: true)
 
-    var header = Data()
-    header.append(contentsOf: "DIRC".utf8)
-    var version = UInt32(2).bigEndian
-    header.append(Data(bytes: &version, count: 4))
-    var entryCount = UInt32(42_000).bigEndian
-    header.append(Data(bytes: &entryCount, count: 4))
-    try header.write(to: gitDirectory.appending(path: "index"))
+    try writeGitIndexHeader(entryCount: 42_000, to: gitDirectory.appending(path: "index"))
 
     let count = GitClient.indexEntryCount(at: tempRoot)
     #expect(count == 42_000)
+  }
+
+  @Test func indexEntryCountRejectsInvalidHeader() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    let gitDirectory = tempRoot.appending(path: ".git")
+    try fileManager.createDirectory(at: gitDirectory, withIntermediateDirectories: true)
+
+    var invalidMagic = Data()
+    invalidMagic.append(contentsOf: "NOPE".utf8)
+    invalidMagic.append(contentsOf: [0, 0, 0, 2])
+    invalidMagic.append(contentsOf: [0, 0, 0, 1])
+    try invalidMagic.write(to: gitDirectory.appending(path: "index"))
+
+    #expect(GitClient.indexEntryCount(at: tempRoot) == nil)
+
+    try writeGitIndexHeader(version: 99, entryCount: 1, to: gitDirectory.appending(path: "index"))
+
+    #expect(GitClient.indexEntryCount(at: tempRoot) == nil)
   }
 
   @Test func indexEntryCountReturnsNilForMissingIndex() {
@@ -225,6 +272,18 @@ struct GitClientLineChangesTests {
 
     let count = GitClient.countLinesInFiles(["a.txt", "b.txt"], relativeTo: tempRoot)
     #expect(count == 5)
+  }
+
+  @Test func countLinesInFilesCountsFinalLineWithoutTrailingNewline() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    try "hello".write(to: tempRoot.appending(path: "single.txt"), atomically: true, encoding: .utf8)
+    try "a\nb".write(to: tempRoot.appending(path: "multi.txt"), atomically: true, encoding: .utf8)
+
+    let count = GitClient.countLinesInFiles(["single.txt", "multi.txt"], relativeTo: tempRoot)
+    #expect(count == 3)
   }
 
   @Test func countLinesInFilesSkipsBinaryFiles() throws {
@@ -251,5 +310,23 @@ struct GitClientLineChangesTests {
 
     let count = GitClient.countLinesInFiles(["exists.txt", "gone.txt"], relativeTo: tempRoot)
     #expect(count == 2)
+  }
+
+  private func writeGitIndexHeader(
+    version: UInt32 = 2,
+    entryCount: UInt32,
+    to url: URL
+  ) throws {
+    var header = Data()
+    header.append(contentsOf: "DIRC".utf8)
+    header.append(UInt8((version >> 24) & 0xff))
+    header.append(UInt8((version >> 16) & 0xff))
+    header.append(UInt8((version >> 8) & 0xff))
+    header.append(UInt8(version & 0xff))
+    header.append(UInt8((entryCount >> 24) & 0xff))
+    header.append(UInt8((entryCount >> 16) & 0xff))
+    header.append(UInt8((entryCount >> 8) & 0xff))
+    header.append(UInt8(entryCount & 0xff))
+    try header.write(to: url)
   }
 }

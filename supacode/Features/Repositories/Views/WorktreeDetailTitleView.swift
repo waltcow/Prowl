@@ -56,7 +56,8 @@ struct WorktreeDetailTitleView: View {
         ))
     } else {
       // Button wrapper gives folder/workspace the same toolbar padding as the branch button.
-      Button {} label: {
+      Button {
+      } label: {
         labelContent
       }
     }
