@@ -56,6 +56,7 @@ struct GhosttySurfaceSearchOverlay: View {
             )
           }
           .buttonStyle(GhosttySearchButtonStyle())
+          .help("Find Previous (⇧⌘G)")
 
           Button {
             navigateSearch(.next)
@@ -67,6 +68,7 @@ struct GhosttySurfaceSearchOverlay: View {
             )
           }
           .buttonStyle(GhosttySearchButtonStyle())
+          .help("Find Next (⌘G)")
 
           Button {
             closeSearch()
@@ -78,6 +80,7 @@ struct GhosttySurfaceSearchOverlay: View {
             )
           }
           .buttonStyle(GhosttySearchButtonStyle())
+          .help("Close Find Bar (Esc)")
         }
         .padding(8)
         .background(.background)
