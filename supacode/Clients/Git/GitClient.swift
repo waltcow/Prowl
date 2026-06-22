@@ -428,15 +428,70 @@ struct GitClient {
     }
     let path = worktreeURL.path(percentEncoded: false)
     do {
-      let diff = try await runGit(
+      async let diffOutput = runGit(
         operation: .lineChanges,
         arguments: ["-C", path, "diff", "HEAD", "--shortstat"]
       )
-      let changes = parseShortstat(diff)
-      return (added: changes.added, removed: changes.removed)
+      async let untrackedOutput = runGit(
+        operation: .untrackedFilePaths,
+        arguments: ["-C", path, "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"]
+      )
+      let tracked = parseShortstat(try await diffOutput)
+      let untrackedPaths = parseFileList(try await untrackedOutput)
+      let untrackedLines = Self.countLinesInFiles(untrackedPaths, relativeTo: worktreeURL)
+      return (added: tracked.added + untrackedLines, removed: tracked.removed)
     } catch {
       return nil
     }
+  }
+
+  nonisolated static func indexEntryCount(at worktreeURL: URL) -> Int? {
+    let gitDir = resolveGitDirectory(for: worktreeURL)
+    guard let gitDir else { return nil }
+    let indexURL = gitDir.appending(path: "index")
+    guard let handle = try? FileHandle(forReadingFrom: indexURL) else { return nil }
+    defer { try? handle.close() }
+    guard let header = try? handle.read(upToCount: 12), header.count == 12 else { return nil }
+    return header[8...11].withUnsafeBytes { Int($0.load(as: UInt32.self).bigEndian) }
+  }
+
+  nonisolated static func countLinesInFiles(_ relativePaths: [String], relativeTo base: URL) -> Int {
+    var total = 0
+    for relativePath in relativePaths {
+      let fileURL = base.appending(path: relativePath)
+      guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else { continue }
+      let prefixCount = min(data.count, 8192)
+      if data.prefix(prefixCount).contains(0x00) { continue }
+      total += data.reduce(0) { $0 + ($1 == 0x0A ? 1 : 0) }
+    }
+    return total
+  }
+
+  nonisolated private static func resolveGitDirectory(for worktreeURL: URL) -> URL? {
+    let gitURL = worktreeURL.appending(path: ".git")
+    var isDirectory = ObjCBool(false)
+    guard
+      FileManager.default.fileExists(
+        atPath: gitURL.path(percentEncoded: false),
+        isDirectory: &isDirectory
+      )
+    else {
+      return nil
+    }
+    if isDirectory.boolValue {
+      return gitURL
+    }
+    guard
+      let contents = try? String(contentsOf: gitURL, encoding: .utf8),
+      let line = contents.split(whereSeparator: \.isNewline).first
+    else {
+      return nil
+    }
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasPrefix("gitdir:") else { return nil }
+    let pathPart = trimmed.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !pathPart.isEmpty else { return nil }
+    return URL(fileURLWithPath: String(pathPart), relativeTo: worktreeURL).standardizedFileURL
   }
 
   nonisolated private func isWorktreeIndexLocked(_ worktreeURL: URL) async -> Bool {
@@ -744,12 +799,15 @@ struct GitClient {
     return (added, removed)
   }
 
-  nonisolated private func parseFileListCount(_ output: String) -> Int {
+  nonisolated private func parseFileList(_ output: String) -> [String] {
     output
       .split(whereSeparator: \.isNewline)
       .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-      .count
+  }
+
+  nonisolated private func parseFileListCount(_ output: String) -> Int {
+    parseFileList(output).count
   }
 
   nonisolated private func lastNonEmptyLine(in output: String) -> String? {

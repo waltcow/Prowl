@@ -136,7 +136,7 @@ struct WorktreeInfoWatcherManagerTests {
     let manager = WorktreeInfoWatcherManager(
       focusedInterval: .seconds(3_600),
       unfocusedInterval: .seconds(3_600),
-      lineChangesEventDebounceInterval: .milliseconds(80),
+      defaultLineChangesTiming: .init(filesChangedDebounce: .seconds(3_600), eventDebounce: .milliseconds(80)),
       lineChangesSafetyRefreshInterval: .seconds(3_600),
       lineChangePhaseOffset: { _, _ in .zero },
       pullRequestPhaseOffset: { _, _ in .zero },
@@ -392,6 +392,107 @@ struct WorktreeInfoWatcherManagerTests {
     manager.handleCommand(.setSelectedWorktreeID(firstWorktree.id))
     await drainAsyncEvents()
     #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 2)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
+  @Test func lineChangesTimingTierSelectsCorrectTier() {
+    let small = WorktreeInfoWatcherManager.LineChangesTiming.tier(forIndexEntryCount: 500)
+    #expect(small == .small)
+
+    let smallBoundary = WorktreeInfoWatcherManager.LineChangesTiming.tier(forIndexEntryCount: 4_999)
+    #expect(smallBoundary == .small)
+
+    let medium = WorktreeInfoWatcherManager.LineChangesTiming.tier(forIndexEntryCount: 5_000)
+    #expect(medium == .medium)
+
+    let mediumBoundary = WorktreeInfoWatcherManager.LineChangesTiming.tier(forIndexEntryCount: 19_999)
+    #expect(mediumBoundary == .medium)
+
+    let large = WorktreeInfoWatcherManager.LineChangesTiming.tier(forIndexEntryCount: 20_000)
+    #expect(large == .large)
+
+    let veryLarge = WorktreeInfoWatcherManager.LineChangesTiming.tier(forIndexEntryCount: 100_000)
+    #expect(veryLarge == .large)
+  }
+
+  @Test func largeRepoUsesLongerEventDebounce() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow"])
+    let worktree = try #require(tempRepository.worktrees.first)
+    let monitorStore = TestWorktreeFileEventMonitorStore()
+    let largeTiming = WorktreeInfoWatcherManager.LineChangesTiming.large
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      defaultLineChangesTiming: largeTiming,
+      lineChangesSafetyRefreshInterval: .seconds(3_600),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      worktreeFileEventMonitorFactory: monitorStore.makeMonitor,
+      indexEntryCountProvider: { _ in nil },
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    manager.handleCommand(.setWorktrees([worktree]))
+    manager.handleCommand(.setOpenedWorktreeIDs([worktree.id]))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 1)
+
+    let monitor = try #require(monitorStore.monitor(for: worktree.id))
+    monitor.emit()
+
+    await clock.advance(by: largeTiming.eventDebounce - .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 1)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 2)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
+  @Test func adaptiveTimingResolvesFromIndexEntryCount() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow"])
+    let worktree = try #require(tempRepository.worktrees.first)
+    let monitorStore = TestWorktreeFileEventMonitorStore()
+    let mediumTiming = WorktreeInfoWatcherManager.LineChangesTiming.medium
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      lineChangesSafetyRefreshInterval: .seconds(3_600),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      worktreeFileEventMonitorFactory: monitorStore.makeMonitor,
+      indexEntryCountProvider: { _ in 10_000 },
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    manager.handleCommand(.setWorktrees([worktree]))
+    manager.handleCommand(.setOpenedWorktreeIDs([worktree.id]))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 1)
+
+    let monitor = try #require(monitorStore.monitor(for: worktree.id))
+    monitor.emit()
+
+    await clock.advance(by: mediumTiming.eventDebounce - .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 1)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: worktree.id) == 2)
 
     manager.handleCommand(.stop)
     await task.value

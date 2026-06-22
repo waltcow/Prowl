@@ -51,11 +51,31 @@ final class WorktreeInfoWatcherManager {
     let unfocused: Duration
   }
 
-  private let filesChangedDebounceInterval: Duration
+  struct LineChangesTiming: Equatable, Sendable {
+    let filesChangedDebounce: Duration
+    let eventDebounce: Duration
+
+    static let small = LineChangesTiming(filesChangedDebounce: .seconds(1), eventDebounce: .seconds(2))
+    static let medium = LineChangesTiming(filesChangedDebounce: .seconds(2), eventDebounce: .seconds(5))
+    static let large = LineChangesTiming(filesChangedDebounce: .seconds(5), eventDebounce: .seconds(15))
+
+    static func tier(forIndexEntryCount count: Int) -> LineChangesTiming {
+      switch count {
+      case ..<5_000: return .small
+      case ..<20_000: return .medium
+      default: return .large
+      }
+    }
+  }
+
+  typealias IndexEntryCountProvider = @Sendable (URL) -> Int?
+
+  private let defaultLineChangesTiming: LineChangesTiming
   private let repositoryWorktreesEventDebounceInterval: Duration
   private let remoteConfigEventDebounceInterval: Duration
-  private let lineChangesEventDebounceInterval: Duration
   private let lineChangesSafetyRefreshInterval: Duration
+  private let indexEntryCountProvider: IndexEntryCountProvider
+  private var repositoryLineChangesTimings: [URL: LineChangesTiming] = [:]
   private let pullRequestSelectionRefreshCooldown: Duration
   private let refreshTiming: RefreshTiming
   private let lineChangePhaseOffset: WorktreePhaseOffset
@@ -88,10 +108,9 @@ final class WorktreeInfoWatcherManager {
   init<C: Clock<Duration>>(
     focusedInterval: Duration = .seconds(30),
     unfocusedInterval: Duration = .seconds(60),
-    filesChangedDebounceInterval: Duration = .seconds(5),
+    defaultLineChangesTiming: LineChangesTiming = .small,
     repositoryWorktreesEventDebounceInterval: Duration = .seconds(2),
     remoteConfigEventDebounceInterval: Duration = .seconds(2),
-    lineChangesEventDebounceInterval: Duration = .seconds(30),
     lineChangesSafetyRefreshInterval: Duration = .seconds(300),
     pullRequestSelectionRefreshCooldown: Duration = .seconds(5),
     lineChangePhaseOffset: @escaping WorktreePhaseOffset = WorktreeInfoWatcherManager.defaultLineChangePhaseOffset,
@@ -102,13 +121,13 @@ final class WorktreeInfoWatcherManager {
       WorktreeInfoWatcherManager.defaultWorktreeRegistryMonitorFactory,
     remoteConfigMonitorFactory: @escaping RemoteConfigMonitorFactory =
       WorktreeInfoWatcherManager.defaultRemoteConfigMonitorFactory,
+    indexEntryCountProvider: @escaping IndexEntryCountProvider = { GitClient.indexEntryCount(at: $0) },
     clock: C = ContinuousClock()
   ) {
     refreshTiming = RefreshTiming(focused: focusedInterval, unfocused: unfocusedInterval)
-    self.filesChangedDebounceInterval = filesChangedDebounceInterval
+    self.defaultLineChangesTiming = defaultLineChangesTiming
     self.repositoryWorktreesEventDebounceInterval = repositoryWorktreesEventDebounceInterval
     self.remoteConfigEventDebounceInterval = remoteConfigEventDebounceInterval
-    self.lineChangesEventDebounceInterval = lineChangesEventDebounceInterval
     self.lineChangesSafetyRefreshInterval = lineChangesSafetyRefreshInterval
     self.pullRequestSelectionRefreshCooldown = pullRequestSelectionRefreshCooldown
     self.lineChangePhaseOffset = lineChangePhaseOffset
@@ -116,6 +135,7 @@ final class WorktreeInfoWatcherManager {
     self.worktreeFileEventMonitorFactory = worktreeFileEventMonitorFactory
     self.worktreeRegistryMonitorFactory = worktreeRegistryMonitorFactory
     self.remoteConfigMonitorFactory = remoteConfigMonitorFactory
+    self.indexEntryCountProvider = indexEntryCountProvider
     self.sleep = { duration in
       try await clock.sleep(for: duration)
     }
@@ -176,6 +196,8 @@ final class WorktreeInfoWatcherManager {
       hasCompletedInitialWorktreeLoad = true
     }
     let repositoryRoots = Set(worktrees.map(\.repositoryRootURL))
+    let normalizedRoots = Set(repositoryRoots.map { $0.standardizedFileURL })
+    refreshRepositoryTimings(for: normalizedRoots)
     syncWorktreeRegistryMonitors(repositoryRoots: repositoryRoots)
     syncRemoteConfigMonitors(repositoryRoots: repositoryRoots)
     for repositoryRootURL in repositoryRoots {
@@ -309,7 +331,7 @@ final class WorktreeInfoWatcherManager {
 
   private func scheduleFilesChanged(worktreeID: Worktree.ID) {
     filesDebounceTasks[worktreeID]?.cancel()
-    let debounceInterval = filesChangedDebounceInterval
+    let debounceInterval = lineChangesTiming(for: worktreeID).filesChangedDebounce
     let sleep = self.sleep
     let task = Task { [weak self, sleep] in
       try? await sleep(debounceInterval)
@@ -528,7 +550,7 @@ final class WorktreeInfoWatcherManager {
   }
 
   private func scheduleLineChangesDebouncedRefresh(worktreeID: Worktree.ID) {
-    scheduleLineChangesRefresh(worktreeID: worktreeID, delay: lineChangesEventDebounceInterval)
+    scheduleLineChangesRefresh(worktreeID: worktreeID, delay: lineChangesTiming(for: worktreeID).eventDebounce)
   }
 
   private func updateLineChangesSafetySchedule(worktreeID: Worktree.ID) {
@@ -586,6 +608,24 @@ final class WorktreeInfoWatcherManager {
 
   private func isLineChangesActive(_ worktreeID: Worktree.ID) -> Bool {
     selectedWorktreeID == worktreeID || openedWorktreeIDs.contains(worktreeID)
+  }
+
+  private func lineChangesTiming(for worktreeID: Worktree.ID) -> LineChangesTiming {
+    guard let worktree = worktrees[worktreeID] else { return defaultLineChangesTiming }
+    let repoRoot = worktree.repositoryRootURL.standardizedFileURL
+    return repositoryLineChangesTimings[repoRoot] ?? defaultLineChangesTiming
+  }
+
+  private func refreshRepositoryTimings(for repositoryRoots: Set<URL>) {
+    let obsoleteRoots = repositoryLineChangesTimings.keys.filter { !repositoryRoots.contains($0) }
+    for root in obsoleteRoots {
+      repositoryLineChangesTimings.removeValue(forKey: root)
+    }
+    for root in repositoryRoots where repositoryLineChangesTimings[root] == nil {
+      if let count = indexEntryCountProvider(root) {
+        repositoryLineChangesTimings[root] = LineChangesTiming.tier(forIndexEntryCount: count)
+      }
+    }
   }
 
   private func startWorktreeFileEventMonitorIfNeeded(for worktree: Worktree) {
