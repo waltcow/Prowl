@@ -32,7 +32,7 @@ struct GhosttySurfaceSearchOverlay: View {
               navigateSearch(isShifted ? .previous : .next)
             },
             onEscape: {
-              isSearchFieldFocused = false
+              closeSearch()
               surfaceView.requestFocus()
             }
           )
@@ -72,6 +72,7 @@ struct GhosttySurfaceSearchOverlay: View {
 
           Button {
             closeSearch()
+            surfaceView.requestFocus()
           } label: {
             SearchButtonLabel(
               title: "Close",
