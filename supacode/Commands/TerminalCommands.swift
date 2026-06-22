@@ -77,7 +77,7 @@ struct TerminalCommands: Commands {
         navigateSearchNextAction?()
       }
       .modifier(
-        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:next"))
+        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:previous"))
       )
       .disabled(navigateSearchNextAction == nil)
 
@@ -85,7 +85,7 @@ struct TerminalCommands: Commands {
         navigateSearchPreviousAction?()
       }
       .modifier(
-        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:previous"))
+        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:next"))
       )
       .disabled(navigateSearchPreviousAction == nil)
 

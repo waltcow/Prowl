@@ -47,10 +47,10 @@ struct GhosttySurfaceSearchOverlay: View {
           }
 
           Button {
-            navigateSearch(.next)
+            navigateSearch(.previous)
           } label: {
             SearchButtonLabel(
-              title: "Next",
+              title: "Previous",
               shortcut: ghosttyShortcuts.display(for: "search:next"),
               systemImage: "chevron.up"
             )
@@ -58,10 +58,10 @@ struct GhosttySurfaceSearchOverlay: View {
           .buttonStyle(GhosttySearchButtonStyle())
 
           Button {
-            navigateSearch(.previous)
+            navigateSearch(.next)
           } label: {
             SearchButtonLabel(
-              title: "Previous",
+              title: "Next",
               shortcut: ghosttyShortcuts.display(for: "search:previous"),
               systemImage: "chevron.down"
             )
@@ -127,6 +127,11 @@ struct GhosttySurfaceSearchOverlay: View {
           searchText = newValue
         }
       }
+      .onChange(of: state.searchTotal) { _, newValue in
+        if let total = newValue, total > 0, state.searchSelected == nil {
+          surfaceView.performBindingAction("navigate_search:next")
+        }
+      }
       .onChange(of: state.searchFocusCount) { _, _ in
         focusSearchField()
       }
@@ -139,9 +144,8 @@ struct GhosttySurfaceSearchOverlay: View {
 
   @ViewBuilder
   private var matchLabel: some View {
-    if let selected = state.searchSelected {
-      let totalLabel = state.searchTotal.map(String.init) ?? "?"
-      Text("\(selected + 1)/\(totalLabel)")
+    if let selected = state.searchSelected, let total = state.searchTotal {
+      Text("\(total - selected)/\(total)")
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.trailing, 8)
