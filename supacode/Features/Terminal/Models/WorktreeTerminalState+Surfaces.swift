@@ -681,19 +681,8 @@ extension WorktreeTerminalState {
     emitTaskStatusIfChanged()
   }
 
-  /// Check whether the foreground process group contains active processes
-  /// beyond the idle shell. Returns `true` when a command (e.g. npm run build,
-  /// git clone, sleep) is running, `false` when the shell is sitting at a
-  /// prompt.
-  ///
-  /// When a shell executes `sleep 60`, both shell and sleep are in the **same**
-  /// process group (the shell's, since the shell is the pgid leader). The
-  /// foreground pgid from `tcgetpgrp` does NOT change — it stays equal to the
-  /// shell's PID. So comparing pgids can't distinguish "shell at prompt" from
-  /// "shell running a command". Instead, we enumerate the foreground process
-  /// group and check whether any member is alive **besides the shell itself**:
-  /// - pgid contains only shell PID → idle prompt → not running
-  /// - pgid contains shell PID + sleep PID → command running → true
+  // Simple commands share the shell's process group, so pgid comparison alone
+  // can't distinguish idle from running — enumerate and check for non-shell members.
   private func hasRunningForegroundProcess(processGroupID: pid_t, shellPID: pid_t?) -> Bool {
     let pids = ProcessDetection.processGroupPIDs(processGroupID)
     return pids.contains { $0 > 0 && $0 != shellPID && ProcessDetection.processBSDInfo(pid: $0) != nil }
