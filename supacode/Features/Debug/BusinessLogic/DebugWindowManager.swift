@@ -38,6 +38,7 @@ import SwiftUI
       new.identifier = NSUserInterfaceItemIdentifier("debug")
       new.styleMask = [.titled, .closable, .miniaturizable, .resizable]
       new.tabbingMode = .disallowed
+      new.collectionBehavior = [.moveToActiveSpace]
       new.toolbarStyle = .unified
       new.toolbar = NSToolbar(identifier: "DebugToolbar")
       if #unavailable(macOS 15.0) {
