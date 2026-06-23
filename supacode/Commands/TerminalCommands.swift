@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TerminalCommands: Commands {
   let ghosttyShortcuts: GhosttyShortcutManager
+  let resolvedKeybindings: ResolvedKeybindingMap
   @FocusedValue(\.newTerminalAction) private var newTerminalAction
   @FocusedValue(\.closeSurfaceAction) private var closeSurfaceAction
   @FocusedValue(\.closeTabAction) private var closeTabAction
@@ -70,8 +71,7 @@ struct TerminalCommands: Commands {
       }
       .modifier(
         KeyboardShortcutModifier(
-          shortcut: ghosttyShortcuts.keyboardShortcut(for: "start_search")
-            ?? KeyboardShortcut("f", modifiers: .command)
+          shortcut: resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.startSearch)
         )
       )
       .disabled(startSearchAction == nil)
@@ -81,8 +81,7 @@ struct TerminalCommands: Commands {
       }
       .modifier(
         KeyboardShortcutModifier(
-          shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:previous")
-            ?? KeyboardShortcut("g", modifiers: .command)
+          shortcut: resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.findNext)
         )
       )
       .disabled(navigateSearchNextAction == nil)
@@ -92,8 +91,7 @@ struct TerminalCommands: Commands {
       }
       .modifier(
         KeyboardShortcutModifier(
-          shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:next")
-            ?? KeyboardShortcut("g", modifiers: [.command, .shift])
+          shortcut: resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.findPrevious)
         )
       )
       .disabled(navigateSearchPreviousAction == nil)
@@ -104,10 +102,7 @@ struct TerminalCommands: Commands {
         endSearchAction?()
       }
       .modifier(
-        KeyboardShortcutModifier(
-          shortcut: ghosttyShortcuts.keyboardShortcut(for: "end_search")
-            ?? KeyboardShortcut(.escape, modifiers: [])
-        )
+        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "end_search"))
       )
       .disabled(endSearchAction == nil)
 
@@ -117,10 +112,7 @@ struct TerminalCommands: Commands {
         searchSelectionAction?()
       }
       .modifier(
-        KeyboardShortcutModifier(
-          shortcut: ghosttyShortcuts.keyboardShortcut(for: "search_selection")
-            ?? KeyboardShortcut("e", modifiers: .command)
-        )
+        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "search_selection"))
       )
       .disabled(searchSelectionAction == nil)
     }

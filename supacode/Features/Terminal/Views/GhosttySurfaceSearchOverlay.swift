@@ -5,6 +5,7 @@ struct GhosttySurfaceSearchOverlay: View {
   let surfaceView: GhosttySurfaceView
   @Bindable var state: GhosttySurfaceState
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts
+  @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
   @State private var searchText: String
   @State private var corner: GhosttySearchCorner = .topRight
@@ -51,24 +52,24 @@ struct GhosttySurfaceSearchOverlay: View {
           } label: {
             SearchButtonLabel(
               title: "Previous",
-              shortcut: ghosttyShortcuts.display(for: "search:next"),
+              shortcut: resolvedKeybindings.display(for: AppShortcuts.CommandID.findPrevious),
               systemImage: "chevron.up"
             )
           }
           .buttonStyle(GhosttySearchButtonStyle())
-          .help("Find Previous (⇧⌘G)")
+          .help(searchButtonHelp("Find Previous", commandID: AppShortcuts.CommandID.findPrevious))
 
           Button {
             navigateSearch(.next)
           } label: {
             SearchButtonLabel(
               title: "Next",
-              shortcut: ghosttyShortcuts.display(for: "search:previous"),
+              shortcut: resolvedKeybindings.display(for: AppShortcuts.CommandID.findNext),
               systemImage: "chevron.down"
             )
           }
           .buttonStyle(GhosttySearchButtonStyle())
-          .help("Find Next (⌘G)")
+          .help(searchButtonHelp("Find Next", commandID: AppShortcuts.CommandID.findNext))
 
           Button {
             closeSearch()
@@ -76,7 +77,7 @@ struct GhosttySurfaceSearchOverlay: View {
           } label: {
             SearchButtonLabel(
               title: "Close",
-              shortcut: ghosttyShortcuts.display(for: "end_search"),
+              shortcut: nil,
               systemImage: "xmark"
             )
           }
@@ -198,6 +199,13 @@ struct GhosttySurfaceSearchOverlay: View {
     searchTask.cancel()
     self.searchTask = nil
     emitSearch(searchText)
+  }
+
+  private func searchButtonHelp(_ title: String, commandID: String) -> String {
+    if let shortcut = resolvedKeybindings.display(for: commandID) {
+      return "\(title) (\(shortcut))"
+    }
+    return title
   }
 
   private func focusSearchField() {

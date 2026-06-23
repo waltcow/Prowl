@@ -152,6 +152,9 @@ enum AppShortcuts {
     static let selectTerminalPaneLeft = "select_terminal_pane_left"
     static let selectTerminalPaneRight = "select_terminal_pane_right"
     static let toggleSplitZoom = "toggle_split_zoom"
+    static let startSearch = "start_search"
+    static let findNext = "find_next"
+    static let findPrevious = "find_previous"
   }
 
   enum Scope: String {
@@ -200,6 +203,9 @@ enum AppShortcuts {
   static let stopRunScript = AppShortcut(key: ".", modifiers: .command)
   static let checkForUpdates = AppShortcut(key: "u", modifiers: [.command, .shift])
   static let showDiff = AppShortcut(key: "y", modifiers: [.command, .shift])
+  static let startSearch = AppShortcut(key: "f", modifiers: .command)
+  static let findNext = AppShortcut(key: "g", modifiers: .command)
+  static let findPrevious = AppShortcut(key: "g", modifiers: [.command, .shift])
   static let toggleCanvas = AppShortcut(
     keyEquivalent: .return, ghosttyKeyName: "return", modifiers: [.command, .option]
   )
@@ -785,6 +791,24 @@ enum AppShortcuts {
       title: "Expand / Restore Canvas Card",
       scope: .localInteraction,
       shortcut: expandCanvasCard
+    ),
+    .init(
+      id: CommandID.startSearch,
+      title: "Find",
+      scope: .configurableAppAction,
+      shortcut: startSearch
+    ),
+    .init(
+      id: CommandID.findNext,
+      title: "Find Next",
+      scope: .configurableAppAction,
+      shortcut: findNext
+    ),
+    .init(
+      id: CommandID.findPrevious,
+      title: "Find Previous",
+      scope: .configurableAppAction,
+      shortcut: findPrevious
     ),
   ]
 
