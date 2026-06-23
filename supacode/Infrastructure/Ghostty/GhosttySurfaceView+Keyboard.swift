@@ -112,15 +112,6 @@ extension GhosttySurfaceView {
     }
 
     if let bindingFlags = bindingFlags(for: event, surface: surface) {
-      let raw = bindingFlags.rawValue
-      let isPerformable = (raw & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue) != 0
-      let isConsumed = (raw & GHOSTTY_BINDING_FLAGS_CONSUMED.rawValue) != 0
-      let chars = event.charactersIgnoringModifiers ?? ""
-      SupaLogger("KeyEquiv").debug(
-        "binding flags=0x\(String(raw, radix: 16)) performable=\(isPerformable)"
-          + " consumed=\(isConsumed) key=\(chars) mods=\(event.modifierFlags.rawValue)"
-      )
-
       if shouldAttemptMenu(for: bindingFlags),
         let menu = NSApp.mainMenu,
         Self.mainMenuHasMatchingItem(for: event, in: menu),
@@ -438,9 +429,8 @@ extension GhosttySurfaceView {
     if bridge.state.keyTableDepth > 0 { return false }
     let raw = flags.rawValue
     let isAll = (raw & GHOSTTY_BINDING_FLAGS_ALL.rawValue) != 0
-    let isPerformable = (raw & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue) != 0
     let isConsumed = (raw & GHOSTTY_BINDING_FLAGS_CONSUMED.rawValue) != 0
-    return !isAll && !isPerformable && isConsumed
+    return !isAll && isConsumed
   }
 
   @IBAction func copy(_ sender: Any?) {
