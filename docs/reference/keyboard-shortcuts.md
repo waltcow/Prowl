@@ -87,6 +87,9 @@ pane has focus. The Ghostty action each maps to is shown for reference.
 | Select Pane Left | ⌘⌥← | `select_terminal_pane_left` | `goto_split:left` |
 | Select Pane Right | ⌘⌥→ | `select_terminal_pane_right` | `goto_split:right` |
 | Toggle Split Zoom | ⌘⌥⇧F | `toggle_split_zoom` | `toggle_split_zoom` |
+| Find | ⌘F | `start_search` | — |
+| Find Next | ⌘G | `find_next` | — |
+| Find Previous | ⌘⇧G | `find_previous` | — |
 
 ## Terminal engine (Ghostty-managed)
 
@@ -103,8 +106,6 @@ your Ghostty config (`~/.config/ghostty/config`). Typical defaults in parenthese
 | Reset Font Size | `reset_font_size` | ⌘0 |
 | Increase Font Size | `increase_font_size:1` | ⌘+ |
 | Decrease Font Size | `decrease_font_size:1` | ⌘- |
-| Find… | `start_search` | ⌘F |
-| Find Next / Previous | `search:next` / `search:previous` | ⌘G / ⌘⇧G |
 | Hide Find Bar | `end_search` | Esc |
 | Use Selection for Find | `search_selection` | ⌘E |
 
