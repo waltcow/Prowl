@@ -38,7 +38,7 @@ struct ArchivedWorktreesDetailView: View {
       selectedArchivedWorktreeIDs = selectedArchivedWorktreeIDs.intersection(newValue)
     }
     .animation(.easeOut(duration: 0.2), value: snapshot.archivedRowIDs)
-    .focusedValue(\.deleteWorktreeAction, snapshot.deleteWorktreeAction)
+    .focusedSceneValue(\.deleteWorktreeAction, snapshot.deleteWorktreeAction)
     .focusedSceneValue(\.confirmWorktreeAction, snapshot.confirmWorktreeAction)
     .toolbar { toolbarContent(deleteWorktreeAction: snapshot.deleteWorktreeAction) }
   }

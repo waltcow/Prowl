@@ -30,8 +30,8 @@ struct SidebarView: View {
       terminalManager: terminalManager
     )
     .focusedSceneValue(\.confirmWorktreeAction, confirmWorktreeAction)
-    .focusedValue(\.archiveWorktreeAction, archiveWorktreeAction)
-    .focusedValue(\.deleteWorktreeAction, deleteWorktreeAction)
+    .focusedSceneValue(\.archiveWorktreeAction, archiveWorktreeAction)
+    .focusedSceneValue(\.deleteWorktreeAction, deleteWorktreeAction)
     .focusedSceneValue(\.visibleHotkeyWorktreeRows, visibleHotkeyRows)
     // `visibleHotkeyWorktreeRows` stays a plain value: `WorktreeRowModel` is
     // Equatable, so SwiftUI already skips republishing it on no-op body runs.
