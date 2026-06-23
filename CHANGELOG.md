@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026.6.23](https://github.com/onevcat/Prowl/releases/tag/v2026.6.23)
+
+This release focuses on search usability, terminal activity detection, and window management reliability.
+
+### Improved
+
+- The sidebar spinner now activates for any foreground command (such as `npm run build`, `git clone`, or `sleep`), not just agent-driven tasks that emit progress signals.
+- The sidebar `+N` diff badge now includes lines from untracked files and uses adaptive timing: small repos update within about 2 seconds, while large repos use a longer debounce to stay responsive.
+
+### Fixed
+
+- Worktree delete and archive keyboard shortcuts no longer require clicking away from the terminal first — they now work while the terminal has focus.
+- Diff, Settings, and Debug windows are now visible when the main window is in fullscreen mode; they open in the active Space instead of a background one.
+- Search field keyboard handling is now reliable: Enter, Shift+Enter, Escape, Cmd+G, and Cmd+Shift+G all work while the field is being edited. Search now auto-selects the newest match on first result, and Find Next (Cmd+G) moves toward newer content to match standard macOS behavior.
+- Git repository detection is more robust in non-standard environments such as an unaccepted Xcode license or a broken developer path.
+
 ## [2026.6.20](https://github.com/onevcat/Prowl/releases/tag/v2026.6.20)
 
 This release adds project workspace support, bringing multi-repository orchestration to Prowl's core workflow.
