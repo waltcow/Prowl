@@ -1,6 +1,6 @@
 {
   "_comment": "Metadata for the docs/ manual. The last_synced_commit is the commit at which docs/ was last verified against the implementation; the sync-docs skill (.claude/skills/sync-docs/SKILL.md) diffs HEAD against it and updates this file. Committed to git on purpose so the baseline persists across sessions and machines. A dotfile + .json so a future docs website does not render it as a page.",
-  "last_synced_commit": "e24bea62060b401ba31b2506fa0c56dcabbcc4a0",
+  "last_synced_commit": "5b2197912d9194010441d9a93aaa8f683398d2af",
   "last_synced_date": "2026-06-23",
-  "note": "Search shortcuts (Find/Find Next/Find Previous) promoted from Ghostty-managed to configurable app keybindings. Other changes (focusedValue fix, fullscreen window fix, git fallback inversion, adaptive line-diff debounce) are internal and don't affect docs."
+  "note": "Release prep after reverting terminal running-state fallback. Version bump and reverted implementation do not require user-facing doc changes."
 }
