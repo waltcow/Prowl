@@ -803,7 +803,10 @@ struct SupacodeApp: App {
       Group {
         WorktreeCommands(store: store)
         SidebarCommands(store: store)
-        TerminalCommands(ghosttyShortcuts: ghosttyShortcuts)
+        TerminalCommands(
+          ghosttyShortcuts: ghosttyShortcuts,
+          resolvedKeybindings: store.resolvedKeybindings
+        )
         WindowCommands(
           store: store,
           terminalManager: terminalManager,

@@ -429,9 +429,8 @@ extension GhosttySurfaceView {
     if bridge.state.keyTableDepth > 0 { return false }
     let raw = flags.rawValue
     let isAll = (raw & GHOSTTY_BINDING_FLAGS_ALL.rawValue) != 0
-    let isPerformable = (raw & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue) != 0
     let isConsumed = (raw & GHOSTTY_BINDING_FLAGS_CONSUMED.rawValue) != 0
-    return !isAll && !isPerformable && isConsumed
+    return !isAll && isConsumed
   }
 
   @IBAction func copy(_ sender: Any?) {

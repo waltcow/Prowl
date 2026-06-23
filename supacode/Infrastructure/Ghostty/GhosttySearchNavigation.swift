@@ -2,21 +2,23 @@ enum GhosttySearchDirection {
   case next
   case previous
 
+  // Ghostty indexes from newest (0) to oldest; its "next" goes toward older
+  // content. We invert so .next = forward in document = toward newer.
   var bindingAction: String {
     switch self {
     case .next:
-      return "navigate_search:next"
-    case .previous:
       return "navigate_search:previous"
+    case .previous:
+      return "navigate_search:next"
     }
   }
 
   var oppositeBindingAction: String {
     switch self {
     case .next:
-      return "navigate_search:previous"
-    case .previous:
       return "navigate_search:next"
+    case .previous:
+      return "navigate_search:previous"
     }
   }
 }
@@ -33,9 +35,9 @@ enum GhosttySearchNavigator {
     }
 
     switch direction {
-    case .next where selected == total - 1:
+    case .next where selected == 0:
       return Array(repeating: direction.oppositeBindingAction, count: total - 1)
-    case .previous where selected == 0:
+    case .previous where selected == total - 1:
       return Array(repeating: direction.oppositeBindingAction, count: total - 1)
     default:
       return [directAction]

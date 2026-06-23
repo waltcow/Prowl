@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TerminalCommands: Commands {
   let ghosttyShortcuts: GhosttyShortcutManager
+  let resolvedKeybindings: ResolvedKeybindingMap
   @FocusedValue(\.newTerminalAction) private var newTerminalAction
   @FocusedValue(\.closeSurfaceAction) private var closeSurfaceAction
   @FocusedValue(\.closeTabAction) private var closeTabAction
@@ -69,7 +70,9 @@ struct TerminalCommands: Commands {
         startSearchAction?()
       }
       .modifier(
-        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "start_search"))
+        KeyboardShortcutModifier(
+          shortcut: resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.startSearch)
+        )
       )
       .disabled(startSearchAction == nil)
 
@@ -77,7 +80,9 @@ struct TerminalCommands: Commands {
         navigateSearchNextAction?()
       }
       .modifier(
-        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:next"))
+        KeyboardShortcutModifier(
+          shortcut: resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.findNext)
+        )
       )
       .disabled(navigateSearchNextAction == nil)
 
@@ -85,7 +90,9 @@ struct TerminalCommands: Commands {
         navigateSearchPreviousAction?()
       }
       .modifier(
-        KeyboardShortcutModifier(shortcut: ghosttyShortcuts.keyboardShortcut(for: "navigate_search:previous"))
+        KeyboardShortcutModifier(
+          shortcut: resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.findPrevious)
+        )
       )
       .disabled(navigateSearchPreviousAction == nil)
 
