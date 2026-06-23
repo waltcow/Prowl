@@ -374,10 +374,6 @@ extension WorktreeTerminalState {
         }
       }
       self.noteTitleForCommandDetection(title, surfaceId: view.id, tabId: tabId)
-      // Title changes when a command starts (shell sets it to the command name)
-      // and when it ends (precmd resets to prompt). This is our trigger to
-      // re-evaluate the foreground process state for non-OSC 9;4 commands.
-      self.updateRunningState(for: tabId)
     }
     view.bridge.onSplitAction = { [weak self, weak view] action in
       guard let self, let view else { return false }
@@ -663,15 +659,6 @@ extension WorktreeTerminalState {
         if surfaceRunningStartedAtById[surface.id] == nil {
           surfaceRunningStartedAtById[surface.id] = now
         }
-      } else if let pgid = surface.bridge.foregroundProcessGroupID(),
-        hasRunningForegroundProcess(processGroupID: pgid, shellPID: surface.bridge.childPID())
-      {
-        // Fallback: detect active commands that don't emit OSC 9;4
-        // (npm run build, git clone, sleep, etc.)
-        isRunningNow = true
-        if surfaceRunningStartedAtById[surface.id] == nil {
-          surfaceRunningStartedAtById[surface.id] = now
-        }
       } else {
         surfaceRunningStartedAtById.removeValue(forKey: surface.id)
       }
@@ -679,13 +666,6 @@ extension WorktreeTerminalState {
     tabIsRunningById[tabId] = isRunningNow
     tabManager.updateDirty(tabId, isDirty: isRunningNow)
     emitTaskStatusIfChanged()
-  }
-
-  // Simple commands share the shell's process group, so pgid comparison alone
-  // can't distinguish idle from running — enumerate and check for non-shell members.
-  private func hasRunningForegroundProcess(processGroupID: pid_t, shellPID: pid_t?) -> Bool {
-    let pids = ProcessDetection.processGroupPIDs(processGroupID)
-    return pids.contains { $0 > 0 && $0 != shellPID && ProcessDetection.processBSDInfo(pid: $0) != nil }
   }
 
   func emitTaskStatusIfChanged() {
