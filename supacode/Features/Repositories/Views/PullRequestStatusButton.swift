@@ -76,6 +76,11 @@ struct PullRequestStatusModel: Equatable {
       self.statusChecks = []
       return
     }
+    if state == "CLOSED" {
+      self.detailText = nil
+      self.statusChecks = []
+      return
+    }
     let isDraft = pullRequest.isDraft
     let prefix = isDraft ? "(Drafted) " : ""
     let mergeReadiness = PullRequestMergeReadiness(pullRequest: pullRequest)
@@ -116,6 +121,7 @@ struct PullRequestStatusModel: Equatable {
     guard number != nil else {
       return false
     }
-    return state?.uppercased() != "CLOSED"
+    let s = state?.uppercased()
+    return s != nil && s != "UNKNOWN"
   }
 }
