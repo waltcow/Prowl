@@ -7,6 +7,96 @@ import Testing
 
 @MainActor
 struct GhosttySurfaceViewTests {
+  @Test func mainMenuExactMatchRejectsShiftVariantOfCommandComma() throws {
+    let menu = NSMenu()
+    let item = NSMenuItem(title: "Settings", action: nil, keyEquivalent: ",")
+    item.keyEquivalentModifierMask = [.command]
+    menu.addItem(item)
+
+    let event = try makeKeyEvent(
+      characters: "<",
+      charactersIgnoringModifiers: ",",
+      modifiers: [.command, .shift],
+      keyCode: 43
+    )
+
+    #expect(!GhosttySurfaceView.mainMenuHasMatchingItem(for: event, in: menu))
+  }
+
+  @Test func mainMenuExactMatchAcceptsExactCommandComma() throws {
+    let menu = NSMenu()
+    let item = NSMenuItem(title: "Settings", action: nil, keyEquivalent: ",")
+    item.keyEquivalentModifierMask = [.command]
+    menu.addItem(item)
+
+    let event = try makeKeyEvent(
+      characters: ",",
+      charactersIgnoringModifiers: ",",
+      modifiers: [.command],
+      keyCode: 43
+    )
+
+    #expect(GhosttySurfaceView.mainMenuHasMatchingItem(for: event, in: menu))
+  }
+
+  @Test func mainMenuExactMatchAcceptsShiftedSymbolKeyEquivalent() throws {
+    let menu = NSMenu()
+    let item = NSMenuItem(title: "Help", action: nil, keyEquivalent: "?")
+    item.keyEquivalentModifierMask = [.command]
+    menu.addItem(item)
+
+    let event = try makeKeyEvent(
+      characters: "?",
+      charactersIgnoringModifiers: "/",
+      modifiers: [.command, .shift],
+      keyCode: 44
+    )
+
+    #expect(GhosttySurfaceView.mainMenuHasMatchingItem(for: event, in: menu))
+  }
+
+  @Test func mainMenuExactMatchRejectsUnshiftedVariantOfShiftedSymbolKeyEquivalent() throws {
+    let menu = NSMenu()
+    let item = NSMenuItem(title: "Help", action: nil, keyEquivalent: "?")
+    item.keyEquivalentModifierMask = [.command]
+    menu.addItem(item)
+
+    let event = try makeKeyEvent(
+      characters: "/",
+      charactersIgnoringModifiers: "/",
+      modifiers: [.command],
+      keyCode: 44
+    )
+
+    #expect(!GhosttySurfaceView.mainMenuHasMatchingItem(for: event, in: menu))
+  }
+
+  @Test func mainMenuExactMatchFindsSubmenuItems() throws {
+    let menu = NSMenu()
+    let parent = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
+    let submenu = NSMenu()
+    let item = NSMenuItem(title: "Show Diff", action: nil, keyEquivalent: "y")
+    item.keyEquivalentModifierMask = [.command, .shift]
+    submenu.addItem(item)
+    parent.submenu = submenu
+    menu.addItem(parent)
+
+    let event = try makeKeyEvent(
+      characters: "Y",
+      charactersIgnoringModifiers: "y",
+      modifiers: [.command, .shift],
+      keyCode: 16
+    )
+
+    #expect(GhosttySurfaceView.mainMenuHasMatchingItem(for: event, in: menu))
+  }
+
+  @Test func keyEquivalentFocusOwnershipRequiresActualFirstResponder() {
+    #expect(GhosttySurfaceView.hasKeyEquivalentFocusOwnership(cachedFocused: true, isActualFirstResponder: true))
+    #expect(!GhosttySurfaceView.hasKeyEquivalentFocusOwnership(cachedFocused: true, isActualFirstResponder: false))
+    #expect(!GhosttySurfaceView.hasKeyEquivalentFocusOwnership(cachedFocused: false, isActualFirstResponder: true))
+  }
+
   @Test func occlusionStateResendsDesiredValueAfterAttachmentChange() {
     var state = GhosttySurfaceView.OcclusionState()
 
@@ -341,6 +431,17 @@ struct GhosttySurfaceViewTests {
     )
   }
 
+  @Test func stringFromGhosttyTextUsesExplicitLength() {
+    let bytes: [UInt8] = Array("alpha".utf8) + [0] + Array("omega".utf8)
+
+    let decoded = bytes.withUnsafeBufferPointer { buffer in
+      let pointer = UnsafeRawPointer(buffer.baseAddress!).assumingMemoryBound(to: CChar.self)
+      return GhosttySurfaceView.stringFromGhosttyText(pointer: pointer, length: UInt(bytes.count))
+    }
+
+    #expect(Array(decoded.utf8) == bytes)
+  }
+
   @Test func keyboardLayoutChangeKeyUpSuppressionSuppressesMatchingKeyUp() {
     let suppression = GhosttySurfaceView.KeyboardLayoutChangeKeyUpSuppression(
       keyCode: 49,
@@ -370,5 +471,27 @@ struct GhosttySurfaceViewTests {
 
     #expect(!suppression.suppresses(keyCode: 49, timestamp: 11.1))
     #expect(suppression.isExpired(at: 11.1))
+  }
+
+  private func makeKeyEvent(
+    characters: String,
+    charactersIgnoringModifiers: String,
+    modifiers: NSEvent.ModifierFlags,
+    keyCode: UInt16
+  ) throws -> NSEvent {
+    try #require(
+      NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 1,
+        windowNumber: 0,
+        context: nil,
+        characters: characters,
+        charactersIgnoringModifiers: charactersIgnoringModifiers,
+        isARepeat: false,
+        keyCode: keyCode
+      )
+    )
   }
 }

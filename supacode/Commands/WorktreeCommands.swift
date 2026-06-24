@@ -18,7 +18,9 @@ struct WorktreeCommands: Commands {
 
   var body: some Commands {
     let repositories = store.repositories
-    let hasActiveWorktree = repositories.worktree(for: repositories.selectedWorktreeID) != nil
+    let hasActiveWorktree =
+      repositories.selectedTerminalWorktree != nil
+      || (repositories.isShowingCanvas && !store.selectedCustomCommands.isEmpty)
     let orderedRows = visibleHotkeyWorktreeRows ?? repositories.orderedWorktreeRows()
     let codeHostWorktreeID = selectedCodeHostWorktreeID
     let codeHostLabel = "Open on \(repositories.codeHost(forWorktreeID: codeHostWorktreeID).displayName)"
@@ -41,6 +43,22 @@ struct WorktreeCommands: Commands {
       )
       .help(helpText(title: "Select Previous Worktree", commandID: AppShortcuts.CommandID.selectPreviousWorktree))
       .disabled(orderedRows.isEmpty)
+      Button("Back in Worktree History") {
+        store.send(.repositories(.worktreeHistoryBack))
+      }
+      .modifier(
+        KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.worktreeHistoryBack))
+      )
+      .help(helpText(title: "Back in Worktree History", commandID: AppShortcuts.CommandID.worktreeHistoryBack))
+      .disabled(!repositories.canNavigateWorktreeHistoryBackward)
+      Button("Forward in Worktree History") {
+        store.send(.repositories(.worktreeHistoryForward))
+      }
+      .modifier(
+        KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.worktreeHistoryForward))
+      )
+      .help(helpText(title: "Forward in Worktree History", commandID: AppShortcuts.CommandID.worktreeHistoryForward))
+      .disabled(!repositories.canNavigateWorktreeHistoryForward)
       Divider()
       ForEach(worktreeMenuEntries(orderedRows: orderedRows)) { entry in
         worktreeMenuButton(entry: entry)
@@ -68,6 +86,10 @@ struct WorktreeCommands: Commands {
       }
       .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.openRepository)))
       .help(helpText(title: "Open Repository", commandID: AppShortcuts.CommandID.openRepository))
+      Button("New Workspace...", systemImage: "folder.badge.person.crop") {
+        store.send(.repositories(.workspaceCreation(.promptRequested)))
+      }
+      .help("New Workspace")
       Button("Open Worktree") {
         openSelectedWorktreeAction?()
       }
@@ -110,6 +132,12 @@ struct WorktreeCommands: Commands {
       }
       .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.refreshWorktrees)))
       .help(helpText(title: "Refresh Worktrees", commandID: AppShortcuts.CommandID.refreshWorktrees))
+      Button("Jump to Latest Unread") {
+        store.send(.jumpToLatestUnread)
+      }
+      .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.jumpToLatestUnread)))
+      .help(helpText(title: "Jump to Latest Unread", commandID: AppShortcuts.CommandID.jumpToLatestUnread))
+      .disabled(store.notificationIndicatorCount == 0)
       Divider()
       Button("Run Script") {
         runScriptAction?()
@@ -270,48 +298,48 @@ private struct WorktreeMenuEntry: Identifiable {
 }
 
 private struct ArchiveWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct OpenSelectedWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct DeleteWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct ConfirmWorktreeActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var openSelectedWorktreeAction: (() -> Void)? {
+  var openSelectedWorktreeAction: FocusedAction<Void>? {
     get { self[OpenSelectedWorktreeActionKey.self] }
     set { self[OpenSelectedWorktreeActionKey.self] = newValue }
   }
 
-  var confirmWorktreeAction: (() -> Void)? {
+  var confirmWorktreeAction: FocusedAction<Void>? {
     get { self[ConfirmWorktreeActionKey.self] }
     set { self[ConfirmWorktreeActionKey.self] = newValue }
   }
 
-  var archiveWorktreeAction: (() -> Void)? {
+  var archiveWorktreeAction: FocusedAction<Void>? {
     get { self[ArchiveWorktreeActionKey.self] }
     set { self[ArchiveWorktreeActionKey.self] = newValue }
   }
 
-  var deleteWorktreeAction: (() -> Void)? {
+  var deleteWorktreeAction: FocusedAction<Void>? {
     get { self[DeleteWorktreeActionKey.self] }
     set { self[DeleteWorktreeActionKey.self] = newValue }
   }
 
-  var runScriptAction: (() -> Void)? {
+  var runScriptAction: FocusedAction<Void>? {
     get { self[RunScriptActionKey.self] }
     set { self[RunScriptActionKey.self] = newValue }
   }
 
-  var stopRunScriptAction: (() -> Void)? {
+  var stopRunScriptAction: FocusedAction<Void>? {
     get { self[StopRunScriptActionKey.self] }
     set { self[StopRunScriptActionKey.self] = newValue }
   }
@@ -323,11 +351,11 @@ extension FocusedValues {
 }
 
 private struct RunScriptActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct StopRunScriptActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct VisibleHotkeyWorktreeRowsKey: FocusedValueKey {

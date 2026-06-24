@@ -12,6 +12,8 @@
 <p align="center">
   <a href="https://github.com/onevcat/Prowl/releases/latest/download/Prowl.dmg"><b>Download</b></a>
   ·
+  <a href="https://www.youtube.com/watch?v=4GYlXPttwi0">Watch Demo</a>
+  ·
   <a href="https://prowl.onev.cat">Website</a>
   ·
   <code>brew install --cask onevcat/tap/prowl</code>
@@ -22,6 +24,26 @@
 </p>
 
 ---
+
+## 🐾 Meet Prowl through your agent
+
+Prefer to learn the agentic way instead of scrolling? Hand this prompt to your coding agent (Claude Code, Codex, …) or any AI assistant — it reads Prowl's full documentation and gives you a tailored introduction:
+
+```text
+Read Prowl's documentation and introduce it to me.
+
+Prowl is a native macOS command center for running many AI coding agents in parallel. Its full manual lives here:
+https://raw.githubusercontent.com/onevcat/Prowl/refs/heads/main/docs/README.md
+
+Fetch that index and read it (it links to an overview and per-feature manuals in the same docs/ folder — read the relevant ones). Then:
+1. Briefly tell me what Prowl is and why it's worth my time.
+2. Based on what you know about how I work, suggest 3–4 Prowl features that would genuinely help me, each with a one-line "how".
+3. Then answer my follow-up questions, consulting the matching doc.
+
+Reply in my preferred language.
+```
+
+> Already installed Prowl? Your agent can read the same docs straight from the app bundle — choose **Help → Ask Agent About Prowl** in the app to copy a version localized to your language.
 
 ## Why Prowl?
 
@@ -34,6 +56,14 @@ You're not just typing commands anymore — you're orchestrating Claude Code, Co
 <img align="right" width="360" src="https://prowl.onev.cat/images/feature-canvas.webp" alt="Canvas view of multiple live agent terminals">
 
 Three agents running, one just finished — _where_? Canvas gives you a bird's-eye view where every card is a **live, interactive terminal**, not a screenshot. Finished tasks light up the moment they complete, and you can broadcast a single command to every agent at once.
+
+<br clear="all">
+
+### 📚 Shelf — your worktrees, lined up like books on a shelf
+
+<img align="left" width="360" src="https://prowl.onev.cat/images/shelf-view.webp" alt="Shelf view with vertical worktree spines and tabs">
+
+Every worktree becomes a vertical **spine** stacked on the side, with its tabs nested underneath. Flip through your stack from the keyboard — **`⌘⌃←` / `⌘⌃→` cycles books · `⌘⌃↑` / `⌘⌃↓` cycles tabs** — so when you've got six agents in flight, you triage them one keystroke at a time, never losing your place.
 
 <br clear="all">
 
@@ -55,6 +85,8 @@ prowl send "npm test" --capture    # execute & capture output in one shot
 prowl read                         # read screen content on demand
 prowl key <keystroke>              # send keystrokes programmatically
 ```
+
+Teach your agent when and how to drive Prowl by installing the bundled `prowl-cli` skill with [`skills`](https://github.com/vercel-labs/skills): `npx skills add onevcat/Prowl --skill prowl-cli`.
 
 ### And the stuff you'd expect, done right
 
@@ -89,17 +121,19 @@ A personal fork of [Supacode](https://github.com/supabitapp/supacode), built on 
 ```bash
 make build-ghostty-xcframework   # Build GhosttyKit from Zig source
 make build-app                   # Build the macOS app (Debug)
-make run-app                     # Build, launch, and stream logs
-make install-dev-build           # Build Debug and install to /Applications
+make run-app                     # Build, install, and launch Debug from /Applications/Prowl Debug.app
+make install-debug               # Build Debug and install to /Applications/Prowl Debug.app
+make install-dev-build           # Alias-compatible Debug install target
 make install-release             # Build Release, sign locally, install to /Applications
 ```
 
 ### Develop & test
 
 ```bash
-make check                 # swift-format + swiftlint
-make format                # Format only
-make lint                  # Lint only
+make check                 # Format changed Swift files, then run swift-format lint + SwiftLint
+make format-changed        # Format changed Swift files only
+make format                # Full-tree Swift format cleanup
+make lint                  # SwiftLint only
 make test                  # Run app/unit tests
 make log-stream            # Stream app logs (subsystem: com.onevcat.prowl)
 ```

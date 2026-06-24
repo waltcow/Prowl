@@ -397,13 +397,7 @@ final class OpenCommandHandler: CommandHandler {
   }
 
   private func bringAppToFront() {
-    NSApplication.shared.activate(ignoringOtherApps: true)
-    if let window = NSApplication.shared.windows.first(where: { $0.identifier?.rawValue == "main" }) {
-      if window.isMiniaturized {
-        window.deminiaturize(nil)
-      }
-      window.makeKeyAndOrderFront(nil)
-    }
+    NSApplication.shared.surfaceMainWindow()
   }
 
   private func waitForRepositoriesReadyIfNeeded() async {

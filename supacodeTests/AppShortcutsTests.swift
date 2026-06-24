@@ -10,7 +10,7 @@ struct AppShortcutsTests {
     let shortcuts: [AppShortcut] = [
       AppShortcuts.openSettings,
       AppShortcuts.newWorktree,
-      AppShortcuts.copyPath,
+      AppShortcuts.openRepository,
     ]
 
     for shortcut in shortcuts {
@@ -92,6 +92,7 @@ struct AppShortcutsTests {
       [
         "openSettings=\(AppShortcuts.openSettings.display)",
         "toggleLeftSidebar=\(AppShortcuts.toggleLeftSidebar.display)",
+        "toggleActiveAgentsPanel=\(AppShortcuts.toggleActiveAgentsPanel.display)",
         "runScript=\(AppShortcuts.runScript.display)",
         "stopRunScript=\(AppShortcuts.stopRunScript.display)",
         "checkForUpdates=\(AppShortcuts.checkForUpdates.display)",
@@ -119,6 +120,7 @@ struct AppShortcutsTests {
       [
         "openSettings=⌘,",
         "toggleLeftSidebar=⌘⌃S",
+        "toggleActiveAgentsPanel=⌘⌥P",
         "runScript=⌘R",
         "stopRunScript=⌘.",
         "checkForUpdates=⌘⇧U",
@@ -155,6 +157,10 @@ struct AppShortcutsTests {
       AppShortcuts.commandPalette.display
     )
     expectNoDifference(
+      idToDisplay["toggle_active_agents_panel"],
+      AppShortcuts.toggleActiveAgentsPanel.display
+    )
+    expectNoDifference(
       idToDisplay["quit_application"],
       AppShortcuts.quitApplication.display
     )
@@ -166,11 +172,29 @@ struct AppShortcutsTests {
       idToDisplay["select_all_canvas_cards"],
       AppShortcuts.selectAllCanvasCards.display
     )
+    expectNoDifference(
+      idToDisplay["arrange_canvas_cards"],
+      AppShortcuts.arrangeCanvasCards.display
+    )
+    expectNoDifference(
+      idToDisplay["organize_canvas_cards"],
+      AppShortcuts.organizeCanvasCards.display
+    )
 
     #expect(idToScope["command_palette"] == .configurableAppAction)
+    #expect(idToScope["toggle_active_agents_panel"] == .configurableAppAction)
     #expect(idToScope["quit_application"] == .systemFixedAppAction)
     #expect(idToScope["rename_branch"] == .localInteraction)
     #expect(idToScope["select_all_canvas_cards"] == .localInteraction)
+    #expect(idToScope["arrange_canvas_cards"] == .localInteraction)
+    #expect(idToScope["organize_canvas_cards"] == .localInteraction)
+  }
+
+  @Test func canvasLayoutShortcutsUseCommandOptionFamily() {
+    expectNoDifference(AppShortcuts.arrangeCanvasCards.display, "⌘⌥R")
+    expectNoDifference(AppShortcuts.organizeCanvasCards.display, "⌘⌥G")
+    #expect(AppShortcuts.arrangeCanvasCards.modifiers == [.command, .option])
+    #expect(AppShortcuts.organizeCanvasCards.modifiers == [.command, .option])
   }
 
   @Test func userOverrideConflictsDetectsReservedAppShortcuts() {
@@ -258,6 +282,7 @@ struct AppShortcutsTests {
       "--keybind=alt+super+arrow_down=goto_split:down",
       "--keybind=alt+super+arrow_left=goto_split:left",
       "--keybind=alt+super+arrow_right=goto_split:right",
+      "--keybind=alt+shift+super+f=toggle_split_zoom",
     ] {
       #expect(arguments.contains(argument))
     }
@@ -302,6 +327,36 @@ struct AppShortcutsTests {
     #expect(arguments.contains("--keybind=ctrl+m=goto_tab:1") == false)
   }
 
+  @Test func activeAgentsNavigationDisplayMergesDefaultBindings() {
+    #expect(AppShortcuts.activeAgentsNavigationDisplay(in: .appDefaults) == "⌥⌃↑↓")
+  }
+
+  @Test func activeAgentsNavigationDisplayHiddenWhenEitherBindingCustomized() {
+    let nextOverridden = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: KeybindingUserOverrideStore(
+        overrides: [
+          AppShortcuts.CommandID.selectNextActiveAgent: KeybindingUserOverride(
+            binding: Keybinding(key: "j", modifiers: .init(command: true))
+          )
+        ]
+      )
+    )
+    #expect(AppShortcuts.activeAgentsNavigationDisplay(in: nextOverridden) == nil)
+
+    let previousOverridden = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: KeybindingUserOverrideStore(
+        overrides: [
+          AppShortcuts.CommandID.selectPreviousActiveAgent: KeybindingUserOverride(
+            binding: Keybinding(key: "k", modifiers: .init(command: true))
+          )
+        ]
+      )
+    )
+    #expect(AppShortcuts.activeAgentsNavigationDisplay(in: previousOverridden) == nil)
+  }
+
   @Test func disabledManagedGhosttyActionKeepsDefaultUnboundWithoutBindingAction() {
     let overrides = KeybindingUserOverrideStore(
       overrides: [
@@ -344,7 +399,9 @@ struct AppShortcutsTests {
       id: "settings",
       title: "Open Settings",
       subtitle: nil,
-      kind: .openSettings
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: false
     )
     expectNoDifference(paletteItem.appShortcutLabel(in: resolved), "⌘;")
 
@@ -374,13 +431,39 @@ struct AppShortcutsTests {
       id: "settings",
       title: "Open Settings",
       subtitle: nil,
-      kind: .openSettings
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: false
     )
     #expect(paletteItem.appShortcutLabel(in: resolved) == nil)
 
     let arguments = AppShortcuts.ghosttyCLIKeybindArguments(from: resolved)
     #expect(arguments.contains("--keybind=super+,=unbind") == false)
     #expect(arguments.contains("--keybind=super+;=unbind") == false)
+  }
+
+  @Test func disabledCanvasLayoutOverridesResolveToNil() {
+    let overrides = KeybindingUserOverrideStore(
+      overrides: [
+        AppShortcuts.CommandID.arrangeCanvasCards: KeybindingUserOverride(
+          binding: Keybinding(key: "r", modifiers: .init(command: true, option: true)),
+          isEnabled: false
+        ),
+        AppShortcuts.CommandID.organizeCanvasCards: KeybindingUserOverride(
+          binding: Keybinding(key: "g", modifiers: .init(command: true, option: true)),
+          isEnabled: false
+        ),
+      ]
+    )
+    let resolved = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: overrides
+    )
+
+    // When disabled the resolved shortcut must be nil so CanvasView's handler bails
+    // instead of falling back to the app-default ⌘⌥R / ⌘⌥G key.
+    #expect(AppShortcuts.resolvedShortcut(for: AppShortcuts.CommandID.arrangeCanvasCards, in: resolved) == nil)
+    #expect(AppShortcuts.resolvedShortcut(for: AppShortcuts.CommandID.organizeCanvasCards, in: resolved) == nil)
   }
 
   @Test func resolvedShortcutFallsBackToDefaultWhenCommandMissingInResolvedMap() {
@@ -433,7 +516,9 @@ struct AppShortcutsTests {
       id: "settings",
       title: "Open Settings",
       subtitle: nil,
-      kind: .openSettings
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: false
     )
     expectNoDifference(paletteItem.appShortcutLabel(in: resolved), "⌘1")
 

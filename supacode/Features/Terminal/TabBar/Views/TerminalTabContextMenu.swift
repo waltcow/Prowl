@@ -1,16 +1,27 @@
 import SwiftUI
 
+enum TerminalTabContextMenuVariant {
+  /// Horizontal tab bar — shows all items; "Close Tabs to the Right".
+  case tabBar
+  /// Vertical shelf spine — shows all items; "Close Tabs Below".
+  case shelf
+  /// 2D canvas cards — worktree-scoped labels; hides "Close Tabs to the Right".
+  case canvas
+}
+
 extension View {
   func terminalTabContextMenu(
     tabId: TerminalTabID,
     tabs: [TerminalTabItem],
-    actions: TerminalTabContextMenuActions
+    actions: TerminalTabContextMenuActions,
+    variant: TerminalTabContextMenuVariant = .tabBar
   ) -> some View {
     modifier(
       TerminalTabContextMenu(
         tabId: tabId,
         tabs: tabs,
-        actions: actions
+        actions: actions,
+        variant: variant
       )
     )
   }
@@ -20,11 +31,14 @@ struct TerminalTabContextMenu: ViewModifier {
   let tabId: TerminalTabID
   let tabs: [TerminalTabItem]
   let actions: TerminalTabContextMenuActions
+  let variant: TerminalTabContextMenuVariant
 
   func body(content: Content) -> some View {
     content.contextMenu {
-      Button("Change Tab Title...") {
-        actions.changeTitle(tabId)
+      if let currentTab, !currentTab.isTitleLocked {
+        Button("Rename Tab") {
+          actions.renameTab(tabId)
+        }
       }
 
       Button("Change Tab Icon...") {
@@ -37,24 +51,37 @@ struct TerminalTabContextMenu: ViewModifier {
         actions.closeTab(tabId)
       }
 
-      Button("Close Other Tabs") {
+      Button(variant == .canvas ? "Close Other Tabs in This Worktree" : "Close Other Tabs") {
         actions.closeOthers(tabId)
       }
       .disabled(tabs.count <= 1)
 
-      Button("Close Tabs to the Right") {
-        actions.closeToRight(tabId)
+      if variant != .canvas {
+        Button(closeToTrailingLabel) {
+          actions.closeToRight(tabId)
+        }
+        .disabled(isLastTab)
       }
-      .disabled(isLastTab)
 
-      Button("Close All") {
+      Button(variant == .canvas ? "Close All Tabs in This Worktree" : "Close All") {
         actions.closeAll()
       }
+    }
+  }
+
+  private var closeToTrailingLabel: String {
+    switch variant {
+    case .shelf: "Close Tabs Below"
+    case .tabBar, .canvas: "Close Tabs to the Right"
     }
   }
 
   private var isLastTab: Bool {
     guard let last = tabs.last else { return true }
     return last.id == tabId
+  }
+
+  private var currentTab: TerminalTabItem? {
+    tabs.first { $0.id == tabId }
   }
 }

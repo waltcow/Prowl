@@ -4,6 +4,86 @@ import Testing
 
 @MainActor
 struct TerminalTabManagerTests {
+  @Test func customTitleOverridesDisplayTitleWithoutFreezingLiveTitle() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "shell", icon: nil)
+
+    manager.setCustomTitle(tabId, title: "  build  ")
+    manager.updateTitle(tabId, title: "npm test")
+
+    #expect(manager.tabs.first?.title == "npm test")
+    #expect(manager.tabs.first?.customTitle == "build")
+    #expect(manager.tabs.first?.displayTitle == "build")
+  }
+
+  @Test func clearingCustomTitleRestoresLiveShellTitle() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "shell", icon: nil)
+
+    manager.setCustomTitle(tabId, title: "build")
+    manager.updateTitle(tabId, title: "npm test")
+    manager.setCustomTitle(tabId, title: "   ")
+
+    #expect(manager.tabs.first?.customTitle == nil)
+    #expect(manager.tabs.first?.displayTitle == "npm test")
+  }
+
+  @Test func updateTitleReportsDisplayTitleChange() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "shell", icon: nil)
+
+    #expect(manager.updateTitle(tabId, title: "npm test") == true)
+    #expect(manager.updateTitle(tabId, title: "npm test") == false)
+  }
+
+  @Test func updateTitleReportsNoChangeWhenMaskedByCustomTitle() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "shell", icon: nil)
+    manager.setCustomTitle(tabId, title: "build")
+
+    // Live title moves but the custom title still masks the visible display.
+    #expect(manager.updateTitle(tabId, title: "npm test") == false)
+    #expect(manager.tabs.first?.displayTitle == "build")
+  }
+
+  @Test func updateTitleReportsNoChangeForLockedTab() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "RUN SCRIPT", icon: "play.fill", isTitleLocked: true)
+
+    #expect(manager.updateTitle(tabId, title: "npm run dev") == false)
+  }
+
+  @Test func setCustomTitleReportsDisplayTitleChange() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "shell", icon: nil)
+
+    #expect(manager.setCustomTitle(tabId, title: "build") == true)
+    #expect(manager.setCustomTitle(tabId, title: "build") == false)
+    // Clearing the custom title restores the live title, another visible change.
+    #expect(manager.setCustomTitle(tabId, title: "   ") == true)
+    #expect(manager.tabs.first?.displayTitle == "shell")
+  }
+
+  @Test func customTitleIgnoresLockedTabs() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "RUN SCRIPT", icon: "play.fill", isTitleLocked: true)
+
+    manager.setCustomTitle(tabId, title: "build")
+
+    #expect(manager.tabs.first?.customTitle == nil)
+    #expect(manager.tabs.first?.displayTitle == "RUN SCRIPT")
+  }
+
+  @Test func editingTabIDIsDroppedWhenTabCloses() {
+    let manager = TerminalTabManager()
+    let tabId = manager.createTab(title: "one", icon: nil)
+
+    manager.beginTabRename(tabId)
+    manager.closeTab(tabId)
+
+    #expect(manager.editingTabID == nil)
+  }
+
   @Test func createTabInsertsAfterSelection() {
     let manager = TerminalTabManager()
     let first = manager.createTab(title: "one", icon: nil)

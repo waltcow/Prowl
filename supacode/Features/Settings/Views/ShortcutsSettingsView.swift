@@ -407,6 +407,8 @@ struct ShortcutsSettingsView: View {
       return 4
     case AppShortcuts.CommandID.selectTerminalPaneRight:
       return 5
+    case AppShortcuts.CommandID.toggleSplitZoom:
+      return 6
     default:
       return nil
     }
@@ -906,6 +908,8 @@ private enum ShortcutGroup: String, CaseIterable, Identifiable {
     switch commandID {
     case AppShortcuts.CommandID.selectNextWorktree,
       AppShortcuts.CommandID.selectPreviousWorktree,
+      AppShortcuts.CommandID.worktreeHistoryBack,
+      AppShortcuts.CommandID.worktreeHistoryForward,
       AppShortcuts.CommandID.renameBranch,
       AppShortcuts.CommandID.selectWorktree1,
       AppShortcuts.CommandID.selectWorktree2,
@@ -935,6 +939,8 @@ private enum ShortcutGroup: String, CaseIterable, Identifiable {
       AppShortcuts.CommandID.selectShelfBook8,
       AppShortcuts.CommandID.selectShelfBook9,
       AppShortcuts.CommandID.selectAllCanvasCards,
+      AppShortcuts.CommandID.arrangeCanvasCards,
+      AppShortcuts.CommandID.organizeCanvasCards,
       AppShortcuts.CommandID.archivedWorktrees:
       return .scripts
 
@@ -954,7 +960,8 @@ private enum ShortcutGroup: String, CaseIterable, Identifiable {
       AppShortcuts.CommandID.selectTerminalPaneUp,
       AppShortcuts.CommandID.selectTerminalPaneDown,
       AppShortcuts.CommandID.selectTerminalPaneLeft,
-      AppShortcuts.CommandID.selectTerminalPaneRight:
+      AppShortcuts.CommandID.selectTerminalPaneRight,
+      AppShortcuts.CommandID.toggleSplitZoom:
       return .terminal
 
     default:

@@ -1,57 +1,4 @@
 import Foundation
-import Sentry
-
-enum GitOperation: String {
-  case repoRoot = "repo_root"
-  case worktreeList = "worktree_list"
-  case worktreeCreate = "worktree_create"
-  case worktreeRemove = "worktree_remove"
-  case worktreePrune = "worktree_prune"
-  case repoIsBare = "repo_is_bare"
-  case branchNames = "branch_names"
-  case branchNameValidation = "branch_name_validation"
-  case branchRefs = "branch_refs"
-  case defaultRemoteBranchRef = "default_remote_branch_ref"
-  case localHeadRef = "local_head_ref"
-  case ignoredFileCount = "ignored_file_count"
-  case untrackedFileCount = "untracked_file_count"
-  case branchRename = "branch_rename"
-  case branchDelete = "branch_delete"
-  case lineChanges = "line_changes"
-  case diffNameStatus = "diff_name_status"
-  case untrackedFilePaths = "untracked_file_paths"
-  case showFile = "show_file"
-  case remoteInfo = "remote_info"
-  case remoteList = "remote_list"
-  case fetchRemote = "fetch_remote"
-}
-
-enum GitClientError: LocalizedError {
-  case commandFailed(command: String, message: String)
-
-  var errorDescription: String? {
-    switch self {
-    case .commandFailed(let command, let message):
-      if message.isEmpty {
-        return "Git command failed: \(command)"
-      }
-      return "Git command failed: \(command)\n\(message)"
-    }
-  }
-}
-
-enum GitWorktreeCreateEvent: Equatable, Sendable {
-  case outputLine(ShellStreamLine)
-  case finished(Worktree)
-}
-
-nonisolated enum GitRemoteMatcher {
-  static func matchingRemote(for ref: String, from remotes: [String]) -> String? {
-    remotes
-      .sorted { $0.count > $1.count }
-      .first { ref.hasPrefix("\($0)/") }
-  }
-}
 
 struct GitClient {
   private struct WorktreeSortEntry {
@@ -93,11 +40,15 @@ struct GitClient {
     let data = Data(trimmed.utf8)
     let entries = try JSONDecoder().decode([GitWtWorktreeEntry].self, from: data)
       .filter { !$0.isBare }
-    let worktreeEntries = entries.enumerated().map { index, entry in
+    var seenWorktreeIDs = Set<Worktree.ID>()
+    let worktreeEntries: [WorktreeSortEntry] = entries.enumerated().compactMap { index, entry -> WorktreeSortEntry? in
       let worktreeURL = URL(fileURLWithPath: entry.path).standardizedFileURL
       let name = entry.branch.isEmpty ? worktreeURL.lastPathComponent : entry.branch
       let detail = Self.relativePath(from: repositoryRootURL, to: worktreeURL)
       let id = worktreeURL.path(percentEncoded: false)
+      guard seenWorktreeIDs.insert(id).inserted else {
+        return nil
+      }
       let resourceValues = try? worktreeURL.resourceValues(forKeys: [
         .creationDateKey, .contentModificationDateKey,
       ])
@@ -178,6 +129,10 @@ struct GitClient {
   }
 
   nonisolated func branchRefs(for repoRoot: URL) async throws -> [String] {
+    try await branchRefOptions(for: repoRoot).map(\.ref)
+  }
+
+  nonisolated func branchRefOptions(for repoRoot: URL) async throws -> [GitBranchRefOption] {
     let path = repoRoot.path(percentEncoded: false)
     let localOutput = try await runGit(
       operation: .branchRefs,
@@ -185,14 +140,47 @@ struct GitClient {
         "-C",
         path,
         "for-each-ref",
-        "--format=%(refname:short)\t%(upstream:short)",
+        "--format=%(refname)",
         "refs/heads",
       ]
     )
-    let refs = parseLocalRefsWithUpstream(localOutput)
+    let remoteOutput = try await runGit(
+      operation: .branchRefs,
+      arguments: [
+        "-C",
+        path,
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/remotes",
+      ]
+    )
+    let localRefs = parseRefLines(localOutput, prefix: "refs/heads/")
+      .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    let remoteRefs = parseRefLines(remoteOutput, prefix: "refs/remotes/")
+      // Drop `<remote>/HEAD` symbolic pointers: they resolve to a branch that is
+      // already listed, and selecting one would derive an invalid `HEAD` branch
+      // name in the remote-tracking checkout path.
       .filter { !$0.hasSuffix("/HEAD") }
       .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-    return deduplicated(refs)
+    return deduplicatedOptions(
+      localRefs.map { GitBranchRefOption(ref: $0, kind: .local) }
+        + remoteRefs.map { GitBranchRefOption(ref: $0, kind: .remoteTracking) }
+    )
+  }
+
+  nonisolated func remoteBranchRefs(for remoteURL: String) async throws -> GitRemoteBranchRefs {
+    let output = try await runGit(
+      operation: .remoteBranchRefs,
+      arguments: ["ls-remote", "--symref", "--end-of-options", remoteURL, "HEAD", "refs/heads/*"]
+    )
+    let parsed = parseRemoteBranchRefs(output)
+    let options = parsed.refs
+      .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+      .map { GitBranchRefOption(ref: "origin/\($0)", kind: .fetchedRemote) }
+    let defaultBaseRef =
+      parsed.defaultBranch.map { "origin/\($0)" }
+      ?? options.first?.ref
+    return GitRemoteBranchRefs(options: deduplicatedOptions(options), defaultBaseRef: defaultBaseRef)
   }
 
   nonisolated func defaultRemoteBranchRef(for repoRoot: URL) async throws -> String? {
@@ -258,11 +246,13 @@ struct GitClient {
   ) async throws -> Worktree {
     var createdWorktree: Worktree?
     for try await event in createWorktreeStream(
-      named: name,
-      in: repoRoot,
-      baseDirectory: baseDirectory,
-      copyFiles: copyFiles,
-      baseRef: baseRef
+      GitWorktreeCreateRequest(
+        name: name,
+        repoRoot: repoRoot,
+        baseDirectory: baseDirectory,
+        copyFiles: GitWorktreeCreateRequest.CopyFiles(ignored: copyFiles.ignored, untracked: copyFiles.untracked),
+        baseRef: baseRef
+      )
     ) {
       if case .finished(let worktree) = event {
         createdWorktree = worktree
@@ -285,23 +275,20 @@ struct GitClient {
   }
 
   nonisolated func createWorktreeStream(
-    named name: String,
-    in repoRoot: URL,
-    baseDirectory: URL,
-    copyFiles: (ignored: Bool, untracked: Bool),
-    baseRef: String
+    _ request: GitWorktreeCreateRequest
   ) -> AsyncThrowingStream<GitWorktreeCreateEvent, Error> {
     AsyncThrowingStream { continuation in
       Task {
-        let repositoryRootURL = repoRoot.standardizedFileURL
+        let repositoryRootURL = request.repoRoot.standardizedFileURL
         do {
           let wtURL = try wtScriptURL()
           let arguments = createWorktreeArguments(
-            baseDirectory: baseDirectory,
-            name: name,
-            copyIgnored: copyFiles.ignored,
-            copyUntracked: copyFiles.untracked,
-            baseRef: baseRef
+            baseDirectory: request.baseDirectory,
+            name: request.name,
+            copyIgnored: request.copyFiles.ignored,
+            copyUntracked: request.copyFiles.untracked,
+            baseRef: request.baseRef,
+            directoryOverride: request.directoryOverride
           )
           let envURL = URL(fileURLWithPath: "/usr/bin/env")
           let localeArguments = ["LANG=C", "LC_ALL=C", "LC_MESSAGES=C"]
@@ -312,7 +299,7 @@ struct GitClient {
             for try await streamEvent in shell.runLoginStream(
               envURL,
               invocationArguments,
-              repoRoot
+              request.repoRoot
             ) {
               switch streamEvent {
               case .line(let line):
@@ -339,7 +326,7 @@ struct GitClient {
                 let createdAt = resourceValues?.creationDate ?? resourceValues?.contentModificationDate
                 let worktree = Worktree(
                   id: id,
-                  name: name,
+                  name: request.name,
                   detail: detail,
                   workingDirectory: worktreeURL,
                   repositoryRootURL: repositoryRootURL,
@@ -372,7 +359,8 @@ struct GitClient {
     name: String,
     copyIgnored: Bool,
     copyUntracked: Bool,
-    baseRef: String
+    baseRef: String,
+    directoryOverride: URL? = nil
   ) -> [String] {
     var arguments = ["--base-dir", baseDirectory.path(percentEncoded: false), "sw"]
     if copyIgnored {
@@ -384,6 +372,10 @@ struct GitClient {
     if !baseRef.isEmpty {
       arguments.append("--from")
       arguments.append(baseRef)
+    }
+    if let directoryOverride {
+      arguments.append("--path")
+      arguments.append(directoryOverride.path(percentEncoded: false))
     }
     if copyIgnored || copyUntracked {
       arguments.append("--verbose")
@@ -436,15 +428,112 @@ struct GitClient {
     }
     let path = worktreeURL.path(percentEncoded: false)
     do {
-      let diff = try await runGit(
+      async let diffOutput = runGit(
         operation: .lineChanges,
         arguments: ["-C", path, "diff", "HEAD", "--shortstat"]
       )
-      let changes = parseShortstat(diff)
-      return (added: changes.added, removed: changes.removed)
+      async let untrackedOutput = runGit(
+        operation: .untrackedFilePaths,
+        arguments: ["-C", path, "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard", "-z"]
+      )
+      let tracked = parseShortstat(try await diffOutput)
+      let untrackedPaths = parseNULFileList(try await untrackedOutput)
+      let untrackedLines = Self.countLinesInFiles(untrackedPaths, relativeTo: worktreeURL)
+      return (added: tracked.added + untrackedLines, removed: tracked.removed)
     } catch {
       return nil
     }
+  }
+
+  nonisolated static func indexEntryCount(at worktreeURL: URL) -> Int? {
+    let gitDir = resolveGitDirectory(for: worktreeURL)
+    guard let gitDir else { return nil }
+    let indexURL = gitDir.appending(path: "index")
+    guard let handle = try? FileHandle(forReadingFrom: indexURL) else { return nil }
+    defer { try? handle.close() }
+    guard let header = try? handle.read(upToCount: 12), header.count == 12 else { return nil }
+    guard header.prefix(4).elementsEqual("DIRC".utf8) else { return nil }
+    let version = Self.bigEndianUInt32(from: header, offset: 4)
+    guard (2...4).contains(version) else { return nil }
+    return Int(Self.bigEndianUInt32(from: header, offset: 8))
+  }
+
+  nonisolated static func countLinesInFiles(_ relativePaths: [String], relativeTo base: URL) -> Int {
+    var total = 0
+    for relativePath in relativePaths {
+      let fileURL = base.appending(path: relativePath)
+      total += Self.countLines(in: fileURL) ?? 0
+    }
+    return total
+  }
+
+  nonisolated private static func bigEndianUInt32(from data: Data, offset: Int) -> UInt32 {
+    data[offset..<(offset + 4)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+  }
+
+  nonisolated private static func countLines(in fileURL: URL) -> Int? {
+    guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+    defer { try? handle.close() }
+
+    let binaryProbeByteCount = 8_192
+    let chunkByteCount = 64 * 1_024
+    var probedByteCount = 0
+    var lineCount = 0
+    var isEmpty = true
+    var lastByte: UInt8?
+
+    while true {
+      let chunk: Data
+      do {
+        guard let readChunk = try handle.read(upToCount: chunkByteCount) else { break }
+        chunk = readChunk
+      } catch {
+        return nil
+      }
+      guard !chunk.isEmpty else { break }
+
+      isEmpty = false
+      if probedByteCount < binaryProbeByteCount {
+        let remainingProbeCount = binaryProbeByteCount - probedByteCount
+        let probe = chunk.prefix(remainingProbeCount)
+        if probe.contains(0x00) { return nil }
+        probedByteCount += probe.count
+      }
+      lineCount += chunk.reduce(0) { $0 + ($1 == 0x0A ? 1 : 0) }
+      lastByte = chunk.last
+    }
+
+    if !isEmpty, lastByte != 0x0A {
+      lineCount += 1
+    }
+    return lineCount
+  }
+
+  nonisolated private static func resolveGitDirectory(for worktreeURL: URL) -> URL? {
+    let gitURL = worktreeURL.appending(path: ".git")
+    var isDirectory = ObjCBool(false)
+    guard
+      FileManager.default.fileExists(
+        atPath: gitURL.path(percentEncoded: false),
+        isDirectory: &isDirectory
+      )
+    else {
+      return nil
+    }
+    if isDirectory.boolValue {
+      return gitURL
+    }
+    guard
+      let contents = try? String(contentsOf: gitURL, encoding: .utf8),
+      let line = contents.split(whereSeparator: \.isNewline).first
+    else {
+      return nil
+    }
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasPrefix("gitdir:") else { return nil }
+    let pathPart = trimmed.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !pathPart.isEmpty else { return nil }
+    return URL(fileURLWithPath: String(pathPart), relativeTo: worktreeURL).standardizedFileURL
   }
 
   nonisolated private func isWorktreeIndexLocked(_ worktreeURL: URL) async -> Bool {
@@ -507,6 +596,20 @@ struct GitClient {
     await remoteWebInfo(for: repositoryRoot)?.repositoryURL
   }
 
+  nonisolated func githubRemoteInfos(for repositoryRoot: URL) async -> [GithubRemoteInfo] {
+    let candidates = await remoteWebCandidates(for: repositoryRoot).compactMap {
+      candidate -> (
+        name: String,
+        info: GithubRemoteInfo
+      )? in
+      guard let info = Self.parseGithubRemoteInfo(candidate.info) else {
+        return nil
+      }
+      return (name: candidate.name, info: info)
+    }
+    return Self.prioritizedGithubRemoteInfos(candidates)
+  }
+
   nonisolated func remoteInfo(for repositoryRoot: URL) async -> GithubRemoteInfo? {
     guard let remoteWebInfo = await remoteWebInfo(for: repositoryRoot) else {
       return nil
@@ -515,6 +618,13 @@ struct GitClient {
   }
 
   nonisolated private func remoteWebInfo(for repositoryRoot: URL) async -> GitRemoteWebInfo? {
+    let candidates = await remoteWebCandidates(for: repositoryRoot)
+    return Self.originFirstRemoteWebCandidates(candidates).first?.info
+  }
+
+  nonisolated private func remoteWebCandidates(
+    for repositoryRoot: URL
+  ) async -> [(name: String, info: GitRemoteWebInfo)] {
     let path = repositoryRoot.path(percentEncoded: false)
     guard
       let remotesOutput = try? await runGit(
@@ -522,20 +632,15 @@ struct GitClient {
         arguments: ["-C", path, "remote"]
       )
     else {
-      return nil
+      return []
     }
     let remotes =
       remotesOutput
       .split(whereSeparator: \.isNewline)
       .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-    let orderedRemotes: [String]
-    if remotes.contains("origin") {
-      orderedRemotes = ["origin"] + remotes.filter { $0 != "origin" }
-    } else {
-      orderedRemotes = remotes
-    }
-    for remote in orderedRemotes {
+    var candidates: [(name: String, info: GitRemoteWebInfo)] = []
+    for remote in remotes {
       guard
         let remoteURL = try? await runGit(
           operation: .remoteInfo,
@@ -545,10 +650,63 @@ struct GitClient {
         continue
       }
       if let info = Self.parseRepositoryWebInfo(remoteURL) {
-        return info
+        candidates.append((name: remote, info: info))
       }
     }
-    return nil
+    return candidates
+  }
+
+  nonisolated private static func originFirstRemoteWebCandidates(
+    _ candidates: [(name: String, info: GitRemoteWebInfo)]
+  ) -> [(name: String, info: GitRemoteWebInfo)] {
+    guard candidates.contains(where: { $0.name == "origin" }) else {
+      return candidates
+    }
+    return candidates.filter { $0.name == "origin" } + candidates.filter { $0.name != "origin" }
+  }
+
+  nonisolated static func prioritizedGithubRemoteInfos(
+    _ candidates: [(name: String, info: GithubRemoteInfo)]
+  ) -> [GithubRemoteInfo] {
+    var seen = Set<String>()
+    return
+      candidates
+      .enumerated()
+      .sorted { lhs, rhs in
+        let lhsPriority = githubPullRequestRemotePriority(lhs.element.name)
+        let rhsPriority = githubPullRequestRemotePriority(rhs.element.name)
+        if lhsPriority != rhsPriority {
+          return lhsPriority < rhsPriority
+        }
+        let nameComparison = lhs.element.name.localizedStandardCompare(rhs.element.name)
+        if nameComparison != .orderedSame {
+          return nameComparison == .orderedAscending
+        }
+        return lhs.offset < rhs.offset
+      }
+      .compactMap { entry in
+        let info = entry.element.info
+        let key = [
+          info.host.lowercased(),
+          info.owner.lowercased(),
+          info.repo.lowercased(),
+        ].joined(separator: "/")
+        guard seen.insert(key).inserted else {
+          return nil
+        }
+        return info
+      }
+  }
+
+  nonisolated private static func githubPullRequestRemotePriority(_ name: String) -> Int {
+    switch name.lowercased() {
+    case "origin":
+      0
+    case "upstream":
+      1
+    default:
+      2
+    }
   }
 
   nonisolated func remoteNames(for repoRoot: URL) async throws -> [String] {
@@ -575,8 +733,15 @@ struct GitClient {
   nonisolated func removeWorktree(_ worktree: Worktree, deleteBranch: Bool) async throws -> URL {
     let rootPath = worktree.repositoryRootURL.path(percentEncoded: false)
     let worktreeURL = worktree.workingDirectory.standardizedFileURL
-    let worktreePath = worktreeURL.path(percentEncoded: false)
-    let relocatedURL = Self.relocateWorktreeDirectory(worktreeURL)
+    let worktreePath = Self.canonicalWorktreePath(worktreeURL.path(percentEncoded: false))
+    let registeredWorktreePaths = try await registeredWorktreePaths(rootPath: rootPath)
+    guard registeredWorktreePaths.contains(worktreePath) else {
+      return worktree.workingDirectory
+    }
+    let relocatedURL =
+      Self.worktreeDirectoryHasGitMetadata(worktreeURL)
+      ? Self.relocateWorktreeDirectory(worktreeURL)
+      : nil
     if let relocatedURL {
       do {
         _ = try await runGit(
@@ -586,14 +751,12 @@ struct GitClient {
       } catch {
         await runGitWorktreeRemove(rootPath: rootPath, worktreePath: worktreePath)
       }
-      if deleteBranch, !worktree.name.isEmpty {
-        let names = try await localBranchNames(for: worktree.repositoryRootURL)
-        if names.contains(worktree.name.lowercased()) {
-          _ = try? await runGit(
-            operation: .branchDelete,
-            arguments: ["-C", rootPath, "branch", "-D", worktree.name]
-          )
-        }
+      if deleteBranch {
+        _ = try? await deleteLocalBranch(
+          named: worktree.name,
+          for: worktree.repositoryRootURL,
+          force: false
+        )
       }
       Task.detached {
         try? FileManager.default.removeItem(at: relocatedURL)
@@ -601,16 +764,65 @@ struct GitClient {
       return worktree.workingDirectory
     }
     await runGitWorktreeRemove(rootPath: rootPath, worktreePath: worktreePath)
-    if deleteBranch, !worktree.name.isEmpty {
-      let names = try await localBranchNames(for: worktree.repositoryRootURL)
-      if names.contains(worktree.name.lowercased()) {
-        _ = try? await runGit(
-          operation: .branchDelete,
-          arguments: ["-C", rootPath, "branch", "-D", worktree.name]
-        )
-      }
+    if deleteBranch {
+      _ = try? await deleteLocalBranch(
+        named: worktree.name,
+        for: worktree.repositoryRootURL,
+        force: false
+      )
     }
     return worktree.workingDirectory
+  }
+
+  nonisolated private func registeredWorktreePaths(rootPath: String) async throws -> Set<String> {
+    let output = try await runGit(
+      operation: .worktreeList,
+      arguments: ["-C", rootPath, "worktree", "list", "--porcelain"]
+    )
+    // `git worktree list --porcelain` reports the raw on-disk path (e.g. `/private/tmp/foo`),
+    // while `worktrees(for:)` stores `standardizedFileURL` paths (which resolve `/private`
+    // symlinks to `/tmp`). Canonicalize both sides identically so the removal guard matches
+    // externally-created worktrees living under symlinked roots like /tmp or /var.
+    return Set(Self.parseGitWorktreePorcelainPaths(output).map(Self.canonicalWorktreePath))
+  }
+
+  nonisolated func deleteLocalBranch(
+    named branchName: String,
+    for repoRoot: URL,
+    force: Bool
+  ) async throws -> LocalBranchDeletionOutcome {
+    guard !branchName.isEmpty else { return .notRequested }
+    let rootPath = repoRoot.path(percentEncoded: false)
+    let normalizedName = branchName.lowercased()
+    let names = try await localBranchNames(for: repoRoot)
+    guard names.contains(normalizedName) else { return .notFound }
+    let protectedNames = await protectedLocalBranchNames(for: repoRoot)
+    guard !protectedNames.contains(normalizedName) else { return .protected }
+    _ = try await runGit(
+      operation: .branchDelete,
+      arguments: ["-C", rootPath, "branch", force ? "-D" : "-d", branchName]
+    )
+    return .deleted
+  }
+
+  nonisolated private func protectedLocalBranchNames(for repoRoot: URL) async -> Set<String> {
+    var names: Set<String> = ["main", "master"]
+    if let defaultRef = try? await defaultRemoteBranchRef(for: repoRoot),
+      let defaultBranchName = Self.localBranchName(fromRef: defaultRef)
+    {
+      names.insert(defaultBranchName.lowercased())
+    }
+    return names
+  }
+
+  nonisolated private static func localBranchName(fromRef ref: String) -> String? {
+    let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    guard let slashIndex = trimmed.firstIndex(of: "/") else {
+      return trimmed
+    }
+    let name = trimmed[trimmed.index(after: slashIndex)...]
+    return name.isEmpty ? nil : String(name)
   }
 
   nonisolated private func parseShortstat(_ output: String) -> (added: Int, removed: Int) {
@@ -629,12 +841,21 @@ struct GitClient {
     return (added, removed)
   }
 
-  nonisolated private func parseFileListCount(_ output: String) -> Int {
+  nonisolated private func parseFileList(_ output: String) -> [String] {
     output
       .split(whereSeparator: \.isNewline)
       .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-      .count
+  }
+
+  nonisolated private func parseNULFileList(_ output: String) -> [String] {
+    output
+      .split(separator: "\0", omittingEmptySubsequences: true)
+      .map(String.init)
+  }
+
+  nonisolated private func parseFileListCount(_ output: String) -> Int {
+    parseFileList(output).count
   }
 
   nonisolated private func lastNonEmptyLine(in output: String) -> String? {
@@ -644,34 +865,65 @@ struct GitClient {
       .last { !$0.isEmpty }
   }
 
-  nonisolated private func parseLocalRefsWithUpstream(_ output: String) -> [String] {
+  nonisolated private func parseRefLines(_ output: String, prefix: String) -> [String] {
     output
       .split(whereSeparator: \.isNewline)
-      .flatMap { line -> [String] in
-        let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
-        guard let local = parts.first else {
-          return []
+      .compactMap { line -> String? in
+        let ref = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ref.isEmpty else {
+          return nil
         }
-        let localRef = String(local).trimmingCharacters(in: .whitespacesAndNewlines)
-        let upstreamRef =
-          parts.count > 1
-          ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
-          : ""
-
-        var refs: [String] = []
-        if !localRef.isEmpty {
-          refs.append(localRef)
-        }
-        if !upstreamRef.isEmpty {
-          refs.append(upstreamRef)
-        }
-        return refs
+        return ref.hasPrefix(prefix) ? String(ref.dropFirst(prefix.count)) : ref
       }
+  }
+
+  nonisolated private func parseRemoteBranchRefs(_ output: String) -> (refs: [String], defaultBranch: String?) {
+    var refs: [String] = []
+    var defaultBranch: String?
+    for rawLine in output.split(whereSeparator: \.isNewline) {
+      let line = String(rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
+      if line.hasPrefix("ref:") {
+        let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
+        guard parts.count >= 2, parts[1] == "HEAD" else {
+          continue
+        }
+        let target = parts[0]
+          .dropFirst("ref:".count)
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let branch = normalizeHeadRef(target) {
+          defaultBranch = branch
+        }
+        continue
+      }
+      let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
+      guard parts.count >= 2,
+        let branch = normalizeHeadRef(String(parts[1]))
+      else {
+        continue
+      }
+      refs.append(branch)
+    }
+    return (deduplicated(refs), defaultBranch)
+  }
+
+  nonisolated private func normalizeHeadRef(_ value: String) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let prefix = "refs/heads/"
+    guard trimmed.hasPrefix(prefix) else {
+      return nil
+    }
+    let branch = String(trimmed.dropFirst(prefix.count))
+    return branch.isEmpty ? nil : branch
   }
 
   nonisolated private func deduplicated(_ values: [String]) -> [String] {
     var seen = Set<String>()
     return values.filter { seen.insert($0).inserted }
+  }
+
+  nonisolated private func deduplicatedOptions(_ options: [GitBranchRefOption]) -> [GitBranchRefOption] {
+    var seen = Set<String>()
+    return options.filter { seen.insert($0.id).inserted }
   }
 
   nonisolated private func normalizeRemoteRef(_ value: String) -> String? {
@@ -868,6 +1120,34 @@ struct GitClient {
     return nil
   }
 
+  nonisolated private static func worktreeDirectoryHasGitMetadata(_ worktreeURL: URL) -> Bool {
+    let gitMetadataURL = worktreeURL.appending(path: ".git")
+    return FileManager.default.fileExists(atPath: gitMetadataURL.path(percentEncoded: false))
+  }
+
+  /// Normalizes a worktree path to the same canonical form `worktrees(for:)` stores, so paths
+  /// reported by git (which keep `/private` symlink prefixes) compare equal to the standardized
+  /// URLs Prowl tracks internally.
+  nonisolated static func canonicalWorktreePath(_ path: String) -> String {
+    URL(fileURLWithPath: path).standardizedFileURL.path(percentEncoded: false)
+  }
+
+  nonisolated static func parseGitWorktreePorcelainPaths(_ output: String) -> Set<String> {
+    Set(
+      output
+        .split(whereSeparator: \.isNewline)
+        .compactMap { line -> String? in
+          let prefix = "worktree "
+          guard line.hasPrefix(prefix) else {
+            return nil
+          }
+          return String(line.dropFirst(prefix.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        .filter { !$0.isEmpty }
+    )
+  }
+
   nonisolated static func parseRepositoryWebInfo(_ remoteURL: String) -> GitRemoteWebInfo? {
     let trimmed = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
@@ -933,68 +1213,6 @@ struct GitClient {
       return nil
     }
     return GithubRemoteInfo(host: remoteWebInfo.host, owner: owner, repo: repo)
-  }
-
-}
-
-private nonisolated let gitLogger = SupaLogger("Git")
-
-nonisolated private func shouldFallbackToLoginShell(_ error: Error) -> Bool {
-  guard let shellError = error as? ShellClientError else {
-    return false
-  }
-  if shellError.exitCode == 127 {
-    return true
-  }
-  let output = "\(shellError.stderr)\n\(shellError.stdout)".lowercased()
-  return output.contains("command not found")
-}
-
-nonisolated private func wrapShellError(
-  _ error: Error,
-  operation: GitOperation,
-  command: String
-) -> GitClientError {
-  let gitError: GitClientError
-  var exitCode: Int32 = -1
-  if let shellError = error as? ShellClientError {
-    exitCode = shellError.exitCode
-    var messageParts: [String] = []
-    if !shellError.stdout.isEmpty {
-      messageParts.append("stdout:\n\(shellError.stdout)")
-    }
-    if !shellError.stderr.isEmpty {
-      messageParts.append("stderr:\n\(shellError.stderr)")
-    }
-    let message = messageParts.joined(separator: "\n")
-    gitError = .commandFailed(command: command, message: message)
-  } else {
-    gitError = .commandFailed(command: command, message: error.localizedDescription)
-  }
-  gitLogger.warning("git command failed operation=\(operation.rawValue) exit_code=\(exitCode)")
-  #if !DEBUG
-    SentrySDK.logger.error(
-      "git command failed",
-      attributes: [
-        "operation": operation.rawValue,
-        "exit_code": Int(exitCode),
-      ]
-    )
-  #endif
-  return gitError
-}
-
-struct GitWtWorktreeEntry: Decodable, Equatable {
-  let branch: String
-  let path: String
-  let head: String
-  let isBare: Bool
-
-  enum CodingKeys: String, CodingKey {
-    case branch
-    case path
-    case head
-    case isBare = "is_bare"
   }
 
 }

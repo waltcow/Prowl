@@ -3,6 +3,9 @@ import SwiftUI
 struct RepoHeaderRow: View {
   private static let debugHeaderLayers = false
   let name: String
+  /// User-defined display title resolved by the parent reducer. When
+  /// non-nil, takes precedence over `name` for display.
+  var customTitle: String?
   let isRemoving: Bool
   /// User-pinned icon, when set. Renders before the repo name.
   /// `nil` keeps the historical text-only layout intact.
@@ -25,9 +28,12 @@ struct RepoHeaderRow: View {
           size: 14
         )
       }
-      Text(name)
-        .foregroundStyle(.secondary)
-        .help(nameTooltip ?? "")
+      RepoDisplayName(
+        fallbackName: name,
+        customTitle: customTitle,
+        tooltip: nameTooltip
+      )
+      .foregroundStyle(.secondary)
       if isRemoving {
         Text("Removing...")
           .font(.caption)

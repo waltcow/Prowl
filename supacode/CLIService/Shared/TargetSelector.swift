@@ -11,4 +11,9 @@ public enum TargetSelector: Codable, Sendable, Equatable {
   case tab(String)
   case pane(String)
   case auto(String)
+
+  public var isNone: Bool {
+    if case .none = self { return true }
+    return false
+  }
 }

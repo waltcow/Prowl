@@ -9,12 +9,15 @@ struct TerminalTabCloseButtonBackground: View {
       .fill(backgroundColor)
   }
 
+  // A clear circular fill on hover/press, like the standard macOS close-button
+  // affordance. Uses system label colors so it reads on any bar background
+  // (the brightness-ladder tab fills are too faint to show as a circle).
   private var backgroundColor: Color {
     if isPressing {
-      return TerminalTabBarColors.hoveredTabBackground
+      return Color(nsColor: .tertiaryLabelColor)
     }
     if isHoveringClose {
-      return TerminalTabBarColors.hoveredTabBackground
+      return Color(nsColor: .quaternaryLabelColor)
     }
     return .clear
   }

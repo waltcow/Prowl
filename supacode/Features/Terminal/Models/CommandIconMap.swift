@@ -31,15 +31,23 @@ enum CommandIconMap {
   /// artwork should add `assetName:` and let renderers prefer it.
   private static let firstTokenMapping: [String: TabIconSource] = [
     // Coding agents
-    "claude": TabIconSource(systemSymbol: "sparkle", assetName: "ClaudeCode"),
-    "codex": TabIconSource(systemSymbol: "sparkle", assetName: "Codex"),
-    "gemini": TabIconSource(systemSymbol: "sparkle", assetName: "Gemini"),
-    "opencode": TabIconSource(systemSymbol: "sparkle", assetName: "OpenCode"),
-    "amp": TabIconSource(systemSymbol: "sparkle", assetName: "Amp"),
-    "kimi": TabIconSource(systemSymbol: "sparkle", assetName: "Kimi"),
-    "copilot": TabIconSource(systemSymbol: "sparkle", assetName: "GitHubCopilot"),
     "aider": TabIconSource(systemSymbol: "sparkle"),
-    "droid": TabIconSource(systemSymbol: "sparkle"),
+    "agent": TabIconSource(systemSymbol: "sparkle", assetName: "Cursor"),
+    "amp": TabIconSource(systemSymbol: "sparkle", assetName: "Amp"),
+    "claude": TabIconSource(systemSymbol: "sparkle", assetName: "ClaudeCode"),
+    "cline": TabIconSource(systemSymbol: "sparkle", assetName: "Cline"),
+    "codex": TabIconSource(systemSymbol: "sparkle", assetName: "Codex"),
+    "copilot": TabIconSource(systemSymbol: "sparkle", assetName: "GitHubCopilot"),
+    "cursor": TabIconSource(systemSymbol: "sparkle", assetName: "Cursor"),
+    "cursor-agent": TabIconSource(systemSymbol: "sparkle", assetName: "Cursor"),
+    "droid": TabIconSource(systemSymbol: "sparkle", assetName: "Droid"),
+    "gemini": TabIconSource(systemSymbol: "sparkle", assetName: "Gemini"),
+    "kimi": TabIconSource(systemSymbol: "sparkle", assetName: "Kimi"),
+    "opencode": TabIconSource(systemSymbol: "sparkle", assetName: "OpenCode"),
+    "qwen": TabIconSource(systemSymbol: "sparkle", assetName: "Qwen"),
+    "omp": TabIconSource(systemSymbol: "sparkle", assetName: "OMP"),
+    "oh-my-pi": TabIconSource(systemSymbol: "sparkle", assetName: "OMP"),
+    "pi": TabIconSource(systemSymbol: "sparkle", assetName: "Pi"),
 
     // Editors / IDEs / pagers
     "vim": TabIconSource(systemSymbol: "pencil.and.scribble", assetName: "Vim"),

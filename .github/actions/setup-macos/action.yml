@@ -22,7 +22,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        GHOSTTY_SHA="$(git -C ThirdParty/ghostty rev-parse HEAD)"
+        GHOSTTY_SHA="$(git rev-parse HEAD:ThirdParty/ghostty)"
         printf '%s\n' "GHOSTTY_SHA=$GHOSTTY_SHA" >> "$GITHUB_ENV"
     - name: Ghostty cache
       id: ghostty_cache
@@ -35,12 +35,12 @@ runs:
           .ghostty_hash
           .ghostty_build_stamp
         key: ${{ runner.os }}-${{ runner.arch }}-ghostty-v1-${{ env.GHOSTTY_SHA }}
-    - name: Build ghostty
+    - name: Ensure ghostty
       if: steps.ghostty_cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         set -euo pipefail
-        make build-ghostty-xcframework
+        make ensure-ghostty
     - name: Sync ghostty marker files
       shell: bash
       run: |
@@ -51,7 +51,7 @@ runs:
     - name: SPM cache
       uses: actions/cache@v4
       with:
-        path: /tmp/supacode-spm-cache/SourcePackages
+        path: ~/Library/Caches/supacode-spm-cache/SourcePackages
         key: ${{ runner.os }}-${{ runner.arch }}-spm-v0-${{ hashFiles('**/Package.resolved') }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-spm-v0-
@@ -60,6 +60,12 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
-        key: ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v0
+        # Rotate when SPM deps or the Xcode project itself changes (target add/remove,
+        # build setting tweaks). Day-to-day .swift edits keep the same primary key, so
+        # `actions/cache` restores without re-uploading — the cache is content-addressed
+        # by file hash, so unchanged files still hit; changed files miss and recompile
+        # locally without invalidating the saved snapshot.
+        key: ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v1-${{ hashFiles('Package.resolved', 'supacode.xcodeproj/project.pbxproj') }}
         restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v1-
           ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-

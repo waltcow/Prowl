@@ -12,6 +12,16 @@ struct TerminalLayoutSnapshotPayloadTests {
     #expect(decoded == payload)
   }
 
+  @Test func decodeValidatedRoundTripsTabCustomTitle() throws {
+    let payload = makePayload(title: "live", customTitle: "Pinned")
+    let data = try JSONEncoder().encode(payload)
+
+    let decoded = TerminalLayoutSnapshotPayload.decodeValidated(from: data)
+
+    #expect(decoded == payload)
+    #expect(decoded?.worktrees.first?.tabs.first?.customTitle == "Pinned")
+  }
+
   @Test func decodeValidatedRoundTripsLeafCwdPath() throws {
     let payload = makePayload(splitRoot: .leaf(surfaceID: "surface-1", cwdPath: "/tmp/repo/wt-1/src"))
     let data = try JSONEncoder().encode(payload)
@@ -263,6 +273,68 @@ struct TerminalLayoutSnapshotPayloadTests {
     #expect(decodedTab?.icon == nil)
   }
 
+  @Test func decodeValidatedMigratesV1TitleIntoCustomTitle() {
+    let json = #"""
+      {
+        "version": 1,
+        "worktrees": [
+          {
+            "worktreeID": "wt-1",
+            "selectedTabID": "tab-1",
+            "tabs": [
+              {
+                "tabID": "tab-1",
+                "title": "Frozen Title",
+                "splitRoot": {
+                  "kind": "leaf",
+                  "surfaceID": "surface-1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+      """#
+    let data = Data(json.utf8)
+
+    let decoded = TerminalLayoutSnapshotPayload.decodeValidated(from: data)
+    #expect(decoded?.version == TerminalLayoutSnapshotPayload.currentVersion)
+    let decodedTab = decoded?.worktrees.first?.tabs.first
+    #expect(decodedTab?.title == nil)
+    #expect(decodedTab?.customTitle == "Frozen Title")
+  }
+
+  @Test func decodeValidatedV1MigrationLeavesExistingCustomTitleAlone() {
+    let json = #"""
+      {
+        "version": 1,
+        "worktrees": [
+          {
+            "worktreeID": "wt-1",
+            "selectedTabID": "tab-1",
+            "tabs": [
+              {
+                "tabID": "tab-1",
+                "title": "Live",
+                "customTitle": "Pinned",
+                "splitRoot": {
+                  "kind": "leaf",
+                  "surfaceID": "surface-1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+      """#
+    let data = Data(json.utf8)
+
+    let decoded = TerminalLayoutSnapshotPayload.decodeValidated(from: data)
+    let decodedTab = decoded?.worktrees.first?.tabs.first
+    #expect(decodedTab?.title == "Live")
+    #expect(decodedTab?.customTitle == "Pinned")
+  }
+
   @Test func decodeValidatedBackwardCompatibleWithoutTitleAndIcon() {
     let json = #"""
       {
@@ -309,6 +381,8 @@ private func makePayload(
   version: Int = TerminalLayoutSnapshotPayload.currentVersion,
   worktreeID: String = "wt-1",
   tabID: String = "tab-1",
+  title: String? = nil,
+  customTitle: String? = nil,
   splitRoot: TerminalLayoutSnapshotPayload.SnapshotSplitNode = .leaf(surfaceID: "surface-1")
 ) -> TerminalLayoutSnapshotPayload {
   TerminalLayoutSnapshotPayload(
@@ -318,7 +392,7 @@ private func makePayload(
         worktreeID: worktreeID,
         selectedTabID: tabID,
         tabs: [
-          makeTab(tabID: tabID, splitRoot: splitRoot)
+          makeTab(tabID: tabID, title: title, customTitle: customTitle, splitRoot: splitRoot)
         ]
       )
     ]
@@ -340,12 +414,14 @@ private func makeWorktree(
 private func makeTab(
   tabID: String,
   title: String? = nil,
+  customTitle: String? = nil,
   icon: String? = nil,
   splitRoot: TerminalLayoutSnapshotPayload.SnapshotSplitNode = .leaf(surfaceID: "surface-1")
 ) -> TerminalLayoutSnapshotPayload.SnapshotTab {
   TerminalLayoutSnapshotPayload.SnapshotTab(
     tabID: tabID,
     title: title,
+    customTitle: customTitle,
     icon: icon,
     splitRoot: splitRoot
   )

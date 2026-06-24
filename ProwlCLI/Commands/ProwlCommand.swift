@@ -13,10 +13,13 @@ struct ProwlCommand: ParsableCommand {
     subcommands: [
       OpenCommand.self,
       ListCommand.self,
+      AgentsCommand.self,
       FocusCommand.self,
       SendCommand.self,
       KeyCommand.self,
       ReadCommand.self,
+      TabCommand.self,
+      PaneCommand.self,
     ],
     defaultSubcommand: OpenCommand.self
   )

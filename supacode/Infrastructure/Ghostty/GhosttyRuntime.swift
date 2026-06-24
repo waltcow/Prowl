@@ -3,18 +3,18 @@ import GhosttyKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-nonisolated private let ghosttyLogger = SupaLogger("GhosttyRuntime")
+nonisolated let ghosttyLogger = SupaLogger("GhosttyRuntime")
 
 final class GhosttyRuntime {
-  nonisolated private static let ghosttyExecutableCandidates = [
+  nonisolated static let ghosttyExecutableCandidates = [
     "/Applications/Ghostty.app/Contents/MacOS/ghostty",
     "/opt/homebrew/bin/ghostty",
     "/usr/local/bin/ghostty",
   ]
-  nonisolated private static let ghosttyCLICacheLock = NSLock()
-  nonisolated(unsafe) private static var cachedGhosttyExecutablePath: String?
-  nonisolated(unsafe) private static var ghosttyExecutableResolutionAttempted = false
-  nonisolated(unsafe) private static var cachedFallbackThemePair: GhosttyThemePair?
+  nonisolated static let ghosttyCLICacheLock = NSLock()
+  nonisolated(unsafe) static var cachedGhosttyExecutablePath: String?
+  nonisolated(unsafe) static var ghosttyExecutableResolutionAttempted = false
+  nonisolated(unsafe) static var cachedFallbackThemePair: GhosttyThemePair?
   // Prowl constructs a single GhosttyRuntime for the whole app lifetime
   // (see `supacodeApp.init`). This weak reference gives UI surfaces that
   // don't otherwise have access to the runtime (e.g. the Settings window) a
@@ -35,16 +35,16 @@ final class GhosttyRuntime {
     }
   }
 
-  private var config: ghostty_config_t?
+  var config: ghostty_config_t?
   private(set) var app: ghostty_app_t?
-  private var observers: [NSObjectProtocol] = []
-  private var surfaceRefs: [SurfaceReference] = []
-  private var lastColorScheme: ghostty_color_scheme_e?
-  private var currentColorScheme: ColorScheme?
-  private var appKeybindOverrideContents = ""
-  private var appKeybindOverrideEntries: [String] = []
-  private var themeFallbackOverrideContents = ""
-  private var runtimeOverrideSignature = ""
+  var observers: [NSObjectProtocol] = []
+  var surfaceRefs: [SurfaceReference] = []
+  var lastColorScheme: ghostty_color_scheme_e?
+  var currentColorScheme: ColorScheme?
+  var appKeybindOverrideContents = ""
+  var appKeybindOverrideEntries: [String] = []
+  var themeFallbackOverrideContents = ""
+  var runtimeOverrideSignature = ""
   var onConfigChange: (() -> Void)?
   var onQuit: (() -> Void)?
 
@@ -93,7 +93,7 @@ final class GhosttyRuntime {
     currentColorScheme
   }
 
-  private func registerNotificationObservers() {
+  func registerNotificationObservers() {
     let center = NotificationCenter.default
     observers.append(
       center.addObserver(
@@ -195,7 +195,7 @@ final class GhosttyRuntime {
     }
   }
 
-  private func logLifecycleEvent(_ event: String) {
+  func logLifecycleEvent(_ event: String) {
     let validSurfaceCount = surfaceRefs.reduce(into: 0) { count, ref in
       if ref.isValid {
         count += 1
@@ -258,7 +258,7 @@ final class GhosttyRuntime {
     applyRuntimeOverridesIfNeeded()
   }
 
-  private func applyConfig(
+  func applyConfig(
     _ config: ghostty_config_t,
     target: ghostty_target_s,
     app: ghostty_app_t
@@ -274,307 +274,13 @@ final class GhosttyRuntime {
     }
   }
 
-  private func applyColorSchemeToSurfaces(_ scheme: ghostty_color_scheme_e) {
+  func applyColorSchemeToSurfaces(_ scheme: ghostty_color_scheme_e) {
     for ref in surfaceRefs where ref.isValid {
       ghostty_surface_set_color_scheme(ref.surface, scheme)
     }
   }
 
-  private static func runtime(from userdata: UnsafeMutableRawPointer?) -> GhosttyRuntime? {
-    guard let userdata else { return nil }
-    return Unmanaged<GhosttyRuntime>.fromOpaque(userdata).takeUnretainedValue()
-  }
-
-  private static func runtime(fromApp app: ghostty_app_t) -> GhosttyRuntime? {
-    guard let userdata = ghostty_app_userdata(app) else { return nil }
-    return runtime(from: userdata)
-  }
-
-  private static func surfaceBridge(fromUserdata userdata: UnsafeMutableRawPointer?)
-    -> GhosttySurfaceBridge?
-  {
-    guard let userdata else { return nil }
-    return Unmanaged<GhosttySurfaceBridge>.fromOpaque(userdata).takeUnretainedValue()
-  }
-
-  private static func surfaceBridge(fromSurface surface: ghostty_surface_t?)
-    -> GhosttySurfaceBridge?
-  {
-    guard let surface, let userdata = ghostty_surface_userdata(surface) else { return nil }
-    return Unmanaged<GhosttySurfaceBridge>.fromOpaque(userdata).takeUnretainedValue()
-  }
-
-  private nonisolated static func wakeupCallback(_ userdata: UnsafeMutableRawPointer?) {
-    let userdataBits = userdata.map { UInt(bitPattern: $0) }
-    if Thread.isMainThread {
-      MainActor.assumeIsolated {
-        wakeup(userdataBits: userdataBits)
-      }
-      return
-    }
-    DispatchQueue.main.async {
-      MainActor.assumeIsolated {
-        wakeup(userdataBits: userdataBits)
-      }
-    }
-  }
-
-  private nonisolated static func actionCallback(
-    _ app: ghostty_app_t?,
-    _ target: ghostty_target_s,
-    _ action: ghostty_action_s
-  ) -> Bool {
-    guard let app else { return false }
-    let appBits = UInt(bitPattern: app)
-    if Thread.isMainThread {
-      return MainActor.assumeIsolated {
-        handleAction(appBits: appBits, target: target, action: action)
-      }
-    }
-    DispatchQueue.main.async {
-      MainActor.assumeIsolated {
-        _ = handleAction(appBits: appBits, target: target, action: action)
-      }
-    }
-    return false
-  }
-
-  private nonisolated static func readClipboardCallback(
-    _ userdata: UnsafeMutableRawPointer?,
-    _ location: ghostty_clipboard_e,
-    _ state: UnsafeMutableRawPointer?
-  ) -> Bool {
-    let userdataBits = userdata.map { UInt(bitPattern: $0) }
-    let stateBits = state.map { UInt(bitPattern: $0) }
-    if Thread.isMainThread {
-      return MainActor.assumeIsolated {
-        readClipboard(userdataBits: userdataBits, location: location, stateBits: stateBits)
-      }
-    }
-    return DispatchQueue.main.sync {
-      MainActor.assumeIsolated {
-        readClipboard(userdataBits: userdataBits, location: location, stateBits: stateBits)
-      }
-    }
-  }
-
-  private nonisolated static func confirmReadClipboardCallback(
-    _ userdata: UnsafeMutableRawPointer?,
-    _ string: UnsafePointer<CChar>?,
-    _ state: UnsafeMutableRawPointer?,
-    _ request: ghostty_clipboard_request_e
-  ) {
-    guard let string else { return }
-    let value = String(cString: string)
-    let userdataBits = userdata.map { UInt(bitPattern: $0) }
-    let stateBits = state.map { UInt(bitPattern: $0) }
-    if Thread.isMainThread {
-      MainActor.assumeIsolated {
-        confirmReadClipboard(
-          userdataBits: userdataBits,
-          value: value,
-          stateBits: stateBits,
-          request: request
-        )
-      }
-      return
-    }
-    DispatchQueue.main.async {
-      MainActor.assumeIsolated {
-        confirmReadClipboard(
-          userdataBits: userdataBits,
-          value: value,
-          stateBits: stateBits,
-          request: request
-        )
-      }
-    }
-  }
-
-  private nonisolated static func writeClipboardCallback(
-    _ userdata: UnsafeMutableRawPointer?,
-    _ location: ghostty_clipboard_e,
-    _ content: UnsafePointer<ghostty_clipboard_content_s>?,
-    _ len: Int,
-    _ confirm: Bool
-  ) {
-    _ = userdata
-    guard let content, len > 0 else { return }
-    let items: [(mime: String, data: String)] = (0..<len).compactMap { index in
-      let item = content.advanced(by: index).pointee
-      guard let mimePtr = item.mime, let dataPtr = item.data else { return nil }
-      return (mime: String(cString: mimePtr), data: String(cString: dataPtr))
-    }
-    guard !items.isEmpty else { return }
-    if Thread.isMainThread {
-      MainActor.assumeIsolated {
-        writeClipboard(
-          location: location,
-          items: items,
-          confirm: confirm
-        )
-      }
-      return
-    }
-    DispatchQueue.main.async {
-      MainActor.assumeIsolated {
-        writeClipboard(
-          location: location,
-          items: items,
-          confirm: confirm
-        )
-      }
-    }
-  }
-
-  private nonisolated static func closeSurfaceCallback(
-    _ userdata: UnsafeMutableRawPointer?,
-    _ processAlive: Bool
-  ) {
-    let userdataBits = userdata.map { UInt(bitPattern: $0) }
-    if Thread.isMainThread {
-      MainActor.assumeIsolated {
-        closeSurface(userdataBits: userdataBits, processAlive: processAlive)
-      }
-      return
-    }
-    DispatchQueue.main.async {
-      MainActor.assumeIsolated {
-        closeSurface(userdataBits: userdataBits, processAlive: processAlive)
-      }
-    }
-  }
-
-  private static func wakeup(userdataBits: UInt?) {
-    let userdata = userdataBits.flatMap { UnsafeMutableRawPointer(bitPattern: $0) }
-    guard let runtime = runtime(from: userdata) else { return }
-    runtime.tick()
-  }
-
-  private static func handleAction(
-    appBits: UInt,
-    target: ghostty_target_s,
-    action: ghostty_action_s
-  ) -> Bool {
-    guard let app = ghostty_app_t(bitPattern: appBits) else { return false }
-    if let runtime = runtime(fromApp: app) {
-      if action.tag == GHOSTTY_ACTION_CONFIG_CHANGE, target.tag == GHOSTTY_TARGET_APP {
-        let config = action.action.config_change.config
-        guard let clone = ghostty_config_clone(config) else { return false }
-        runtime.setConfig(clone)
-        if let scheme = runtime.currentColorScheme {
-          runtime.reconcileThemeFallback(for: scheme)
-        }
-        runtime.onConfigChange?()
-        NotificationCenter.default.post(name: .ghosttyRuntimeConfigDidChange, object: runtime)
-      }
-      if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG {
-        let soft = action.action.reload_config.soft
-        runtime.reloadConfig(soft: soft, target: target)
-      }
-    }
-    if action.tag == GHOSTTY_ACTION_OPEN_CONFIG, target.tag == GHOSTTY_TARGET_APP {
-      openGhosttyConfig()
-      return true
-    }
-    if action.tag == GHOSTTY_ACTION_QUIT {
-      if let runtime = runtime(fromApp: app) {
-        runtime.onQuit?()
-      }
-      return true
-    }
-    if action.tag == GHOSTTY_ACTION_CLOSE_WINDOW {
-      closeWindow(target: target)
-      return true
-    }
-    guard target.tag == GHOSTTY_TARGET_SURFACE else { return false }
-    guard let surface = target.target.surface else { return false }
-    guard let bridge = surfaceBridge(fromSurface: surface) else { return false }
-    return bridge.handleAction(target: target, action: action)
-  }
-
-  private static func closeWindow(target: ghostty_target_s) {
-    switch target.tag {
-    case GHOSTTY_TARGET_SURFACE:
-      guard let surface = target.target.surface else { return }
-      guard let bridge = surfaceBridge(fromSurface: surface) else { return }
-      bridge.surfaceView?.window?.close()
-    default:
-      break
-    }
-  }
-
-  static func openGhosttyConfig() {
-    let configStr = ghostty_config_open_path()
-    defer { ghostty_string_free(configStr) }
-    guard let ptr = configStr.ptr else { return }
-    let path = String(data: Data(bytes: ptr, count: Int(configStr.len)), encoding: .utf8) ?? ""
-    guard !path.isEmpty else { return }
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = ["-t", path]
-    try? process.run()
-  }
-
-  private static func readClipboard(
-    userdataBits: UInt?,
-    location: ghostty_clipboard_e,
-    stateBits: UInt?
-  ) -> Bool {
-    let userdata = userdataBits.flatMap { UnsafeMutableRawPointer(bitPattern: $0) }
-    let state = stateBits.flatMap { UnsafeMutableRawPointer(bitPattern: $0) }
-    guard let bridge = surfaceBridge(fromUserdata: userdata), let surface = bridge.surface else {
-      return false
-    }
-    guard let value = NSPasteboard.ghostty(location)?.getOpinionatedStringContents() else {
-      return false
-    }
-    value.withCString { ptr in
-      ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
-    }
-    return true
-  }
-
-  private static func confirmReadClipboard(
-    userdataBits: UInt?,
-    value: String,
-    stateBits: UInt?,
-    request: ghostty_clipboard_request_e
-  ) {
-    _ = request
-    let userdata = userdataBits.flatMap { UnsafeMutableRawPointer(bitPattern: $0) }
-    let state = stateBits.flatMap { UnsafeMutableRawPointer(bitPattern: $0) }
-    guard let bridge = surfaceBridge(fromUserdata: userdata), let surface = bridge.surface else {
-      return
-    }
-    value.withCString { ptr in
-      ghostty_surface_complete_clipboard_request(surface, ptr, state, true)
-    }
-  }
-
-  private static func writeClipboard(
-    location: ghostty_clipboard_e,
-    items: [(mime: String, data: String)],
-    confirm: Bool
-  ) {
-    _ = confirm
-
-    guard let pasteboard = NSPasteboard.ghostty(location) else { return }
-    let types = items.compactMap { NSPasteboard.PasteboardType(mimeType: $0.mime) }
-    pasteboard.declareTypes(types, owner: nil)
-    for item in items {
-      guard let type = NSPasteboard.PasteboardType(mimeType: item.mime) else { continue }
-      pasteboard.setString(item.data, forType: type)
-    }
-  }
-
-  private static func closeSurface(userdataBits: UInt?, processAlive: Bool) {
-    let userdata = userdataBits.flatMap { UnsafeMutableRawPointer(bitPattern: $0) }
-    guard let bridge = surfaceBridge(fromUserdata: userdata) else { return }
-    bridge.closeSurface(processAlive: processAlive)
-  }
-
-  private func setConfig(_ config: ghostty_config_t) {
+  func setConfig(_ config: ghostty_config_t) {
     if let existing = self.config {
       ghostty_config_free(existing)
     }
@@ -597,259 +303,7 @@ final class GhosttyRuntime {
     applyRuntimeOverridesIfNeeded()
   }
 
-  private func reconcileThemeFallback(for scheme: ColorScheme) {
-    // Subprocess discovery of the user's Ghostty CLI can block the main
-    // thread (and in XCTest host bringup it has timed out the test runner
-    // preparation phase). Short-circuit under test, and dispatch the
-    // lookup off-main in all other cases.
-    guard !Self.isRunningInTestEnvironment() else {
-      setThemeFallbackOverride("")
-      return
-    }
-    Task { [weak self] in
-      let snapshot = await Self.probeUserConfigSnapshot()
-      let pair: GhosttyThemePair? =
-        snapshot?.themeMode == .single ? await Self.probeFallbackThemePair() : nil
-      self?.applyResolvedThemeFallback(for: scheme, snapshot: snapshot, pair: pair)
-    }
-  }
-
-  @MainActor
-  private func applyResolvedThemeFallback(
-    for scheme: ColorScheme,
-    snapshot: GhosttyUserConfigSnapshot?,
-    pair: GhosttyThemePair?
-  ) {
-    guard currentColorScheme == scheme else { return }
-    guard let snapshot, snapshot.themeMode == .single else {
-      setThemeFallbackOverride("")
-      return
-    }
-
-    let targetTone: GhosttyTerminalTone = scheme == .dark ? .dark : .light
-    guard snapshot.backgroundTone == .light || snapshot.backgroundTone == .dark else {
-      setThemeFallbackOverride("")
-      return
-    }
-
-    if snapshot.backgroundTone == targetTone {
-      setThemeFallbackOverride("")
-      return
-    }
-
-    guard let pair else {
-      setThemeFallbackOverride("")
-      return
-    }
-
-    setThemeFallbackOverride("theme = light:\(pair.light),dark:\(pair.dark)")
-  }
-
-  nonisolated private static func isRunningInTestEnvironment() -> Bool {
-    let env = ProcessInfo.processInfo.environment
-    return env["XCTestConfigurationFilePath"] != nil
-      || env["XCTestBundlePath"] != nil
-      || env["XCTestSessionIdentifier"] != nil
-  }
-
-  private func setThemeFallbackOverride(_ contents: String) {
-    guard contents != themeFallbackOverrideContents else { return }
-    themeFallbackOverrideContents = contents
-    applyRuntimeOverridesIfNeeded()
-  }
-
-  private func applyRuntimeOverridesIfNeeded() {
-    guard let app else { return }
-
-    let nextSignature = [appKeybindOverrideContents, themeFallbackOverrideContents].joined(separator: "\n---\n")
-    guard nextSignature != runtimeOverrideSignature else { return }
-
-    var overrideURLs: [URL] = []
-    if !appKeybindOverrideContents.isEmpty {
-      let url = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("prowl-ghostty-keybind-overrides.conf")
-      do {
-        try appKeybindOverrideContents.write(to: url, atomically: true, encoding: .utf8)
-        overrideURLs.append(url)
-      } catch {
-        ghosttyLogger.warning("Failed to write ghostty keybind override file: \(error.localizedDescription)")
-        return
-      }
-    }
-
-    if !themeFallbackOverrideContents.isEmpty {
-      let url = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("prowl-ghostty-theme-overrides.conf")
-      do {
-        try themeFallbackOverrideContents.write(to: url, atomically: true, encoding: .utf8)
-        overrideURLs.append(url)
-      } catch {
-        ghosttyLogger.warning("Failed to write ghostty theme override file: \(error.localizedDescription)")
-        return
-      }
-    }
-
-    guard let updated = ghostty_config_new() else { return }
-    ghostty_config_load_default_files(updated)
-    ghostty_config_load_recursive_files(updated)
-    ghostty_config_load_cli_args(updated)
-    for url in overrideURLs {
-      url.path.withCString { path in
-        ghostty_config_load_file(updated, path)
-      }
-    }
-    ghostty_config_finalize(updated)
-    ghostty_app_update_config(app, updated)
-    if let clone = ghostty_config_clone(updated) {
-      setConfig(clone)
-    }
-    ghostty_config_free(updated)
-    runtimeOverrideSignature = nextSignature
-    onConfigChange?()
-    NotificationCenter.default.post(name: .ghosttyRuntimeConfigDidChange, object: self)
-  }
-
-  nonisolated private static func probeUserConfigSnapshot() async -> GhosttyUserConfigSnapshot? {
-    // `await` ensures this runs on a cooperative executor rather than on the
-    // caller's MainActor, so the synchronous subprocess calls below never block
-    // the main thread.
-    await Task.yield()
-    return userConfigSnapshotFromCLI()
-  }
-
-  nonisolated private static func probeFallbackThemePair() async -> GhosttyThemePair? {
-    await Task.yield()
-    return resolveFallbackThemePair()
-  }
-
-  nonisolated private static func userConfigSnapshotFromCLI() -> GhosttyUserConfigSnapshot? {
-    guard let output = runGhosttyCommand(arguments: ["+show-config"]) else { return nil }
-    return GhosttyUserConfigSnapshot.parse(showConfigOutput: output)
-  }
-
-  nonisolated private static func runGhosttyCommand(arguments: [String]) -> String? {
-    guard let executablePath = resolveGhosttyExecutablePath() else { return nil }
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executablePath)
-    process.arguments = arguments
-    let outputPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = Pipe()
-    do {
-      try process.run()
-      process.waitUntilExit()
-    } catch {
-      let command = arguments.joined(separator: " ")
-      ghosttyLogger.warning(
-        "Failed to run ghostty command \(command): \(error.localizedDescription)"
-      )
-      return nil
-    }
-    guard process.terminationStatus == 0 else { return nil }
-    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-    guard !data.isEmpty else { return "" }
-    return String(data: data, encoding: .utf8)
-  }
-
-  nonisolated private static func resolveGhosttyExecutablePath() -> String? {
-    ghosttyCLICacheLock.lock()
-    if let cachedGhosttyExecutablePath,
-      FileManager.default.isExecutableFile(atPath: cachedGhosttyExecutablePath)
-    {
-      defer { ghosttyCLICacheLock.unlock() }
-      return cachedGhosttyExecutablePath
-    }
-    if ghosttyExecutableResolutionAttempted {
-      ghosttyCLICacheLock.unlock()
-      return nil
-    }
-    ghosttyCLICacheLock.unlock()
-
-    var resolvedPath: String?
-    for candidate in ghosttyExecutableCandidates where FileManager.default.isExecutableFile(atPath: candidate) {
-      resolvedPath = candidate
-      break
-    }
-
-    if resolvedPath == nil {
-      let which = Process()
-      which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-      which.arguments = ["ghostty"]
-      let outputPipe = Pipe()
-      which.standardOutput = outputPipe
-      which.standardError = Pipe()
-      do {
-        try which.run()
-        which.waitUntilExit()
-      } catch {
-        ghosttyCLICacheLock.lock()
-        ghosttyExecutableResolutionAttempted = true
-        ghosttyCLICacheLock.unlock()
-        return nil
-      }
-
-      if which.terminationStatus == 0 {
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        if let path = String(data: data, encoding: .utf8)?
-          .trimmingCharacters(in: .whitespacesAndNewlines),
-          !path.isEmpty,
-          FileManager.default.isExecutableFile(atPath: path)
-        {
-          resolvedPath = path
-        }
-      }
-    }
-
-    ghosttyCLICacheLock.lock()
-    defer { ghosttyCLICacheLock.unlock() }
-    ghosttyExecutableResolutionAttempted = true
-    cachedGhosttyExecutablePath = resolvedPath
-    return resolvedPath
-  }
-
-  nonisolated private static func resolveFallbackThemePair() -> GhosttyThemePair? {
-    ghosttyCLICacheLock.lock()
-    if let cachedFallbackThemePair {
-      defer { ghosttyCLICacheLock.unlock() }
-      return cachedFallbackThemePair
-    }
-    ghosttyCLICacheLock.unlock()
-
-    let knownLightCandidates = ["Ghostty Default Style Light", "Catppuccin Latte"]
-    let knownDarkCandidates = ["Ghostty Default Style Dark", "Catppuccin Frappe"]
-
-    var resolvedPair: GhosttyThemePair?
-    if let output = runGhosttyCommand(arguments: ["+list-themes"]) {
-      let availableThemes = Set(
-        output
-          .split(whereSeparator: \.isNewline)
-          .map { line -> String in
-            let raw = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
-            if let index = raw.lastIndex(of: "("), raw.hasSuffix(")") {
-              return String(raw[..<index]).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            return raw
-          }
-          .filter { !$0.isEmpty }
-      )
-
-      if let light = knownLightCandidates.first(where: { availableThemes.contains($0) }),
-        let dark = knownDarkCandidates.first(where: { availableThemes.contains($0) })
-      {
-        resolvedPair = GhosttyThemePair(light: light, dark: dark)
-      }
-    }
-
-    let pair =
-      resolvedPair
-      ?? GhosttyThemePair(light: "Catppuccin Latte", dark: "Ghostty Default Style Dark")
-    ghosttyCLICacheLock.lock()
-    cachedFallbackThemePair = pair
-    ghosttyCLICacheLock.unlock()
-    return pair
-  }
-
-  private static func keybindEntries(from keybindArguments: [String]) -> [String] {
+  static func keybindEntries(from keybindArguments: [String]) -> [String] {
     let prefix = "--keybind="
     return keybindArguments.compactMap { argument in
       guard argument.hasPrefix(prefix) else { return nil }
@@ -857,7 +311,7 @@ final class GhosttyRuntime {
     }
   }
 
-  private static func makeKeybindOverrideEntries(
+  static func makeKeybindOverrideEntries(
     entries: [String],
     previousEntries: [String]
   ) -> [String] {
@@ -872,13 +326,13 @@ final class GhosttyRuntime {
     return unbindEntries + entries
   }
 
-  private static func keybindTrigger(from entry: String) -> String? {
+  static func keybindTrigger(from entry: String) -> String? {
     guard let separator = entry.firstIndex(of: "=") else { return nil }
     let trigger = String(entry[..<separator])
     return trigger.isEmpty ? nil : trigger
   }
 
-  private static func loadConfig() -> ghostty_config_t? {
+  static func loadConfig() -> ghostty_config_t? {
     guard let config = ghostty_config_new() else { return nil }
     ghostty_config_load_default_files(config)
     ghostty_config_load_recursive_files(config)
@@ -943,12 +397,90 @@ final class GhosttyRuntime {
     return min(max(value, 0.001), 1)
   }
 
+  func unfocusedSplitOverlayOpacity() -> Double {
+    guard let config else { return 0 }
+    var value: Double = 0.85
+    let key = "unfocused-split-opacity"
+    _ = ghostty_config_get(config, &value, key, UInt(key.lengthOfBytes(using: .utf8)))
+    return min(max(1 - value, 0), 1)
+  }
+
+  func unfocusedSplitFill() -> Color? {
+    guard let config else { return nil }
+    var color = ghostty_config_color_s()
+    let fillKey = "unfocused-split-fill"
+    if ghostty_config_get(config, &color, fillKey, UInt(fillKey.lengthOfBytes(using: .utf8))) {
+      return Color(nsColor: NSColor(ghostty: color))
+    }
+    let backgroundKey = "background"
+    if ghostty_config_get(config, &color, backgroundKey, UInt(backgroundKey.lengthOfBytes(using: .utf8))) {
+      return Color(nsColor: NSColor(ghostty: color))
+    }
+    ghosttyLogger.warning(
+      "Ghostty config missing both 'unfocused-split-fill' and 'background'; skipping unfocused split overlay."
+    )
+    return nil
+  }
+
+  func splitDividerColor() -> Color? {
+    guard let config else { return nil }
+    var color = ghostty_config_color_s()
+    let key = "split-divider-color"
+    guard ghostty_config_get(config, &color, key, UInt(key.lengthOfBytes(using: .utf8))) else {
+      return nil
+    }
+    return Color(nsColor: NSColor(ghostty: color))
+  }
+
+  /// Reads a Prowl-specific override for the visible divider thickness from the
+  /// primary Ghostty config file (the one returned by `ghostty_config_open_path`).
+  /// Ghostty itself has no such option (and its own divider size is hardcoded),
+  /// so we layer a `prowl-split-divider-width = N` directive on top of the
+  /// user's existing Ghostty config to avoid carrying another fork patch.
+  func splitDividerWidth() -> CGFloat? {
+    Self.parseProwlSplitDividerWidth(at: Self.ghosttyConfigPath())
+  }
+
+  nonisolated static func ghosttyConfigPath() -> String? {
+    let configStr = ghostty_config_open_path()
+    defer { ghostty_string_free(configStr) }
+    guard let ptr = configStr.ptr, configStr.len > 0 else { return nil }
+    let path = String(data: Data(bytes: ptr, count: Int(configStr.len)), encoding: .utf8)
+    guard let path, !path.isEmpty else { return nil }
+    return path
+  }
+
+  nonisolated static func parseProwlSplitDividerWidth(at path: String?) -> CGFloat? {
+    guard let path else { return nil }
+    guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+    return parseProwlSplitDividerWidth(from: contents)
+  }
+
+  nonisolated static func parseProwlSplitDividerWidth(from contents: String) -> CGFloat? {
+    let key = "prowl-split-divider-width"
+    var resolved: CGFloat?
+    for rawLine in contents.split(whereSeparator: \.isNewline) {
+      let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+      guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+      guard let equalsIndex = trimmed.firstIndex(of: "=") else { continue }
+      let lhs = trimmed[..<equalsIndex].trimmingCharacters(in: .whitespaces)
+      guard lhs == key else { continue }
+      let rhs = trimmed[trimmed.index(after: equalsIndex)...].trimmingCharacters(in: .whitespaces)
+      guard let value = Double(rhs) else { continue }
+      // Clamp to a sane visible range — 0 disables the visible bar while
+      // keeping the invisible hit area, large values are capped to prevent
+      // accidental absurdities from a typo.
+      resolved = CGFloat(min(max(value, 0), 32))
+    }
+    return resolved
+  }
+
   func backgroundColor() -> NSColor {
     backgroundColorFromConfig() ?? NSColor.windowBackgroundColor
   }
 
   func scrollbarAppearanceName() -> NSAppearance.Name {
-    backgroundColor().isLightColor ? .aqua : .darkAqua
+    backgroundColor().ghosttyIsLightColor ? .aqua : .darkAqua
   }
 
   /// Returns a window background color that tints the macOS glass effect
@@ -959,7 +491,7 @@ final class GhosttyRuntime {
     color.withAlphaComponent(0.7)
   }
 
-  private func backgroundColorFromConfig() -> NSColor? {
+  func backgroundColorFromConfig() -> NSColor? {
     guard let config else { return nil }
     var color: ghostty_config_color_s = .init()
     let key = "background"
@@ -969,7 +501,7 @@ final class GhosttyRuntime {
     return NSColor(ghostty: color)
   }
 
-  private static func keyboardShortcut(for trigger: ghostty_input_trigger_s) -> KeyboardShortcut? {
+  static func keyboardShortcut(for trigger: ghostty_input_trigger_s) -> KeyboardShortcut? {
     let key: KeyEquivalent
     switch trigger.tag {
     case GHOSTTY_TRIGGER_PHYSICAL:
@@ -986,7 +518,7 @@ final class GhosttyRuntime {
     return KeyboardShortcut(key, modifiers: eventModifiers(mods: trigger.mods))
   }
 
-  private static func eventModifiers(mods: ghostty_input_mods_e) -> EventModifiers {
+  static func eventModifiers(mods: ghostty_input_mods_e) -> EventModifiers {
     var flags: EventModifiers = []
     if mods.rawValue & GHOSTTY_MODS_SHIFT.rawValue != 0 { flags.insert(.shift) }
     if mods.rawValue & GHOSTTY_MODS_CTRL.rawValue != 0 { flags.insert(.control) }
@@ -995,7 +527,7 @@ final class GhosttyRuntime {
     return flags
   }
 
-  private static let keyToEquivalent: [ghostty_input_key_e: KeyEquivalent] = [
+  static let keyToEquivalent: [ghostty_input_key_e: KeyEquivalent] = [
     GHOSTTY_KEY_ARROW_UP: .upArrow,
     GHOSTTY_KEY_ARROW_DOWN: .downArrow,
     GHOSTTY_KEY_ARROW_LEFT: .leftArrow,
@@ -1011,188 +543,4 @@ final class GhosttyRuntime {
     GHOSTTY_KEY_BACKSPACE: .delete,
     GHOSTTY_KEY_SPACE: .space,
   ]
-}
-
-nonisolated struct GhosttyThemePair: Equatable, Sendable {
-  let light: String
-  let dark: String
-}
-
-nonisolated enum GhosttyThemeMode: Equatable, Sendable {
-  case none
-  case single
-  case dual
-}
-
-nonisolated enum GhosttyTerminalTone: Equatable, Sendable {
-  case light
-  case dark
-  case unknown
-}
-
-nonisolated struct GhosttyUserConfigSnapshot: Equatable, Sendable {
-  let themeMode: GhosttyThemeMode
-  let backgroundTone: GhosttyTerminalTone
-
-  static func parse(showConfigOutput: String) -> GhosttyUserConfigSnapshot {
-    var themeSpec: String?
-    var backgroundSpec: String?
-
-    for rawLine in showConfigOutput.split(whereSeparator: \.isNewline) {
-      let line = String(rawLine)
-      guard let separator = line.firstIndex(of: "=") else { continue }
-      let key = line[..<separator].trimmingCharacters(in: .whitespacesAndNewlines)
-      let value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespacesAndNewlines)
-      switch key {
-      case "theme":
-        themeSpec = value
-      case "background":
-        backgroundSpec = value
-      default:
-        continue
-      }
-    }
-
-    let themeMode = parseThemeMode(from: themeSpec)
-    let backgroundTone = classifyBackgroundTone(from: backgroundSpec)
-    return .init(themeMode: themeMode, backgroundTone: backgroundTone)
-  }
-
-  private static func parseThemeMode(from spec: String?) -> GhosttyThemeMode {
-    guard let spec, !spec.isEmpty else { return .none }
-
-    var hasLight = false
-    var hasDark = false
-
-    for rawPart in spec.split(separator: ",", omittingEmptySubsequences: true) {
-      let part = rawPart.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard let separator = part.firstIndex(of: ":") else { continue }
-      let key = part[..<separator].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      switch key {
-      case "light":
-        hasLight = true
-      case "dark":
-        hasDark = true
-      default:
-        continue
-      }
-    }
-
-    return (hasLight && hasDark) ? .dual : .single
-  }
-
-  private static func classifyBackgroundTone(from spec: String?) -> GhosttyTerminalTone {
-    // Decide "light or dark" purely from luminance. Popular dark themes
-    // (Dracula, Nord, One Dark, Kanagawa, Solarized Dark, etc.) often have
-    // noticeably tinted backgrounds, so gating on saturation misclassifies
-    // them as unknown and defeats the whole fallback.
-    guard let spec, let color = NSColor(ghosttyHexColor: spec) else { return .unknown }
-
-    let luminance = color.luminance
-    if luminance >= 0.65 {
-      return .light
-    }
-    if luminance <= 0.35 {
-      return .dark
-    }
-    return .unknown
-  }
-}
-
-extension Notification.Name {
-  static let ghosttyRuntimeConfigDidChange = Notification.Name("ghosttyRuntimeConfigDidChange")
-}
-
-extension NSColor {
-  fileprivate var isLightColor: Bool {
-    luminance > 0.5
-  }
-
-  nonisolated var luminance: Double {
-    var red: CGFloat = 0
-    var green: CGFloat = 0
-    var blue: CGFloat = 0
-    var alpha: CGFloat = 0
-    guard let rgb = usingColorSpace(.sRGB) else { return 0 }
-    rgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-    return (0.299 * red) + (0.587 * green) + (0.114 * blue)
-  }
-
-  nonisolated fileprivate convenience init?(ghosttyHexColor: String) {
-    let cleaned =
-      ghosttyHexColor
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .replacingOccurrences(of: "#", with: "")
-    guard cleaned.count == 6, let value = Int(cleaned, radix: 16) else {
-      return nil
-    }
-
-    let red = Double((value >> 16) & 0xFF) / 255
-    let green = Double((value >> 8) & 0xFF) / 255
-    let blue = Double(value & 0xFF) / 255
-    self.init(red: red, green: green, blue: blue, alpha: 1)
-  }
-
-  fileprivate convenience init(ghostty: ghostty_config_color_s) {
-    let red = Double(ghostty.r) / 255
-    let green = Double(ghostty.g) / 255
-    let blue = Double(ghostty.b) / 255
-    self.init(red: red, green: green, blue: blue, alpha: 1)
-  }
-}
-
-extension NSPasteboard.PasteboardType {
-  init?(mimeType: String) {
-    switch mimeType {
-    case "text/plain":
-      self = .string
-      return
-    default:
-      break
-    }
-    guard let utType = UTType(mimeType: mimeType) else {
-      self.init(mimeType)
-      return
-    }
-    self.init(utType.identifier)
-  }
-}
-
-extension NSPasteboard {
-  private static let ghosttyEscapeCharacters = "\\ ()[]{}<>\"'`!#$&;|*?\t"
-
-  static func ghosttyEscape(_ str: String) -> String {
-    var result = str
-    for char in ghosttyEscapeCharacters {
-      result = result.replacing(String(char), with: "\\\(char)")
-    }
-    return result
-  }
-
-  static var ghosttySelection: NSPasteboard = {
-    NSPasteboard(name: .init("com.mitchellh.ghostty.selection"))
-  }()
-
-  func getOpinionatedStringContents() -> String? {
-    if let urls = readObjects(forClasses: [NSURL.self]) as? [URL],
-      urls.count > 0
-    {
-      return
-        urls
-        .map { $0.isFileURL ? Self.ghosttyEscape($0.path) : $0.absoluteString }
-        .joined(separator: " ")
-    }
-    return string(forType: .string)
-  }
-
-  static func ghostty(_ clipboard: ghostty_clipboard_e) -> NSPasteboard? {
-    switch clipboard {
-    case GHOSTTY_CLIPBOARD_STANDARD:
-      return Self.general
-    case GHOSTTY_CLIPBOARD_SELECTION:
-      return Self.ghosttySelection
-    default:
-      return nil
-    }
-  }
 }

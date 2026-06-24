@@ -1,3 +1,5 @@
+import AppKit
+import Combine
 import ComposableArchitecture
 import SwiftUI
 
@@ -20,15 +22,37 @@ struct NotificationsSettingsView: View {
           )
           .help("Play a sound when a notification is received")
           Toggle(
-            "System notifications",
-            isOn: $store.systemNotificationsEnabled
-          )
-          .help("Show macOS system notifications")
-          Toggle(
             "Move notified worktree to top",
             isOn: $store.moveNotifiedWorktreeToTop
           )
           .help("Bring the worktree to the top when the terminal receives a notification")
+          Picker(
+            "Bounce dock icon",
+            selection: $store.dockBounceMode
+          ) {
+            ForEach(DockBounceMode.allCases) { mode in
+              Text(mode.title).tag(mode)
+            }
+          }
+          .help("Bounce the Prowl app icon in the Dock when a notification is received.")
+        }
+        Section("System") {
+          Toggle(
+            "System notifications",
+            isOn: $store.systemNotificationsEnabled
+          )
+          .help("Show macOS system notification banners")
+          Toggle(
+            "Show notification badge on dock icon",
+            isOn: $store.showNotificationDotOnDock
+          )
+          .help("Show the unread worktree count on the Prowl dock icon.")
+          .disabled(!dockBadgeAvailable)
+          if let dockBadgeCaption {
+            Text(dockBadgeCaption)
+              .font(.callout)
+              .foregroundStyle(.secondary)
+          }
         }
         Section("Command Finished") {
           Toggle(
@@ -62,5 +86,29 @@ struct NotificationsSettingsView: View {
       .formStyle(.grouped)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .task {
+      store.send(.refreshDockBadgeAuthorization)
+    }
+    // Changing the notification permission or "Badge app icon" switch happens
+    // in System Settings, so the moment Prowl regains focus is when to re-read
+    // the macOS state and update the toggle live (no restart needed).
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+      store.send(.refreshDockBadgeAuthorization)
+    }
+  }
+
+  private var dockBadgeAvailable: Bool {
+    store.dockBadgeAuthorization == .available
+  }
+
+  private var dockBadgeCaption: String? {
+    switch store.dockBadgeAuthorization {
+    case .available:
+      return nil
+    case .notificationsDenied:
+      return "Allow notifications for Prowl in System Settings to show the Dock badge."
+    case .badgeDisabled:
+      return "Turn on “Badge app icon” for Prowl in System Settings > Notifications."
+    }
   }
 }

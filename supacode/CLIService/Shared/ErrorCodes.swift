@@ -20,6 +20,9 @@ public enum CLIErrorCode {
   // List
   public static let listFailed = "LIST_FAILED"
 
+  // Agents
+  public static let agentsFailed = "AGENTS_FAILED"
+
   // Focus
   public static let focusFailed = "FOCUS_FAILED"
 
@@ -37,6 +40,12 @@ public enum CLIErrorCode {
 
   // Read
   public static let readFailed = "READ_FAILED"
+
+  // Tab
+  public static let tabFailed = "TAB_FAILED"
+
+  // Pane
+  public static let paneFailed = "PANE_FAILED"
 
   // Transport
   public static let transportFailed = "TRANSPORT_FAILED"

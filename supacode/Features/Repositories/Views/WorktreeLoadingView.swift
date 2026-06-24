@@ -3,96 +3,36 @@ import SwiftUI
 struct WorktreeLoadingView: View {
   let info: WorktreeLoadingInfo
   @Environment(\.surfaceBackgroundOpacity) private var surfaceBackgroundOpacity
-  private let bottomAnchorID = "worktree-loading-bottom"
 
   var body: some View {
-    let actionLabel =
-      if info.state == .creating {
-        "Creating"
-      } else if info.state == .archiving {
-        "Archiving"
-      } else {
-        "Removing"
-      }
-    let fallbackStatus =
-      if let repositoryName = info.repositoryName {
-        "\(actionLabel) worktree in \(repositoryName)"
-      } else {
-        "\(actionLabel) worktree..."
-      }
-    let statusLine = info.statusDetail ?? info.statusTitle ?? fallbackStatus
     let statusCommand = info.statusCommand
-    VStack(spacing: 10) {
+    VStack(spacing: 12) {
       ProgressView()
+        .controlSize(.large)
       Text(info.name)
-        .font(.headline)
-        .multilineTextAlignment(.center)
-      if info.statusLines.isEmpty {
-        Text(statusLine)
+        .font(.title3)
+        .lineLimit(1)
+        .truncationMode(.middle)
+      if let statusCommand {
+        Text(statusCommand)
           .font(.subheadline)
+          .monospaced()
           .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-        if let statusCommand {
-          Text(statusCommand)
-            .font(.caption)
-            .monospaced()
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-        }
-      } else {
-        ScrollViewReader { scrollProxy in
-          ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-              if let statusCommand {
-                Text(statusCommand)
-                  .font(.caption)
-                  .monospaced()
-                  .foregroundStyle(.secondary)
-                  .multilineTextAlignment(.leading)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-              }
-              ForEach(Array(info.statusLines.enumerated()), id: \.offset) { _, line in
-                Text(line)
-                  .font(.caption)
-                  .monospaced()
-                  .foregroundStyle(.secondary)
-                  .multilineTextAlignment(.leading)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-              }
-              Color.clear
-                .frame(height: 1)
-                .id(bottomAnchorID)
-            }
-            .padding(12)
-          }
-          .frame(maxWidth: 560, minHeight: 180, maxHeight: 380)
-          .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-          .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-              .strokeBorder(.quaternary, lineWidth: 1)
-          }
-          .onAppear {
-            scrollToBottom(using: scrollProxy, animated: false)
-          }
-          .onChange(of: info.statusLines) { _, _ in
-            scrollToBottom(using: scrollProxy, animated: true)
-          }
-        }
+          .lineLimit(1)
+          .truncationMode(.middle)
       }
+      Text(info.statusSubtitle)
+        .font(.subheadline)
+        .monospaced()
+        .foregroundStyle(.tertiary)
+        .lineLimit(5, reservesSpace: true)
+        .truncationMode(.head)
+        .contentTransition(.opacity)
+        .animation(.easeInOut, value: info.statusSubtitle)
     }
-    .frame(maxWidth: 640)
-    .padding(.horizontal, 16)
+    .multilineTextAlignment(.center)
+    .padding(.horizontal, 24)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     .background(Color(nsColor: .windowBackgroundColor).opacity(surfaceBackgroundOpacity))
-  }
-
-  private func scrollToBottom(using proxy: ScrollViewProxy, animated: Bool) {
-    if animated {
-      withAnimation(.easeOut(duration: 0.12)) {
-        proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-      }
-    } else {
-      proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-    }
   }
 }

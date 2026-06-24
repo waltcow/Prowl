@@ -1,22 +1,30 @@
 import ComposableArchitecture
 import CustomDump
 import DependenciesTestSupport
+import Foundation
 import Testing
 
 @testable import supacode
 
 @MainActor
+@Suite(
+  .serialized,
+  .dependency(\.defaultAppStorage, .appFeatureSettingsChangedTests)
+)
 struct AppFeatureSettingsChangedTests {
   @Test(.dependencies) func settingsChangedPropagatesRepositorySettings() async {
     var settings = GlobalSettings.default
     settings.githubIntegrationEnabled = false
     settings.mergedWorktreeAction = .archive
     settings.moveNotifiedWorktreeToTop = false
+    settings.showActiveAgentTabTitles = true
     let store = TestStore(initialState: AppFeature.State()) {
       AppFeature()
     }
 
-    await store.send(.settings(.delegate(.settingsChanged(settings))))
+    await store.send(.settings(.delegate(.settingsChanged(settings)))) {
+      $0.repositories.showActiveAgentTabTitles = true
+    }
     await store.receive(\.repositories.githubIntegration.setGithubIntegrationEnabled) {
       $0.repositories.githubIntegrationAvailability = .disabled
     }
@@ -56,6 +64,51 @@ struct AppFeatureSettingsChangedTests {
 
     #expect(sentTerminalCommands.value.isEmpty)
     #expect(watcherCommands.value.isEmpty)
+  }
+
+  @Test(.dependencies) func agentEntryAutoShowsActiveAgentsPanelWhenEnabled() async {
+    var settings = SettingsFeature.State()
+    settings.autoShowActiveAgentsPanel = true
+    UserDefaults.appFeatureSettingsChangedTests.set(true, forKey: "activeAgentsPanelHidden")
+    let state = AppFeature.State(settings: settings)
+    let entry = activeAgentEntry()
+
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    }
+
+    await store.send(.terminalEvent(.agentEntryChanged(entry))) {
+      $0.repositories.activeAgents.$isPanelHidden.withLock { $0 = false }
+    }
+    await store.receive(\.repositories.activeAgents.agentEntryChanged) {
+      $0.repositories.activeAgents.entries = [entry]
+    }
+  }
+
+  @Test(.dependencies) func agentEntryKeepsActiveAgentsPanelHiddenWhenAutoShowDisabled() async {
+    var settings = SettingsFeature.State()
+    settings.autoShowActiveAgentsPanel = false
+    UserDefaults.appFeatureSettingsChangedTests.set(true, forKey: "activeAgentsPanelHidden")
+    let state = AppFeature.State(settings: settings)
+    let entry = activeAgentEntry()
+
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    }
+
+    await store.send(.terminalEvent(.agentEntryChanged(entry)))
+    await store.receive(\.repositories.activeAgents.agentEntryChanged) {
+      $0.repositories.activeAgents.entries = [entry]
+    }
+  }
+
+  @Test func appStateInitializesActiveAgentTabTitleDisplayFromSettings() {
+    var settings = SettingsFeature.State()
+    settings.showActiveAgentTabTitles = true
+
+    let state = AppFeature.State(settings: settings)
+
+    #expect(state.repositories.showActiveAgentTabTitles == true)
   }
 
   @Test(.dependencies) func settingsChangedRecomputesResolvedKeybindings() async {
@@ -114,4 +167,51 @@ struct AppFeatureSettingsChangedTests {
       $0.repositories.statusToast = .success("Saved terminal layout cleared")
     }
   }
+
+  private func activeAgentEntry() -> ActiveAgentEntry {
+    ActiveAgentEntry(
+      id: fixedUUID(0),
+      worktreeID: "/repo/wt",
+      worktreeName: "wt",
+      workingDirectory: nil,
+      tabID: TerminalTabID(rawValue: fixedUUID(1)),
+      tabTitle: "codex",
+      surfaceID: fixedUUID(0),
+      paneIndex: 1,
+      iconLookupToken: DetectedAgent.codex.iconLookupToken,
+      agent: .codex,
+      rawState: .working,
+      displayState: .working,
+      lastChangedAt: Date(timeIntervalSince1970: 10)
+    )
+  }
+
+  private func makeWorktree() -> Worktree {
+    Worktree(
+      id: "/tmp/repo/wt-1",
+      name: "wt-1",
+      detail: "",
+      workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
+      repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
+    )
+  }
+
+  private func makeRepository(worktrees: [Worktree]) -> Repository {
+    Repository(
+      id: "/tmp/repo",
+      rootURL: URL(fileURLWithPath: "/tmp/repo"),
+      name: "repo",
+      worktrees: IdentifiedArray(uniqueElements: worktrees)
+    )
+  }
+
+  private func fixedUUID(_ value: UInt8) -> UUID {
+    UUID(uuid: (value, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+  }
+}
+
+extension UserDefaults {
+  fileprivate nonisolated(unsafe) static let appFeatureSettingsChangedTests = UserDefaults(
+    suiteName: "com.onevcat.Prowl.AppFeatureSettingsChangedTests"
+  )!
 }

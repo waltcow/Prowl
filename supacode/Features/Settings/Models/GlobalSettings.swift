@@ -27,6 +27,20 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var archivedAutoDeletePeriod: AutoDeletePeriod?
   var keybindingUserOverrides: KeybindingUserOverrideStore
   var defaultViewMode: DefaultViewMode
+  var dimUnfocusedSplits: Bool
+  var autoShowActiveAgentsPanel: Bool
+  var showActiveAgentTabTitles: Bool
+  var showActiveAgentStatusInShelf: Bool
+  var windowTintMode: WindowTintMode
+  var windowTintCustomColor: TintColor
+  var showRunButtonInToolbar: Bool
+  var showDefaultEditorInToolbar: Bool
+  var dockBounceMode: DockBounceMode
+  var showNotificationDotOnDock: Bool
+  var shelfSpineTintFallback: ShelfSpineTintFallback
+  var shelfSpineTintFollowsRepositoryColor: Bool
+  var externalDiffToolID: String = ExternalDiffTool.builtIn.settingsID
+  var externalDiffCustomCommand: String = ""
 
   static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -44,7 +58,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     analyticsEnabled: true,
     crashReportsEnabled: true,
     githubIntegrationEnabled: true,
-    deleteBranchOnDeleteWorktree: true,
+    deleteBranchOnDeleteWorktree: false,
     mergedWorktreeAction: nil,
     promptForWorktreeCreation: true,
     fetchOriginBeforeWorktreeCreation: true,
@@ -56,7 +70,19 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     archivedAutoDeletePeriod: nil,
     terminalFontSize: nil,
     keybindingUserOverrides: .empty,
-    defaultViewMode: .normal
+    defaultViewMode: .normal,
+    dimUnfocusedSplits: true,
+    autoShowActiveAgentsPanel: false,
+    showActiveAgentTabTitles: false,
+    showActiveAgentStatusInShelf: true,
+    windowTintMode: .repositoryColor,
+    windowTintCustomColor: .default,
+    showRunButtonInToolbar: true,
+    showDefaultEditorInToolbar: true,
+    dockBounceMode: .off,
+    showNotificationDotOnDock: false,
+    shelfSpineTintFallback: .neutral,
+    shelfSpineTintFollowsRepositoryColor: true
   )
 
   init(
@@ -87,7 +113,19 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     archivedAutoDeletePeriod: AutoDeletePeriod? = nil,
     terminalFontSize: Float32? = nil,
     keybindingUserOverrides: KeybindingUserOverrideStore = .empty,
-    defaultViewMode: DefaultViewMode = .normal
+    defaultViewMode: DefaultViewMode = .normal,
+    dimUnfocusedSplits: Bool = true,
+    autoShowActiveAgentsPanel: Bool = false,
+    showActiveAgentTabTitles: Bool = false,
+    showActiveAgentStatusInShelf: Bool = true,
+    windowTintMode: WindowTintMode = .repositoryColor,
+    windowTintCustomColor: TintColor = .default,
+    showRunButtonInToolbar: Bool = true,
+    showDefaultEditorInToolbar: Bool = true,
+    dockBounceMode: DockBounceMode = .off,
+    showNotificationDotOnDock: Bool = false,
+    shelfSpineTintFallback: ShelfSpineTintFallback = .neutral,
+    shelfSpineTintFollowsRepositoryColor: Bool = true
   ) {
     self.appearanceMode = appearanceMode
     self.defaultEditorID = defaultEditorID
@@ -117,6 +155,18 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.terminalFontSize = terminalFontSize
     self.keybindingUserOverrides = keybindingUserOverrides
     self.defaultViewMode = defaultViewMode
+    self.dimUnfocusedSplits = dimUnfocusedSplits
+    self.autoShowActiveAgentsPanel = autoShowActiveAgentsPanel
+    self.showActiveAgentTabTitles = showActiveAgentTabTitles
+    self.showActiveAgentStatusInShelf = showActiveAgentStatusInShelf
+    self.windowTintMode = windowTintMode
+    self.windowTintCustomColor = windowTintCustomColor
+    self.showRunButtonInToolbar = showRunButtonInToolbar
+    self.showDefaultEditorInToolbar = showDefaultEditorInToolbar
+    self.dockBounceMode = dockBounceMode
+    self.showNotificationDotOnDock = showNotificationDotOnDock
+    self.shelfSpineTintFallback = shelfSpineTintFallback
+    self.shelfSpineTintFollowsRepositoryColor = shelfSpineTintFollowsRepositoryColor
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -149,6 +199,20 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encodeIfPresent(terminalFontSize, forKey: .terminalFontSize)
     try container.encode(keybindingUserOverrides, forKey: .keybindingUserOverrides)
     try container.encode(defaultViewMode, forKey: .defaultViewMode)
+    try container.encode(dimUnfocusedSplits, forKey: .dimUnfocusedSplits)
+    try container.encode(autoShowActiveAgentsPanel, forKey: .autoShowActiveAgentsPanel)
+    try container.encode(showActiveAgentTabTitles, forKey: .showActiveAgentTabTitles)
+    try container.encode(showActiveAgentStatusInShelf, forKey: .showActiveAgentStatusInShelf)
+    try container.encode(windowTintMode, forKey: .windowTintMode)
+    try container.encode(windowTintCustomColor, forKey: .windowTintCustomColor)
+    try container.encode(showRunButtonInToolbar, forKey: .showRunButtonInToolbar)
+    try container.encode(showDefaultEditorInToolbar, forKey: .showDefaultEditorInToolbar)
+    try container.encode(dockBounceMode, forKey: .dockBounceMode)
+    try container.encode(showNotificationDotOnDock, forKey: .showNotificationDotOnDock)
+    try container.encode(shelfSpineTintFallback, forKey: .shelfSpineTintFallback)
+    try container.encode(shelfSpineTintFollowsRepositoryColor, forKey: .shelfSpineTintFollowsRepositoryColor)
+    try container.encode(externalDiffToolID, forKey: .externalDiffToolID)
+    try container.encode(externalDiffCustomCommand, forKey: .externalDiffCustomCommand)
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -180,6 +244,20 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case terminalFontSize
     case keybindingUserOverrides
     case defaultViewMode
+    case dimUnfocusedSplits
+    case autoShowActiveAgentsPanel
+    case showActiveAgentTabTitles
+    case showActiveAgentStatusInShelf
+    case windowTintMode
+    case windowTintCustomColor
+    case showRunButtonInToolbar
+    case showDefaultEditorInToolbar
+    case dockBounceMode
+    case showNotificationDotOnDock
+    case shelfSpineTintFallback
+    case shelfSpineTintFollowsRepositoryColor
+    case externalDiffToolID
+    case externalDiffCustomCommand
     // Legacy key for migration
     case automaticallyArchiveMergedWorktrees
   }
@@ -228,15 +306,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     deleteBranchOnDeleteWorktree =
       try container.decodeIfPresent(Bool.self, forKey: .deleteBranchOnDeleteWorktree)
       ?? Self.default.deleteBranchOnDeleteWorktree
-    if let decoded = try container.decodeIfPresent(MergedWorktreeAction.self, forKey: .mergedWorktreeAction) {
-      mergedWorktreeAction = decoded
-    } else if let legacyBool = try container.decodeIfPresent(
-      Bool.self, forKey: .automaticallyArchiveMergedWorktrees
-    ) {
-      mergedWorktreeAction = legacyBool ? .archive : nil
-    } else {
-      mergedWorktreeAction = Self.default.mergedWorktreeAction
-    }
+    mergedWorktreeAction = try Self.decodeMergedWorktreeAction(from: container)
     promptForWorktreeCreation =
       try container.decodeIfPresent(Bool.self, forKey: .promptForWorktreeCreation)
       ?? Self.default.promptForWorktreeCreation
@@ -272,5 +342,96 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     defaultViewMode =
       try container.decodeIfPresent(DefaultViewMode.self, forKey: .defaultViewMode)
       ?? Self.default.defaultViewMode
+    dimUnfocusedSplits =
+      try container.decodeIfPresent(Bool.self, forKey: .dimUnfocusedSplits)
+      ?? Self.default.dimUnfocusedSplits
+    autoShowActiveAgentsPanel =
+      try container.decodeIfPresent(Bool.self, forKey: .autoShowActiveAgentsPanel)
+      ?? Self.default.autoShowActiveAgentsPanel
+    showActiveAgentTabTitles =
+      try container.decodeIfPresent(Bool.self, forKey: .showActiveAgentTabTitles)
+      ?? Self.default.showActiveAgentTabTitles
+    showActiveAgentStatusInShelf =
+      try container.decodeIfPresent(Bool.self, forKey: .showActiveAgentStatusInShelf)
+      ?? Self.default.showActiveAgentStatusInShelf
+    (windowTintMode, windowTintCustomColor) = try Self.decodeWindowTint(from: container)
+    (shelfSpineTintFallback, shelfSpineTintFollowsRepositoryColor) = try Self.decodeShelfSpineTint(from: container)
+    (externalDiffToolID, externalDiffCustomCommand) = try Self.decodeExternalDiffSettings(from: container)
+    let toolbarAndDock = try Self.decodeToolbarAndDockSettings(from: container)
+    showRunButtonInToolbar = toolbarAndDock.showRunButtonInToolbar
+    showDefaultEditorInToolbar = toolbarAndDock.showDefaultEditorInToolbar
+    dockBounceMode = toolbarAndDock.dockBounceMode
+    showNotificationDotOnDock = toolbarAndDock.showNotificationDotOnDock
+  }
+
+  private static func decodeWindowTint(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> (WindowTintMode, TintColor) {
+    let mode =
+      try container.decodeIfPresent(WindowTintMode.self, forKey: .windowTintMode)
+      ?? Self.default.windowTintMode
+    let customColor =
+      try container.decodeIfPresent(TintColor.self, forKey: .windowTintCustomColor)
+      ?? Self.default.windowTintCustomColor
+    return (mode, customColor)
+  }
+
+  private static func decodeShelfSpineTint(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> (ShelfSpineTintFallback, Bool) {
+    let fallback =
+      try container.decodeIfPresent(ShelfSpineTintFallback.self, forKey: .shelfSpineTintFallback)
+      ?? Self.default.shelfSpineTintFallback
+    let followsRepositoryColor =
+      try container.decodeIfPresent(Bool.self, forKey: .shelfSpineTintFollowsRepositoryColor)
+      ?? Self.default.shelfSpineTintFollowsRepositoryColor
+    return (fallback, followsRepositoryColor)
+  }
+
+  private static func decodeExternalDiffSettings(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> (String, String) {
+    let toolID =
+      ExternalDiffTool.normalizedSettingsID(try container.decodeIfPresent(String.self, forKey: .externalDiffToolID))
+    let customCommand =
+      try container.decodeIfPresent(String.self, forKey: .externalDiffCustomCommand)
+      ?? Self.default.externalDiffCustomCommand
+    return (toolID, customCommand)
+  }
+
+  private static func decodeMergedWorktreeAction(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> MergedWorktreeAction? {
+    if let decoded = try container.decodeIfPresent(MergedWorktreeAction.self, forKey: .mergedWorktreeAction) {
+      return decoded
+    }
+    if let legacyBool = try container.decodeIfPresent(Bool.self, forKey: .automaticallyArchiveMergedWorktrees) {
+      return legacyBool ? .archive : nil
+    }
+    return Self.default.mergedWorktreeAction
+  }
+
+  /// The toolbar-visibility and Dock-notification preferences, decoded as a
+  /// unit so `init(from:)` stays within the body-length limit.
+  private struct ToolbarAndDockSettings {
+    let showRunButtonInToolbar: Bool
+    let showDefaultEditorInToolbar: Bool
+    let dockBounceMode: DockBounceMode
+    let showNotificationDotOnDock: Bool
+  }
+
+  private static func decodeToolbarAndDockSettings(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> ToolbarAndDockSettings {
+    try ToolbarAndDockSettings(
+      showRunButtonInToolbar: container.decodeIfPresent(Bool.self, forKey: .showRunButtonInToolbar)
+        ?? Self.default.showRunButtonInToolbar,
+      showDefaultEditorInToolbar: container.decodeIfPresent(Bool.self, forKey: .showDefaultEditorInToolbar)
+        ?? Self.default.showDefaultEditorInToolbar,
+      dockBounceMode: container.decodeIfPresent(DockBounceMode.self, forKey: .dockBounceMode)
+        ?? Self.default.dockBounceMode,
+      showNotificationDotOnDock: container.decodeIfPresent(Bool.self, forKey: .showNotificationDotOnDock)
+        ?? Self.default.showNotificationDotOnDock
+    )
   }
 }

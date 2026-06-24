@@ -42,6 +42,7 @@ struct AppFeatureArchivedSelectionTests {
     }
 
     await store.send(.repositories(.selectArchivedWorktrees)) {
+      $0.repositories.worktreeHistoryBackStack = [worktree.id]
       $0.repositories.selection = .archivedWorktrees
     }
     await store.receive(\.repositories.delegate.selectedWorktreeChanged)

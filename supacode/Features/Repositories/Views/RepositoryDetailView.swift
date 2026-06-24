@@ -2,14 +2,28 @@ import SwiftUI
 
 struct RepositoryDetailView: View {
   let repository: Repository
+  /// Resolved by the parent reducer. When non-nil, takes precedence
+  /// over `repository.name` for display.
+  var customTitle: String?
 
   var body: some View {
+    if let workspace = repository.workspace {
+      WorkspaceDetailView(repository: repository, workspace: workspace)
+    } else {
+      repositoryDetail
+    }
+  }
+
+  private var repositoryDetail: some View {
     VStack(spacing: 12) {
       Image(systemName: repository.kind == .git ? "folder.badge.gearshape" : "folder")
         .font(.largeTitle)
         .accessibilityHidden(true)
-      Text(repository.name)
-        .font(.title3.weight(.semibold))
+      RepoDisplayName(
+        fallbackName: repository.name,
+        customTitle: customTitle
+      )
+      .font(.title3.weight(.semibold))
       Text(repository.rootURL.path(percentEncoded: false))
         .font(.subheadline.monospaced())
         .foregroundStyle(.secondary)

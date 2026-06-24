@@ -7,7 +7,7 @@ struct UpdateCommands: Commands {
 
   var body: some Commands {
     CommandGroup(after: .appInfo) {
-      Button("Check for Updates...") {
+      Button("Check for Updates...", systemImage: "arrow.down.circle") {
         store.send(.checkForUpdates)
       }
       .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.checkForUpdates)))

@@ -1,0 +1,149 @@
+# Reference: Keyboard Shortcuts
+
+> The complete, authoritative shortcut table. Source of truth:
+> `supacode/App/AppShortcuts.swift` (app actions) and `supacode/Commands/*.swift`
+> (menu wiring). Terminal-level keys come from the Ghostty engine.
+
+**Keywords:** keyboard, shortcuts, hotkeys, keybindings, key bindings, remap, ⌘, command, shortcut list
+
+Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control · **↩** Return · **⌫** Delete · arrows ↑ ↓ ← →
+
+> **Defaults shown.** Most rows are user-remappable (see
+> [Remapping](#remapping--customization)). To see a human's _live_ binding, the
+> [Command Palette](../components/command-palette.md) displays the resolved key
+> next to each action. Automation should use the [`prowl` CLI](../components/cli.md),
+> which never depends on keybindings.
+
+## Worktrees & repositories
+
+| Action | Default | Command ID | Remappable |
+|--------|---------|------------|------------|
+| New Worktree | ⌘N | `new_worktree` | yes |
+| Open Worktree (with the selected Open-in app) | ⌘O | `open_worktree` | yes |
+| Open Repository… | ⌘⇧O | `open_repository` | yes |
+| Open on Code Host (e.g. GitHub) | ⌘⌃G | `open_pull_request` | yes |
+| Refresh Worktrees | ⌘⇧R | `refresh_worktrees` | yes |
+| Archived Worktrees (panel) | ⌘⌃A | `archived_worktrees` | yes |
+| Select Next Worktree _(cycles tabs in Shelf view)_ | ⌘⌃↓ | `select_next_worktree` | yes |
+| Select Previous Worktree _(cycles tabs in Shelf view)_ | ⌘⌃↑ | `select_previous_worktree` | yes |
+| Back in Worktree History | ⌘⌥[ | `worktree_history_back` | yes |
+| Forward in Worktree History | ⌘⌥] | `worktree_history_forward` | yes |
+| Select Worktree 1–9 | ⌃1 … ⌃9 | `select_worktree_1` … `_9` | yes |
+| Reveal in Sidebar | ⌘⇧L | `reveal_in_sidebar` | yes |
+| Rename Branch | ⌘⇧M | `rename_branch` | yes (local) |
+| Archive Worktree | _(menu only, no default key)_ | — | — |
+| Delete Worktree | ⌘⇧⌫ | _(menu-bound, fixed)_ | no |
+| Confirm Worktree Action (in dialogs) | ⌘↩ | _(menu-bound, fixed)_ | no |
+
+## View & layout
+
+| Action | Default | Command ID | Remappable |
+|--------|---------|------------|------------|
+| Toggle Left Sidebar | ⌘⌃S | `toggle_left_sidebar` | yes |
+| Toggle Active Agents Panel | ⌘⌥P | `toggle_active_agents_panel` | yes |
+| Select Next Agent (in panel) | ⌥⌃↓ | `select_next_active_agent` | yes |
+| Select Previous Agent (in panel) | ⌥⌃↑ | `select_previous_active_agent` | yes |
+| Jump to Latest Unread | ⌘⌥U | `jump_to_latest_unread` | yes |
+| Show Diff | ⌘⇧Y | `show_diff` | yes |
+| Toggle Canvas | ⌘⌥↩ | `toggle_canvas` | yes |
+| Toggle Shelf | ⌘⇧↩ | `toggle_shelf` | yes |
+
+## Shelf view
+
+| Action | Default | Command ID | Remappable |
+|--------|---------|------------|------------|
+| Select Next Book | ⌘⌃→ | `select_next_shelf_book` | yes |
+| Select Previous Book | ⌘⌃← | `select_previous_shelf_book` | yes |
+| Select Book 1–9 | ⌥⌃1 … ⌥⌃9 | `select_shelf_book_1` … `_9` | yes |
+
+> In Shelf view, **⌘⌃←/→ flips between books (worktrees)** and **⌘⌃↑/↓ cycles the
+> tabs of the open book** (those are the `select_previous/next_worktree` actions).
+
+## Canvas view
+
+| Action | Default | Command ID | Remappable |
+|--------|---------|------------|------------|
+| Select All Canvas Cards | ⌘⌥A | `select_all_canvas_cards` | yes (local) |
+| Arrange Canvas Cards (pack to fit) | ⌘⌥R | `arrange_canvas_cards` | yes (local) |
+| Organize Canvas Cards (uniform grid) | ⌘⌥G | `organize_canvas_cards` | yes (local) |
+| Expand / Restore Canvas Card | ⌘⌥E | `expand_canvas_card` | yes (local) |
+| Clear selection | Esc | — | — |
+| Zoom | ⌘ + scroll, or pinch | — | — |
+
+## Terminal tabs & panes
+
+These app actions are also registered with Ghostty, so they work while a terminal
+pane has focus. The Ghostty action each maps to is shown for reference.
+
+| Action | Default | Command ID | Ghostty action |
+|--------|---------|------------|----------------|
+| Select Terminal Tab 1–9 | ⌘1 … ⌘9 | `select_terminal_tab_1` … `_9` | `goto_tab:N` |
+| Select Previous Tab | ⌘⇧[ | `select_previous_terminal_tab` | `previous_tab` |
+| Select Next Tab | ⌘⇧] | `select_next_terminal_tab` | `next_tab` |
+| Select Previous Pane | ⌘[ | `select_previous_terminal_pane` | `goto_split:previous` |
+| Select Next Pane | ⌘] | `select_next_terminal_pane` | `goto_split:next` |
+| Select Pane Up | ⌘⌥↑ | `select_terminal_pane_up` | `goto_split:up` |
+| Select Pane Down | ⌘⌥↓ | `select_terminal_pane_down` | `goto_split:down` |
+| Select Pane Left | ⌘⌥← | `select_terminal_pane_left` | `goto_split:left` |
+| Select Pane Right | ⌘⌥→ | `select_terminal_pane_right` | `goto_split:right` |
+| Toggle Split Zoom | ⌘⌥⇧F | `toggle_split_zoom` | `toggle_split_zoom` |
+| Find | ⌘F | `start_search` | — |
+| Find Next | ⌘G | `find_next` | — |
+| Find Previous | ⌘⇧G | `find_previous` | — |
+
+## Terminal engine (Ghostty-managed)
+
+These are **not** Prowl app shortcuts; they are Ghostty terminal bindings, shown
+in Prowl's Terminal menu with whatever key Ghostty resolves. Customize them in
+your Ghostty config (`~/.config/ghostty/config`). Typical defaults in parentheses.
+
+| Action | Ghostty action | Typical default |
+|--------|----------------|-----------------|
+| New Terminal (tab) | `new_tab` | ⌘T |
+| Close Terminal (pane/surface) | `close_surface` | ⌘W |
+| Close Terminal Tab | `close_tab` | ⌘⇧W |
+| New Split (vertical / horizontal) | `new_split:right` / `new_split:down` | (Ghostty default; config-only, not in the Terminal menu) |
+| Reset Font Size | `reset_font_size` | ⌘0 |
+| Increase Font Size | `increase_font_size:1` | ⌘+ |
+| Decrease Font Size | `decrease_font_size:1` | ⌘- |
+| Hide Find Bar | `end_search` | Esc |
+| Use Selection for Find | `search_selection` | ⌘E |
+
+## App & global
+
+| Action | Default | Command ID | Remappable |
+|--------|---------|------------|------------|
+| Command Palette | ⌘P | `command_palette` | yes |
+| Open Settings | ⌘, | `open_settings` | yes |
+| Run Script | ⌘R | `run_script` | yes |
+| Stop Script | ⌘. | `stop_script` | yes |
+| Check for Updates | ⌘⇧U | `check_for_updates` | yes |
+| Quit Application | ⌘Q | `quit_application` | **no** (fixed) |
+
+Plus any per-repository **Custom Commands**, which can each carry their own
+hotkey — see [`components/custom-actions.md`](../components/custom-actions.md).
+
+## Remapping & customization
+
+- **App actions** (scope `configurableAppAction`) are remappable in
+  **Settings → Shortcuts**. Overrides are stored in
+  `~/.prowl/settings.json` under `keybindingUserOverrides`.
+- **`quit_application`** is fixed (`systemFixedAppAction`) — it can't be remapped.
+- **Canvas/local actions** (`localInteraction`, e.g. Arrange/Organize/Expand,
+  Rename Branch) are remappable and conflict-checked against all remappable actions.
+- **Custom Command** hotkeys are repo-scoped and take precedence over app
+  shortcuts within the focused repository; conflicts are surfaced when recording.
+- **Terminal engine keys** are owned by Ghostty. Prowl automatically *unbinds*
+  any Ghostty key that collides with an app shortcut, and re-binds the
+  tab/pane-navigation actions into Ghostty so they work inside the terminal. You
+  customize the rest in `~/.config/ghostty/config`.
+
+## Notes for agents
+
+- These are **defaults**. If a human says "my `⌘P` does X", trust them — they may
+  have remapped it. The CLI is binding-independent; prefer it for automation.
+- When two rows look like they share keys (e.g. `⌥⌃↑/↓` for agent navigation vs
+  `⌘⌥↑/↓` for pane navigation), check the **modifiers carefully** — Control vs
+  Command distinguishes them.
+- `select_previous/next_worktree` (⌘⌃↑/↓) is overloaded by design: in Shelf view
+  it cycles the open book's **tabs**; elsewhere it changes the selected worktree.

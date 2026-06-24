@@ -45,19 +45,23 @@ nonisolated struct Repository: Identifiable, Hashable, Sendable {
   let name: String
   let kind: Kind
   let worktrees: IdentifiedArrayOf<Worktree>
+  let workspace: ProjectWorkspace?
 
   init(
     id: String,
     rootURL: URL,
     name: String,
     kind: Kind = .git,
-    worktrees: IdentifiedArrayOf<Worktree>
+    worktrees: IdentifiedArrayOf<Worktree>,
+    workspace: ProjectWorkspace? = nil
   ) {
     self.id = id
     self.rootURL = rootURL
     self.name = name
-    self.kind = kind
+    // A workspace is always a plain runnable folder; git capabilities stay per-repository.
+    self.kind = workspace == nil ? kind : .plain
     self.worktrees = worktrees
+    self.workspace = workspace
   }
 
   var initials: String {
@@ -71,6 +75,10 @@ nonisolated struct Repository: Identifiable, Hashable, Sendable {
     case .plain:
       .plain
     }
+  }
+
+  var isWorkspace: Bool {
+    workspace != nil
   }
 
   static func name(for rootURL: URL) -> String {

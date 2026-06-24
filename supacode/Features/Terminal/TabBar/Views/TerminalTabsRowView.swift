@@ -8,7 +8,8 @@ struct TerminalTabsRowView: View {
   @Binding var draggingStartLocation: CGFloat?
   @Binding var closeButtonGestureActive: Bool
   let fixedTabWidth: CGFloat?
-  let changeTitle: (TerminalTabID) -> Void
+  let hasNotification: (TerminalTabID) -> Bool
+  let renameTab: (TerminalTabID) -> Void
   let changeIcon: (TerminalTabID) -> Void
   let closeTab: (TerminalTabID) -> Void
   let closeOthers: (TerminalTabID) -> Void
@@ -30,13 +31,28 @@ struct TerminalTabsRowView: View {
               isDragging: draggingTabId == id,
               tabIndex: index,
               fixedWidth: fixedTabWidth,
+              hasNotification: hasNotification(id),
               onSelect: {
                 manager.selectTab(id)
               },
               onClose: {
                 closeTab(id)
               },
-              closeButtonGestureActive: $closeButtonGestureActive
+              onRename: { newTitle in
+                manager.setCustomTitle(id, title: newTitle)
+              },
+              onChangeIcon: {
+                changeIcon(id)
+              },
+              closeButtonGestureActive: $closeButtonGestureActive,
+              isEditing: manager.editingTabID == id,
+              onBeginRename: {
+                manager.beginTabRename(id)
+              },
+              onEndRename: {
+                guard manager.editingTabID == id else { return }
+                manager.endTabRename()
+              }
             )
             .background(
               TerminalTabMeasurementView(
@@ -51,7 +67,7 @@ struct TerminalTabsRowView: View {
               tabId: id,
               tabs: manager.tabs,
               actions: TerminalTabContextMenuActions(
-                changeTitle: changeTitle,
+                renameTab: renameTab,
                 changeIcon: changeIcon,
                 closeTab: closeTab,
                 closeOthers: closeOthers,
@@ -62,7 +78,13 @@ struct TerminalTabsRowView: View {
             .id(id)
 
             if index < openedTabs.count - 1 {
+              // Always keep the divider in the layout and only toggle its
+              // opacity, so changing selection never shifts tab positions.
+              // Hidden on both sides of the selected tab so it reads as floating.
+              let selectedId = manager.selectedTabId
+              let touchesSelection = openedTabs[index] == selectedId || openedTabs[index + 1] == selectedId
               TerminalTabDivider()
+                .opacity(touchesSelection ? 0 : 1)
             }
           }
         }

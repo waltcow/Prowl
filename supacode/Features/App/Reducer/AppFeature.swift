@@ -4,35 +4,6 @@ import Foundation
 import PostHog
 import SwiftUI
 
-private let appLogger = SupaLogger("App")
-
-private enum CancelID {
-  static let periodicRefresh = "app.periodicRefresh"
-}
-
-private func makeTerminalRestorableWorktrees(from repositories: [Repository]) -> [Worktree] {
-  var worktrees: [Worktree] = []
-  worktrees.reserveCapacity(repositories.reduce(0) { $0 + max(1, $1.worktrees.count) })
-  for repository in repositories {
-    if repository.capabilities.supportsWorktrees {
-      worktrees.append(contentsOf: repository.worktrees)
-      continue
-    }
-    if repository.capabilities.supportsRunnableFolderActions {
-      worktrees.append(
-        Worktree(
-          id: repository.id,
-          name: repository.name,
-          detail: repository.rootURL.path(percentEncoded: false),
-          workingDirectory: repository.rootURL,
-          repositoryRootURL: repository.rootURL
-        )
-      )
-    }
-  }
-  return worktrees
-}
-
 @Reducer
 struct AppFeature {
   @ObservableState
@@ -42,6 +13,10 @@ struct AppFeature {
     var updates = UpdatesFeature.State()
     var commandPalette = CommandPaletteFeature.State()
     var openActionSelection: OpenWorktreeAction = .finder
+    /// Whether the selected worktree's repository resolves its open action
+    /// automatically (project-aware) rather than a user-pinned app. Drives the
+    /// "Automatic" entry's checkmark in the toolbar's Open menu.
+    var openActionIsAutomatic: Bool = true
     var selectedRunScript: String = ""
     var selectedCustomCommands: [UserCustomCommand] = []
     var resolvedKeybindings: ResolvedKeybindingMap = .appDefaults
@@ -51,14 +26,18 @@ struct AppFeature {
     var notificationIndicatorCount: Int = 0
     var lastKnownSystemNotificationsEnabled: Bool
     var launchRestoreMode: LaunchRestoreMode
+    var hasAppliedInitialViewMode = false
     var suppressLayoutSaveUntilRelaunch = false
     var launchedAt: Date?
+    var leftSidebarVisibility: NavigationSplitViewVisibility = .all
     @Presents var alert: AlertState<Alert>?
 
     init(
       repositories: RepositoriesFeature.State = .init(),
       settings: SettingsFeature.State = .init()
     ) {
+      var repositories = repositories
+      repositories.showActiveAgentTabTitles = settings.showActiveAgentTabTitles
       self.repositories = repositories
       self.settings = settings
       lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
@@ -74,15 +53,22 @@ struct AppFeature {
     case updates(UpdatesFeature.Action)
     case commandPalette(CommandPaletteFeature.Action)
     case openActionSelectionChanged(OpenWorktreeAction)
+    case openActionResetToAutomatic
     case worktreeSettingsLoaded(RepositorySettings, worktreeID: Worktree.ID)
     case worktreeUserSettingsLoaded(UserRepositorySettings, worktreeID: Worktree.ID)
     case openSelectedWorktree
+    case showSelectedWorktreeDiff
     case openWorktree(OpenWorktreeAction)
     case openWorktreeFailed(OpenActionError)
     case requestQuit
     case newTerminal
+    case jumpToLatestUnread
+    case toggleLeftSidebar
+    case showLeftSidebar
+    case setLeftSidebarVisibility(NavigationSplitViewVisibility)
     case runScript
     case runCustomCommand(Int)
+    case canvasFocusedWorktreeChanged(Worktree.ID?)
     case runScriptDraftChanged(String)
     case runScriptPromptPresented(Bool)
     case saveRunScriptAndRun
@@ -95,6 +81,7 @@ struct AppFeature {
     case navigateSearchPrevious
     case endSearch
     case systemNotificationsPermissionFailed(errorMessage: String?)
+    case systemNotificationTapped(worktreeID: Worktree.ID, surfaceID: UUID)
     case alert(PresentationAction<Alert>)
     case terminalEvent(TerminalClient.Event)
   }
@@ -104,59 +91,19 @@ struct AppFeature {
     case confirmQuit
   }
 
-  @Dependency(AnalyticsClient.self) private var analyticsClient
-  @Dependency(\.date.now) private var now
-  @Dependency(RepositoryPersistenceClient.self) private var repositoryPersistence
-  @Dependency(WorkspaceClient.self) private var workspaceClient
-  @Dependency(SettingsWindowClient.self) private var settingsWindowClient
-  @Dependency(NotificationSoundClient.self) private var notificationSoundClient
-  @Dependency(SystemNotificationClient.self) private var systemNotificationClient
-  @Dependency(TerminalClient.self) private var terminalClient
-  @Dependency(WorktreeInfoWatcherClient.self) private var worktreeInfoWatcher
-  @Dependency(CustomShortcutRegistryClient.self) private var customShortcutRegistryClient
-
-  private func appQuitProperties(launchedAt: Date?) -> [String: Any]? {
-    guard let seconds = Self.sessionDurationSeconds(launchedAt: launchedAt, now: now) else { return nil }
-    return ["session_duration_seconds": seconds]
-  }
-
-  static func sessionDurationSeconds(launchedAt: Date?, now: Date) -> Int? {
-    guard let launchedAt else { return nil }
-    return max(0, Int(now.timeIntervalSince(launchedAt)))
-  }
-
-  private func resolvedKeybindings(
-    settings: SettingsFeature.State,
-    customCommands: [UserCustomCommand]
-  ) -> ResolvedKeybindingMap {
-    let migration = LegacyCustomCommandShortcutMigration.migrate(commands: customCommands)
-    var resolved = KeybindingResolver.resolve(
-      schema: .appResolverSchema(customCommands: customCommands),
-      userOverrides: settings.keybindingUserOverrides,
-      migratedOverrides: migration.overrides
-    )
-    let customCommandIDs = customCommands.map { command in
-      LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
-    }
-    let customCommandBindings = customCommandIDs.compactMap { resolved.keybinding(for: $0) }
-    guard !customCommandBindings.isEmpty else {
-      return resolved
-    }
-    for binding in AppShortcuts.bindings where binding.scope == .configurableAppAction {
-      guard let resolvedBinding = resolved.binding(for: binding.id),
-        let shortcut = resolvedBinding.binding,
-        customCommandBindings.contains(shortcut)
-      else {
-        continue
-      }
-      resolved.bindingsByCommandID[binding.id] = ResolvedKeybinding(
-        command: resolvedBinding.command,
-        binding: nil,
-        source: resolvedBinding.source
-      )
-    }
-    return resolved
-  }
+  @Dependency(AnalyticsClient.self) var analyticsClient
+  @Dependency(\.date.now) var now
+  @Dependency(RepositoryPersistenceClient.self) var repositoryPersistence
+  @Dependency(WorkspaceClient.self) var workspaceClient
+  @Dependency(SettingsWindowClient.self) var settingsWindowClient
+  @Dependency(AppLifecycleClient.self) var appLifecycleClient
+  @Dependency(NotificationSoundClient.self) var notificationSoundClient
+  @Dependency(SystemNotificationClient.self) var systemNotificationClient
+  @Dependency(DockClient.self) var dockClient
+  @Dependency(TerminalClient.self) var terminalClient
+  @Dependency(WorktreeInfoWatcherClient.self) var worktreeInfoWatcher
+  @Dependency(CustomShortcutRegistryClient.self) var customShortcutRegistryClient
+  @Dependency(ExternalDiffToolClient.self) var externalDiffToolClient
 
   var body: some Reducer<State, Action> {
     let core = Reduce<State, Action> { state, action in
@@ -172,9 +119,7 @@ struct AppFeature {
           .send(.settings(.task)),
           .send(.updates(.task)),
           .run { _ in
-            await MainActor.run {
-              NSApplication.shared.dockTile.badgeLabel = nil
-            }
+            await dockClient.setNotificationBadge(0)
           },
           .run { send in
             for await event in await terminalClient.events() {
@@ -193,6 +138,9 @@ struct AppFeature {
         case .active:
           return .merge(
             .send(.repositories(.refreshWorktrees)),
+            .run { _ in
+              await worktreeInfoWatcher.send(.refreshLineChanges)
+            },
             .run { send in
               while !Task.isCancelled {
                 try? await ContinuousClock().sleep(for: .seconds(30))
@@ -204,7 +152,10 @@ struct AppFeature {
           )
         case .inactive, .background:
           var effects: [Effect<Action>] = [.cancel(id: CancelID.periodicRefresh)]
-          if state.settings.restoreTerminalLayoutOnLaunch, !state.suppressLayoutSaveUntilRelaunch {
+          if state.settings.restoreTerminalLayoutOnLaunch,
+            !state.suppressLayoutSaveUntilRelaunch,
+            state.launchRestoreMode != .restoreLayout
+          {
             appLogger.info("[LayoutRestore] scenePhase=\(String(describing: phase)), saving layout snapshot")
             effects.append(.run { _ in await terminalClient.send(.saveLayoutSnapshot) })
           }
@@ -312,11 +263,16 @@ struct AppFeature {
       case .repositories(.delegate(.repositoriesChanged(let repositories))):
         let archivedIDs = state.repositories.archivedWorktreeIDSet
         let ids = state.repositories.terminalStateIDs.subtracting(archivedIDs)
-        let recencyIDs = CommandPaletteFeature.recencyRetentionIDs(from: repositories)
+        let recencyIDs = CommandPaletteFeature.recencyRetentionIDs(
+          from: repositories,
+          customCommands: state.selectedCustomCommands
+        )
         let worktrees = state.repositories.worktreesForInfoWatcher()
+        let openedWorktreeIDs = openedWorktreeIDsForInfoWatcher(from: state.repositories)
         let shouldRestoreLayout =
           state.launchRestoreMode == .restoreLayout
           && state.repositories.snapshotPersistencePhase == .active
+        let shouldDeferDefaultView = state.launchRestoreMode == .restoreLayout
         appLogger.info(
           "[LayoutRestore] repositoriesChanged: mode=\(String(describing: state.launchRestoreMode))"
             + " phase=\(String(describing: state.repositories.snapshotPersistencePhase))"
@@ -329,17 +285,25 @@ struct AppFeature {
         state.runScriptStatusByWorktreeID = state.runScriptStatusByWorktreeID.filter { ids.contains($0.key) }
         let restorableWorktrees = makeTerminalRestorableWorktrees(from: Array(repositories))
         appLogger.info("[LayoutRestore] restorableWorktrees count=\(restorableWorktrees.count)")
+        var allEffects: [Effect<Action>] = []
+        if !shouldDeferDefaultView {
+          allEffects.append(applyDefaultViewMode(into: &state))
+        }
         if case .repository(let repositoryID)? = state.settings.selection,
           !repositories.contains(where: { $0.id == repositoryID })
         {
           var effects: [Effect<Action>] = [
             .send(.settings(.setSelection(.general))),
             .send(.commandPalette(.pruneRecency(recencyIDs))),
+            .send(.repositories(.refreshAllCustomTitles)),
             .run { _ in
               await terminalClient.send(.prune(ids))
             },
             .run { _ in
               await worktreeInfoWatcher.send(.setWorktrees(worktrees))
+            },
+            .run { _ in
+              await worktreeInfoWatcher.send(.setOpenedWorktreeIDs(openedWorktreeIDs))
             },
           ]
           if shouldRestoreLayout {
@@ -349,15 +313,20 @@ struct AppFeature {
               }
             )
           }
-          return .merge(effects)
+          allEffects.append(.merge(effects))
+          return .merge(allEffects)
         }
         var effects: [Effect<Action>] = [
           .send(.commandPalette(.pruneRecency(recencyIDs))),
+          .send(.repositories(.refreshAllCustomTitles)),
           .run { _ in
             await terminalClient.send(.prune(ids))
           },
           .run { _ in
             await worktreeInfoWatcher.send(.setWorktrees(worktrees))
+          },
+          .run { _ in
+            await worktreeInfoWatcher.send(.setOpenedWorktreeIDs(openedWorktreeIDs))
           },
         ]
         if shouldRestoreLayout {
@@ -367,7 +336,8 @@ struct AppFeature {
             }
           )
         }
-        return .merge(effects)
+        allEffects.append(.merge(effects))
+        return .merge(allEffects)
 
       case .repositories(.delegate(.openRepositorySettings(let repositoryID))):
         guard state.repositories.repositories.contains(where: { $0.id == repositoryID }) else {
@@ -380,6 +350,12 @@ struct AppFeature {
             await settingsWindowClient.show()
           }
         )
+
+      case .repositories(.delegate(.showDiff(let worktreeID))):
+        guard let worktree = state.repositories.worktree(for: worktreeID) else {
+          return .none
+        }
+        return openDiffEffect(worktree: worktree, resolvedKeybindings: state.resolvedKeybindings)
 
       case .settings(.setSelection(let selection)):
         let resolvedSelection = selection ?? .general
@@ -400,6 +376,7 @@ struct AppFeature {
             userSettings: userRepositorySettings,
             appearance: repositoryAppearances[repository.id] ?? .empty
           )
+          repoSettingsState.workspace = repository.workspace
           repoSettingsState.globalCopyIgnoredOnWorktreeCreate = state.settings.copyIgnoredOnWorktreeCreate
           repoSettingsState.globalCopyUntrackedOnWorktreeCreate = state.settings.copyUntrackedOnWorktreeCreate
           repoSettingsState.globalPullRequestMergeStrategy = state.settings.pullRequestMergeStrategy
@@ -414,18 +391,23 @@ struct AppFeature {
           settings.systemNotificationsEnabled && !state.lastKnownSystemNotificationsEnabled
         state.lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
         state.settings.keybindingUserOverrides = settings.keybindingUserOverrides
+        state.repositories.showActiveAgentTabTitles = settings.showActiveAgentTabTitles
         if let selectedWorktree = state.repositories.selectedTerminalWorktree {
           let rootURL = selectedWorktree.repositoryRootURL
           @Shared(.repositorySettings(rootURL)) var repositorySettings
           state.openActionSelection = OpenWorktreeAction.fromSettingsID(
             repositorySettings.openActionID,
-            defaultEditorID: settings.defaultEditorID
+            defaultEditorID: settings.defaultEditorID,
+            workingDirectory: selectedWorktree.workingDirectory
           )
+          state.openActionIsAutomatic =
+            repositorySettings.openActionID == OpenWorktreeAction.automaticSettingsID
         }
         state.resolvedKeybindings = resolvedKeybindings(
           settings: state.settings,
           customCommands: state.selectedCustomCommands
         )
+        let badgeCount = settings.showNotificationDotOnDock ? state.notificationIndicatorCount : 0
         return .merge(
           .send(.repositories(.githubIntegration(.setGithubIntegrationEnabled(settings.githubIntegrationEnabled)))),
           .send(
@@ -457,8 +439,7 @@ struct AppFeature {
             .updates(
               .applySettings(
                 updateChannel: settings.updateChannel,
-                automaticallyChecks: settings.updatesAutomaticallyCheckForUpdates,
-                automaticallyDownloads: settings.updatesAutomaticallyDownloadUpdates
+                automaticallyChecks: settings.updatesAutomaticallyCheckForUpdates
               )
             )
           ),
@@ -494,6 +475,9 @@ struct AppFeature {
             case .denied:
               await send(.systemNotificationsPermissionFailed(errorMessage: "Authorization status is denied."))
             }
+          },
+          .run { _ in
+            await dockClient.setNotificationBadge(badgeCount)
           }
         )
 
@@ -526,6 +510,7 @@ struct AppFeature {
 
       case .openActionSelectionChanged(let action):
         state.openActionSelection = action
+        state.openActionIsAutomatic = false
         guard let worktree = state.repositories.selectedTerminalWorktree else {
           return .none
         }
@@ -535,8 +520,32 @@ struct AppFeature {
         $repositorySettings.withLock { $0.openActionID = actionID }
         return .none
 
+      case .openActionResetToAutomatic:
+        guard let worktree = state.repositories.selectedTerminalWorktree else {
+          return .none
+        }
+        // Clearing the pin only matters when the repo isn't already automatic;
+        // re-resolve and reopen unconditionally so the entry behaves like the
+        // concrete app rows, where selecting always opens.
+        if !state.openActionIsAutomatic {
+          let rootURL = worktree.repositoryRootURL
+          @Shared(.repositorySettings(rootURL)) var repositorySettings
+          $repositorySettings.withLock { $0.openActionID = OpenWorktreeAction.automaticSettingsID }
+        }
+        @Shared(.settingsFile) var settingsFile
+        state.openActionSelection = OpenWorktreeAction.fromSettingsID(
+          OpenWorktreeAction.automaticSettingsID,
+          defaultEditorID: settingsFile.global.defaultEditorID,
+          workingDirectory: worktree.workingDirectory
+        )
+        state.openActionIsAutomatic = true
+        return .send(.openSelectedWorktree)
+
       case .openSelectedWorktree:
         return .send(.openWorktree(OpenWorktreeAction.availableSelection(state.openActionSelection)))
+
+      case .showSelectedWorktreeDiff:
+        return openSelectedWorktreeDiffEffect(state: state)
 
       case .openWorktree(let action):
         guard let worktree = state.repositories.selectedTerminalWorktree else {
@@ -576,34 +585,29 @@ struct AppFeature {
         return .none
 
       case .requestQuit:
-        #if !DEBUG
-          guard state.settings.confirmBeforeQuit else {
-            analyticsClient.capture("app_quit", appQuitProperties(launchedAt: state.launchedAt))
-            return .run { @MainActor _ in
-              NSApplication.shared.terminate(nil)
-            }
-          }
-          state.alert = AlertState {
-            TextState("Quit Prowl?")
-          } actions: {
-            ButtonState(action: .confirmQuit) {
-              TextState("Quit")
-            }
-            ButtonState(role: .cancel, action: .dismiss) {
-              TextState("Cancel")
-            }
-          } message: {
-            TextState("This will close all terminal sessions.")
-          }
-          return .none
-        #else
+        guard state.settings.confirmBeforeQuit else {
+          analyticsClient.capture("app_quit", appQuitProperties(launchedAt: state.launchedAt))
           return .run { @MainActor _ in
-            NSApplication.shared.terminate(nil)
+            appLifecycleClient.terminate()
           }
-        #endif
+        }
+        _ = appLifecycleClient.surfaceMainWindow()
+        state.alert = AlertState {
+          TextState("Quit Prowl?")
+        } actions: {
+          ButtonState(action: .confirmQuit) {
+            TextState("Quit")
+          }
+          ButtonState(role: .cancel, action: .dismiss) {
+            TextState("Cancel")
+          }
+        } message: {
+          TextState("This will close all terminal sessions.")
+        }
+        return .none
 
       case .newTerminal:
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
         analyticsClient.capture("terminal_tab_created", nil)
@@ -612,8 +616,38 @@ struct AppFeature {
           await terminalClient.send(.createTab(worktree, runSetupScriptIfNew: shouldRunSetupScript))
         }
 
+      case .jumpToLatestUnread:
+        guard let location = terminalClient.latestUnreadNotification() else {
+          notificationJumpLogger.debug("jumpToLatestUnread invoked with no unread notification.")
+          return .none
+        }
+        guard state.repositories.worktree(for: location.worktreeID) != nil else {
+          notificationJumpLogger.warning("Unread notification worktree vanished: \(location.worktreeID)")
+          return .none
+        }
+        analyticsClient.capture("notifications_jump_to_latest_unread", nil)
+        return .merge(
+          .send(.repositories(.selectWorktree(location.worktreeID, focusTerminal: true))),
+          .run { _ in
+            _ = await terminalClient.focusSurface(location.worktreeID, location.surfaceID)
+            await terminalClient.markNotificationRead(location.worktreeID, location.notificationID)
+          }
+        )
+
+      case .toggleLeftSidebar:
+        state.leftSidebarVisibility = state.leftSidebarVisibility == .detailOnly ? .all : .detailOnly
+        return .none
+
+      case .showLeftSidebar:
+        state.leftSidebarVisibility = .all
+        return .none
+
+      case .setLeftSidebarVisibility(let visibility):
+        state.leftSidebarVisibility = visibility
+        return .none
+
       case .runScript:
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
         let trimmed = state.selectedRunScript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -632,7 +666,7 @@ struct AppFeature {
         }
 
       case .runCustomCommand(let index):
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
         guard state.selectedCustomCommands.indices.contains(index) else {
@@ -688,6 +722,41 @@ struct AppFeature {
           }
         }
 
+      case .canvasFocusedWorktreeChanged(let worktreeID):
+        guard state.repositories.isShowingCanvas,
+          let worktreeID,
+          let worktree = terminalWorktree(for: worktreeID, repositories: state.repositories)
+        else {
+          state.openActionSelection = .finder
+          state.openActionIsAutomatic = true
+          state.selectedRunScript = ""
+          state.selectedCustomCommands = []
+          state.resolvedKeybindings = resolvedKeybindings(
+            settings: state.settings,
+            customCommands: state.selectedCustomCommands
+          )
+          state.runScriptDraft = ""
+          state.isRunScriptPromptPresented = false
+          return .run { _ in
+            await customShortcutRegistryClient.setShortcuts([])
+          }
+        }
+        let rootURL = worktree.repositoryRootURL
+        @Shared(.repositorySettings(rootURL)) var repositorySettings
+        @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
+        // Apply both settings in this single reduce pass instead of dispatching
+        // follow-up `.send`s. The Canvas focus ID (an `@Observable` on the
+        // terminal manager) updates synchronously on card tap, so the toolbar's
+        // Run + Custom Command items must update in the same transaction —
+        // otherwise the command list lands a frame later and the toolbar
+        // visibly reflows when switching between cards with different commands.
+        applyWorktreeSettings(
+          repositorySettings,
+          workingDirectory: worktree.workingDirectory,
+          into: &state
+        )
+        return applyWorktreeUserSettings(userRepositorySettings, into: &state)
+
       case .runScriptDraftChanged(let script):
         state.runScriptDraft = script
         return .none
@@ -700,7 +769,7 @@ struct AppFeature {
         return .none
 
       case .saveRunScriptAndRun:
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           state.isRunScriptPromptPresented = false
           state.runScriptDraft = ""
           return .none
@@ -722,7 +791,7 @@ struct AppFeature {
         return .send(.runScript)
 
       case .stopRunScript:
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
         return .run { _ in
@@ -787,64 +856,61 @@ struct AppFeature {
         }
 
       case .settings(.repositorySettings(.delegate(.settingsChanged(let rootURL)))):
+        // Always refresh the repo's custom title cache — display sites
+        // (sidebar, shelf, canvas, toolbar, settings list) read it from
+        // `RepositoriesFeature.State.repositoryCustomTitles` rather
+        // than subscribing to the per-repo settings file directly.
+        let refreshCustomTitle = Effect<Action>.send(.repositories(.refreshCustomTitle(rootURL)))
         guard let selectedWorktree = state.repositories.selectedTerminalWorktree,
           selectedWorktree.repositoryRootURL == rootURL
         else {
-          return .none
+          return refreshCustomTitle
         }
         let worktreeID = selectedWorktree.id
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
         return .concatenate(
+          refreshCustomTitle,
           .send(.worktreeSettingsLoaded(repositorySettings, worktreeID: worktreeID)),
           .send(.worktreeUserSettingsLoaded(userRepositorySettings, worktreeID: worktreeID))
         )
 
       case .worktreeSettingsLoaded(let settings, let worktreeID):
-        guard state.repositories.selectedTerminalWorktree?.id == worktreeID else {
+        guard let worktree = actionTargetWorktree(repositories: state.repositories),
+          worktree.id == worktreeID
+        else {
           return .none
         }
-        @Shared(.settingsFile) var settingsFile
-        let normalizedDefaultEditorID = OpenWorktreeAction.normalizedDefaultEditorID(
-          settingsFile.global.defaultEditorID
+        applyWorktreeSettings(
+          settings,
+          workingDirectory: worktree.workingDirectory,
+          into: &state
         )
-        state.openActionSelection = OpenWorktreeAction.fromSettingsID(
-          settings.openActionID,
-          defaultEditorID: normalizedDefaultEditorID
-        )
-        state.selectedRunScript = settings.runScript
         return .none
 
       case .worktreeUserSettingsLoaded(let settings, let worktreeID):
-        guard state.repositories.selectedTerminalWorktree?.id == worktreeID else {
+        guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
           return .none
         }
-        state.selectedCustomCommands = UserRepositorySettings.normalizedCommands(settings.customCommands)
-        state.resolvedKeybindings = resolvedKeybindings(
-          settings: state.settings,
-          customCommands: state.selectedCustomCommands
-        )
-        let userOverrideConflicts = AppShortcuts.userOverrideConflicts(in: state.selectedCustomCommands)
-        let shortcuts: [UserCustomShortcut] = state.selectedCustomCommands.compactMap { command in
-          let commandID = LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
-          return state.resolvedKeybindings.keybinding(for: commandID)?.userCustomShortcut
-        }
-        return .run { _ in
-          let logger = SupaLogger("Shortcuts")
-          for conflict in userOverrideConflicts {
-            logger.warning(
-              "shortcut_conflict reason=userOverride app_action=\"\(conflict.appActionTitle)\" "
-                + "app_shortcut=\(conflict.appShortcutDisplay) custom_command=\"\(conflict.commandTitle)\" "
-                + "custom_shortcut=\(conflict.commandShortcutDisplay) result=customOverride"
-            )
-          }
-          await customShortcutRegistryClient.setShortcuts(shortcuts)
-        }
+        return applyWorktreeUserSettings(settings, into: &state)
 
       case .systemNotificationsPermissionFailed(let errorMessage):
         return .concatenate(
           .send(.settings(.setSystemNotificationsEnabled(false))),
           .send(.settings(.showNotificationPermissionAlert(errorMessage: errorMessage)))
+        )
+
+      case .systemNotificationTapped(let worktreeID, let surfaceID):
+        guard state.repositories.worktree(for: worktreeID) != nil else {
+          notificationJumpLogger.warning("Tapped notification worktree vanished: \(worktreeID)")
+          return .none
+        }
+        return .merge(
+          .send(.repositories(.selectWorktree(worktreeID, focusTerminal: true))),
+          .run { _ in
+            _ = await terminalClient.focusSurface(worktreeID, surfaceID)
+            await terminalClient.markNotificationsReadForSurface(worktreeID, surfaceID)
+          }
         )
 
       case .alert(.dismiss):
@@ -855,7 +921,7 @@ struct AppFeature {
         analyticsClient.capture("app_quit", appQuitProperties(launchedAt: state.launchedAt))
         state.alert = nil
         return .run { @MainActor _ in
-          NSApplication.shared.terminate(nil)
+          appLifecycleClient.terminate()
         }
 
       case .alert:
@@ -870,207 +936,26 @@ struct AppFeature {
       case .updates:
         return .none
 
-      case .commandPalette(.delegate(.selectWorktree(let worktreeID))):
-        return .send(.repositories(.selectWorktree(worktreeID)))
+      case .commandPalette(let action):
+        return reduceCommandPaletteAction(action, state: &state)
 
-      case .commandPalette(.delegate(.checkForUpdates)):
-        return .send(.updates(.checkForUpdates))
-
-      case .commandPalette(.delegate(.openSettings)):
-        return .merge(
-          .send(.settings(.setSelection(.general))),
-          .run { _ in
-            await settingsWindowClient.show()
-          }
-        )
-
-      case .commandPalette(.delegate(.newWorktree)):
-        return .send(.repositories(.worktreeCreation(.createRandomWorktree)))
-
-      case .commandPalette(.delegate(.openRepository)):
-        return .send(.repositories(.setOpenPanelPresented(true)))
-
-      case .commandPalette(.delegate(.removeWorktree(let worktreeID, let repositoryID))):
-        return .send(.repositories(.worktreeLifecycle(.requestDeleteWorktree(worktreeID, repositoryID))))
-
-      case .commandPalette(.delegate(.archiveWorktree(let worktreeID, let repositoryID))):
-        return .send(.repositories(.worktreeLifecycle(.requestArchiveWorktree(worktreeID, repositoryID))))
-
-      case .commandPalette(.delegate(.viewArchivedWorktrees)):
-        return .send(.repositories(.selectArchivedWorktrees))
-
-      case .commandPalette(.delegate(.refreshWorktrees)):
-        return .send(.repositories(.refreshWorktrees))
-
-      case .commandPalette(.delegate(.installCLI)):
-        return .send(.settings(.installCLIButtonTapped(showAlert: false)))
-
-      case .commandPalette(.delegate(.ghosttyCommand(let action))):
-        guard let worktree = state.repositories.selectedTerminalWorktree else {
-          return .none
-        }
-        return .run { _ in
-          await terminalClient.send(.performBindingAction(worktree, action: action))
-        }
-
-      case .commandPalette(.delegate(.changeFocusedTabIcon(let worktreeID))):
-        guard let worktree = state.repositories.selectedTerminalWorktree,
-          worktree.id == worktreeID
-        else {
-          return .none
-        }
-        return .run { _ in
-          await terminalClient.send(.presentTabIconPicker(worktree))
-        }
-
-      case .commandPalette(.delegate(.openPullRequest(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .openOnCodeHost))))
-
-      case .commandPalette(.delegate(.markPullRequestReady(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .markReadyForReview))))
-
-      case .commandPalette(.delegate(.mergePullRequest(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .merge))))
-
-      case .commandPalette(.delegate(.closePullRequest(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .close))))
-
-      case .commandPalette(.delegate(.copyFailingJobURL(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .copyFailingJobURL))))
-
-      case .commandPalette(.delegate(.copyCiFailureLogs(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .copyCiFailureLogs))))
-
-      case .commandPalette(.delegate(.rerunFailedJobs(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .rerunFailedJobs))))
-
-      case .commandPalette(.delegate(.openFailingCheckDetails(let worktreeID))):
-        return .send(.repositories(.githubIntegration(.pullRequestAction(worktreeID, .openFailingCheckDetails))))
-
-      #if DEBUG
-        case .commandPalette(.delegate(.debugTestToast(let toast))):
-          return .send(.repositories(.showToast(toast)))
-
-        case .commandPalette(.delegate(.debugSimulateUpdateFound)):
-          return .send(.updates(.debugSimulateUpdateFound))
-      #endif
-
-      case .commandPalette:
-        return .none
-
-      case .terminalEvent(.customCommandSucceeded(_, let name, let durationMs)):
-        let message = "\(name) succeeded in \(formatCustomCommandDuration(durationMs))"
-        return .send(.repositories(.showToast(.success(message))))
-
-      case .terminalEvent(.notificationReceived(let worktreeID, let title, let body)):
-        var effects: [Effect<Action>] = [
-          .send(.repositories(.worktreeOrdering(.worktreeNotificationReceived(worktreeID))))
-        ]
-        if state.settings.systemNotificationsEnabled {
-          effects.append(
-            .run { _ in
-              await systemNotificationClient.send(title, body)
-            }
-          )
-        }
-        if state.settings.notificationSoundEnabled && !state.settings.systemNotificationsEnabled {
-          effects.append(
-            .run { _ in
-              await notificationSoundClient.play()
-            }
-          )
-        }
-        return .merge(effects)
-
-      case .terminalEvent(.notificationIndicatorChanged(let count)):
-        state.notificationIndicatorCount = count
-        return .run { _ in
-          await MainActor.run {
-            NSApplication.shared.dockTile.badgeLabel = nil
-          }
-        }
-
-      case .terminalEvent(.runScriptStatusChanged(let worktreeID, let isRunning)):
-        if isRunning {
-          state.runScriptStatusByWorktreeID[worktreeID] = true
-        } else {
-          state.runScriptStatusByWorktreeID.removeValue(forKey: worktreeID)
-        }
-        return .none
-
-      case .terminalEvent(.commandPaletteToggleRequested(let worktreeID)):
-        if state.commandPalette.isPresented {
-          return .send(.commandPalette(.setPresented(false)))
-        }
-        if state.repositories.worktree(for: worktreeID) != nil {
-          return .merge(
-            .send(.repositories(.selectWorktree(worktreeID))),
-            .send(.commandPalette(.setPresented(true)))
-          )
-        }
-        if state.repositories.repositories[id: worktreeID]?.kind == .plain {
-          return .merge(
-            .send(.repositories(.selectRepository(worktreeID))),
-            .send(.commandPalette(.setPresented(true)))
-          )
-        }
-        return .send(.commandPalette(.setPresented(true)))
-      case .terminalEvent(.setupScriptConsumed(let worktreeID)):
-        return .send(.repositories(.worktreeCreation(.consumeSetupScript(worktreeID))))
-
-      case .terminalEvent(.fontSizeChanged(let fontSize)):
-        return .send(.settings(.setTerminalFontSize(fontSize)))
-
-      case .terminalEvent(.layoutRestored(let selectedWorktreeID)):
-        appLogger.info("[LayoutRestore] layoutRestored: selectedWorktreeID=\(selectedWorktreeID ?? "nil")")
-        // Once layout is restored the saved tabs have all been re-created
-        // (each emits `tabCreated` → `markWorktreeOpened`) and a valid
-        // active worktree is in hand — the right moment to honor the
-        // "Default View = Shelf" preference for Layout-Restore launches,
-        // which the `repositorySnapshotLoaded` hook intentionally
-        // deferred to avoid a selection flash.
-        @Shared(.settingsFile) var settingsFile
-        let shouldEnterShelf =
-          settingsFile.global.defaultViewMode == .shelf
-          && !state.repositories.isShelfActive
-        var effects: [Effect<Action>] = []
-        if let selectedWorktreeID {
-          // Plain folders use .repository selection, not .worktree
-          if let repo = state.repositories.repositories[id: selectedWorktreeID],
-            repo.kind == .plain
-          {
-            effects.append(.send(.repositories(.selectRepository(selectedWorktreeID))))
-          } else {
-            effects.append(.send(.repositories(.selectWorktree(selectedWorktreeID))))
-          }
-        }
-        if shouldEnterShelf {
-          effects.append(.send(.repositories(.toggleShelf)))
-        }
-        return effects.isEmpty ? .none : .merge(effects)
-
-      case .terminalEvent(.layoutRestoreFailed(let message)):
-        appLogger.warning("[LayoutRestore] layoutRestoreFailed: \(message)")
-        return .send(.repositories(.showToast(.warning(message))))
-
-      case .terminalEvent(.tabCreated(let worktreeID)):
-        // Every tab creation (user +, CLI open, layout restore, …)
-        // marks its worktree as Shelf-visible. Layout restore in
-        // particular only calls `selectWorktree` for the one active
-        // worktree; other restored worktrees only surface here.
-        return .send(.repositories(.markWorktreeOpened(worktreeID)))
-
-      case .terminalEvent(.tabClosed(let worktreeID, let remainingTabs)):
-        // Closing the last tab retires the book from the Shelf. Other
-        // closes are routine and need no Reducer-side bookkeeping.
-        guard remainingTabs == 0 else { return .none }
-        return .send(.repositories(.markWorktreeClosed(worktreeID)))
-
-      case .terminalEvent:
-        return .none
+      case .terminalEvent(let event):
+        return reduceTerminalEvent(event, state: &state)
       }
     }
     core
+    Reduce<State, Action> { state, action in
+      // Default-on focus restore: every command-palette delegate action that
+      // doesn't intentionally shift selection sends focus back to the active
+      // terminal once its effect has dispatched. Runs after `core` so it
+      // sees the same action and adds a parallel effect.
+      guard case .commandPalette(.delegate(let delegate)) = action,
+        !Self.commandPaletteDelegateChangesActiveSelection(delegate)
+      else {
+        return .none
+      }
+      return restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
+    }
     Scope(state: \.repositories, action: \.repositories) {
       RepositoriesFeature()
     }
@@ -1084,18 +969,4 @@ struct AppFeature {
       CommandPaletteFeature()
     }
   }
-}
-
-// Renders Custom Command run duration for status toasts.
-// Sub-second runs show ms; short runs show one decimal; long runs reuse the
-// whole-seconds formatter used by other command-finished notifications.
-func formatCustomCommandDuration(_ durationMs: Int) -> String {
-  if durationMs < 1_000 {
-    return "\(max(durationMs, 0))ms"
-  }
-  let seconds = Double(durationMs) / 1_000.0
-  if seconds < 10 {
-    return String(format: "%.1fs", seconds)
-  }
-  return WorktreeTerminalState.formatDuration(Int(seconds))
 }

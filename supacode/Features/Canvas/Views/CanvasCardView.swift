@@ -16,10 +16,24 @@ struct CanvasCardView: View {
   /// PNG/SVG filenames against the per-repo icons directory.
   var repositoryRootURL: URL?
   let tree: SplitTree<GhosttySurfaceView>
+  let activeSurfaceID: UUID?
+  let unfocusedSplitOverlay: (fill: Color?, opacity: Double)
+  var splitDivider: (color: Color?, width: CGFloat?) = (nil, nil)
   let isFocused: Bool
   let isSelected: Bool
   let hasUnseenNotification: Bool
+  let tabIcon: String?
+  let tabId: TerminalTabID
+  let tabs: [TerminalTabItem]
+  let tabContextMenuActions: TerminalTabContextMenuActions
   let cardSize: CGSize
+  /// Whether this card is currently expanded in place (near-fullscreen). When
+  /// true the title-bar button restores instead of expands, resize handles and
+  /// title-bar dragging are disabled, and the action buttons stay visible.
+  let isExpanded: Bool
+  /// Tooltip for the expand/restore button, including the bound shortcut (the
+  /// parent resolves it since CanvasCardView has no keybindings context).
+  let expandHelp: String
   let canvasScale: CGFloat
   let showsSelectionShield: Bool
   let onTap: () -> Void
@@ -71,7 +85,7 @@ struct CanvasCardView: View {
       ZStack {
         RoundedRectangle(cornerRadius: cornerRadius)
           .stroke(borderColor, lineWidth: borderLineWidth)
-        if !showsSelectionShield {
+        if !showsSelectionShield && !isExpanded {
           resizeHandles
         }
         if showsSelectionShield {
@@ -131,10 +145,16 @@ struct CanvasCardView: View {
       Text(repositoryName)
         .font(.caption.bold())
         .lineLimit(1)
-      Text("/ \(worktreeName)")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
+      HStack(spacing: 3) {
+        Text("/")
+        if let tabIcon {
+          TabIconImage(rawName: tabIcon, pointSize: 10)
+        }
+        Text(worktreeName)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .lineLimit(1)
       Spacer()
       titleBarActions
     }
@@ -158,7 +178,14 @@ struct CanvasCardView: View {
               width: value.translation.width / canvasScale,
               height: value.translation.height / canvasScale
             ))
-        }
+        },
+      isEnabled: !isExpanded
+    )
+    .terminalTabContextMenu(
+      tabId: tabId,
+      tabs: tabs,
+      actions: tabContextMenuActions,
+      variant: .canvas
     )
   }
 
@@ -167,15 +194,19 @@ struct CanvasCardView: View {
       Button {
         onExpand()
       } label: {
-        Image(systemName: "arrow.up.left.and.arrow.down.right")
-          .font(.caption2.weight(.semibold))
-          .frame(width: 18, height: 18)
-          .contentShape(.rect)
+        Image(
+          systemName: isExpanded
+            ? "arrow.down.right.and.arrow.up.left"
+            : "arrow.up.left.and.arrow.down.right"
+        )
+        .font(.caption2.weight(.semibold))
+        .frame(width: 18, height: 18)
+        .contentShape(.rect)
       }
       .buttonStyle(.plain)
       .foregroundStyle(.secondary)
-      .help("Expand to tab view")
-      .accessibilityLabel("Expand card")
+      .help(expandHelp)
+      .accessibilityLabel(isExpanded ? "Restore card size" : "Expand card")
 
       Button {
         onClose()
@@ -190,8 +221,8 @@ struct CanvasCardView: View {
       .help("Close card")
       .accessibilityLabel("Close card")
     }
-    .opacity(isHoveringTitleBar ? 1 : 0)
-    .allowsHitTesting(isHoveringTitleBar)
+    .opacity(isExpanded || isHoveringTitleBar ? 1 : 0)
+    .allowsHitTesting(isExpanded || isHoveringTitleBar)
     .animation(.easeInOut(duration: 0.15), value: isHoveringTitleBar)
   }
 
@@ -225,9 +256,20 @@ struct CanvasCardView: View {
   }
 
   private var terminalContent: some View {
-    TerminalSplitTreeView(tree: tree, pinnedSize: cardSize, action: onSplitOperation)
-      .frame(width: cardSize.width, height: cardSize.height)
-      .allowsHitTesting(isFocused && !showsSelectionShield)
+    AnimatedTerminalSplitTreeView(
+      tree: tree,
+      size: cardSize,
+      activeSurfaceID: activeSurfaceID,
+      unfocusedSplitOverlay: unfocusedSplitOverlay,
+      splitDivider: splitDivider,
+      hasNotification: { _ in false },
+      action: onSplitOperation
+    )
+    // No own size animation: the canvas drives every size change inside a
+    // withAnimation (expand/restore, resize commit, arrange), so the terminal
+    // refit stays in lock-step with the card's offset/scale. Without a wrapping
+    // animation (live resize drag) the size tracks the gesture 1:1.
+    .allowsHitTesting(isFocused && !showsSelectionShield)
   }
 
   private var selectionShield: some View {
@@ -356,6 +398,36 @@ struct CanvasCardView: View {
       x: (alignment == .bottomTrailing || alignment == .topTrailing) ? cornerSide / 3 : -cornerSide / 3,
       y: (alignment == .topLeading || alignment == .topTrailing) ? -cornerSide / 3 : cornerSide / 3
     )
+  }
+}
+
+private struct AnimatedTerminalSplitTreeView: View, Animatable {
+  let tree: SplitTree<GhosttySurfaceView>
+  var size: CGSize
+  let activeSurfaceID: UUID?
+  let unfocusedSplitOverlay: (fill: Color?, opacity: Double)
+  var splitDivider: (color: Color?, width: CGFloat?)
+  let hasNotification: (UUID) -> Bool
+  let action: (TerminalSplitTreeView.Operation) -> Void
+
+  var animatableData: AnimatablePair<CGFloat, CGFloat> {
+    get { AnimatablePair(size.width, size.height) }
+    set {
+      size = CGSize(width: newValue.first, height: newValue.second)
+    }
+  }
+
+  var body: some View {
+    TerminalSplitTreeView(
+      tree: tree,
+      pinnedSize: size,
+      activeSurfaceID: activeSurfaceID,
+      unfocusedSplitOverlay: unfocusedSplitOverlay,
+      splitDivider: splitDivider,
+      hasNotification: hasNotification,
+      action: action
+    )
+    .frame(width: size.width, height: size.height)
   }
 }
 

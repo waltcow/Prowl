@@ -101,7 +101,15 @@ This file defines the **JSON output contract** for:
   - `"scrollback"`: satisfied from scrollback/history
   - `"mixed"`: combined view when the runtime had to stitch sources together
 - `truncated`: boolean
-  - `true` when the runtime could not return the full requested text volume
+  - `true` only when the returned `text` may be **incomplete** — i.e. the runtime could not
+    retrieve the pane's full screen+scrollback buffer and the visible viewport alone held fewer
+    lines than requested, so older content may exist beyond reach.
+  - `false` when `text` holds every line the pane retains for the request. In particular,
+    receiving fewer lines than `--last N` because the pane simply has less history than `N` is
+    **not** truncation — you still got everything available.
+  - This matches the meaning of `truncated` in the `send --capture` response (`prowl.cli.send`):
+    in both, `true` signals "the captured text may be missing content", never "you got less than
+    you asked for but it is all there is".
 - `line_count`: integer
   - number of newline-delimited lines present in `text`
 - `text`: string

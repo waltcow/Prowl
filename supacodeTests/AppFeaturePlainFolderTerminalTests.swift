@@ -70,6 +70,7 @@ struct AppFeaturePlainFolderTerminalTests {
     await store.receive(\.repositories.delegate.selectedWorktreeChanged)
     await store.receive(\.worktreeSettingsLoaded) {
       $0.openActionSelection = .terminal
+      $0.openActionIsAutomatic = false
       $0.selectedRunScript = "pnpm dev"
     }
     await store.receive(\.worktreeUserSettingsLoaded) {

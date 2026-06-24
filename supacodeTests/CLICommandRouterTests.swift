@@ -56,6 +56,18 @@ struct CLICommandRouterTests {
   }
 
   @MainActor
+  @Test func routerDispatchesAgentsToAgentsHandler() async {
+    let router = CLICommandRouter()
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .agents(AgentsInput())
+    )
+    let response = await router.route(envelope)
+    #expect(response.command == "agents")
+    #expect(response.error?.code == "NOT_IMPLEMENTED")
+  }
+
+  @MainActor
   @Test func routerDispatchesKeyToKeyHandler() async {
     let router = CLICommandRouter()
     let envelope = CommandEnvelope(
@@ -75,6 +87,28 @@ struct CLICommandRouterTests {
     )
     let response = await router.route(envelope)
     #expect(response.command == "read")
+  }
+
+  @MainActor
+  @Test func routerDispatchesTabToTabHandler() async {
+    let router = CLICommandRouter()
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .tab(TabInput(action: .create))
+    )
+    let response = await router.route(envelope)
+    #expect(response.command == "tab")
+  }
+
+  @MainActor
+  @Test func routerDispatchesPaneToPaneHandler() async {
+    let router = CLICommandRouter()
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .pane(PaneInput(action: .close))
+    )
+    let response = await router.route(envelope)
+    #expect(response.command == "pane")
   }
 
   // MARK: - Custom handler injection
@@ -102,10 +136,13 @@ struct CLICommandRouterTests {
     let commands: [Command] = [
       .open(OpenInput()),
       .list(ListInput()),
+      .agents(AgentsInput()),
       .focus(FocusInput()),
       .send(SendInput(text: "x")),
       .key(KeyInput(rawToken: "tab", token: "tab")),
       .read(ReadInput()),
+      .tab(TabInput(action: .create)),
+      .pane(PaneInput(action: .close)),
     ]
     let router = CLICommandRouter()
     for cmd in commands {

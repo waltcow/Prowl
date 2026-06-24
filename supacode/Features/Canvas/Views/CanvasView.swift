@@ -3,46 +3,100 @@ import Sharing
 import SwiftUI
 
 struct CanvasView: View {
-  @Environment(CommandKeyObserver.self) private var commandKeyObserver
-  @Environment(\.resolvedKeybindings) private var resolvedKeybindings
+  @Environment(CommandKeyObserver.self) var commandKeyObserver
+  @Environment(\.resolvedKeybindings) var resolvedKeybindings
 
   let terminalManager: WorktreeTerminalManager
-  var onExitToTab: () -> Void = {}
-  @State private var layoutStore = CanvasLayoutStore()
-  @Shared(.repositoryAppearances) private var repositoryAppearances
+  /// Per-repo display titles resolved by the parent reducer. Used to
+  /// override the folder-derived `Repository.name` on each card title
+  /// bar without subscribing to per-repo settings files on the
+  /// per-frame canvas hot path.
+  var repositoryCustomTitles: [Repository.ID: String] = [:]
+  var focusRequest: CanvasFocusRequest?
+  /// A one-shot, reducer-driven request to run a view-local canvas command
+  /// (expand/arrange/organize/select-all), e.g. from the command palette.
+  var commandRequest: CanvasCommandRequest?
+  var onFocusedWorktreeChanged: (Worktree.ID?) -> Void = { _ in }
+  var onFocusRequestConsumed: (Int) -> Void = { _ in }
+  var onCommandConsumed: (Int) -> Void = { _ in }
+  /// Reports whether a card is currently expanded in place, so the parent can
+  /// give the window toolbar a matching scrim (it can't be covered from here).
+  var onExpandedChange: (Bool) -> Void = { _ in }
+  @State var layoutStore = CanvasLayoutStore()
+  @Shared(.repositoryAppearances) var repositoryAppearances
 
-  @State private var canvasOffset: CGSize = .zero
-  @State private var lastCanvasOffset: CGSize = .zero
-  @State private var canvasScale: CGFloat = 1.0
-  @State private var lastCanvasScale: CGFloat = 1.0
-  @State private var selectionState = CanvasSelectionState()
-  @State private var lastTitleBarTapDate: Date = .distantPast
-  @State private var activeResize: [TerminalTabID: ActiveResize] = [:]
-  @State private var hasPerformedInitialFit = false
-  @State private var viewportSize: CGSize = .zero
-  @State private var showsCanvasHelp = false
+  @State var canvasOffset: CGSize = .zero
+  @State var lastCanvasOffset: CGSize = .zero
+  @State var canvasScale: CGFloat = 1.0
+  @State var lastCanvasScale: CGFloat = 1.0
+  @State var selectionState = CanvasSelectionState()
+  @State var lastTitleBarTapDate: Date = .distantPast
+  @State var activeResize: [TerminalTabID: ActiveResize] = [:]
+  @State var hasPerformedInitialFit = false
+  @State var hasSeenCanvasCards = false
+  @State var viewportSize: CGSize = .zero
+  @State var showsCanvasHelp = false
+  @State var configReloadCounter = 0
+  @State var focusViewportAnimationID = 0
+  /// The tab currently expanded in place (near-fullscreen overlay) on canvas,
+  /// or nil when no card is expanded.
+  @State var expandedTabID: TerminalTabID?
 
-  private let minCardWidth: CGFloat = 300
-  private let minCardHeight: CGFloat = 200
-  private let maxCardWidth: CGFloat = 2400
-  private let maxCardHeight: CGFloat = 1600
-  private let titleBarHeight: CGFloat = 28
-  private let cardSpacing: CGFloat = 20
+  let minCardWidth: CGFloat = 300
+  let minCardHeight: CGFloat = 200
+  let maxCardWidth: CGFloat = 2400
+  let maxCardHeight: CGFloat = 1600
+  let titleBarHeight: CGFloat = 28
+  let cardSpacing: CGFloat = 20
   /// Reserved height at the bottom of the viewport for the help button and
   /// layout toolbar so cards don't sit underneath them after auto-fit.
   /// Cards end up shifted upward by half of this amount.
-  private let bottomToolbarReserve: CGFloat = 50
+  let bottomToolbarReserve: CGFloat = 50
+  /// Margin kept on every side of a card temporarily expanded to near-fullscreen.
+  let expandPadding: CGFloat = 40
+  /// Shared animation for expand / restore / relayout. Matches the easeInOut
+  /// 0.2s that `CanvasCardView` uses to animate `cardSize`, so the canvas
+  /// scale/offset stays in lock-step with the card's terminal size refit.
+  let expandAnimation: Animation = .easeInOut(duration: 0.2)
+
+  /// Width of the screen hosting the canvas window, used to scale the default
+  /// card size. Falls back to the large-screen reference when unknown.
+  var hostScreenWidth: CGFloat {
+    (NSApp.keyWindow?.screen ?? NSScreen.main)?.frame.width
+      ?? CanvasCardLayout.maxDefaultScreenWidth
+  }
+
+  /// Default size for newly created and uniformly arranged cards, scaled to the
+  /// host screen so small screens (14") don't zoom out into tiny text while
+  /// large screens still get the roomier card.
+  var adaptiveDefaultCardSize: CGSize {
+    CanvasCardLayout.adaptiveDefaultSize(forScreenWidth: hostScreenWidth)
+  }
 
   var body: some View {
     let selectAllCanvasShortcut = AppShortcuts.resolvedShortcut(
       for: AppShortcuts.CommandID.selectAllCanvasCards,
       in: resolvedKeybindings
     )
+    let arrangeCanvasShortcut = AppShortcuts.resolvedShortcut(
+      for: AppShortcuts.CommandID.arrangeCanvasCards,
+      in: resolvedKeybindings
+    )
+    let organizeCanvasShortcut = AppShortcuts.resolvedShortcut(
+      for: AppShortcuts.CommandID.organizeCanvasCards,
+      in: resolvedKeybindings
+    )
+    let expandCanvasShortcut = AppShortcuts.resolvedShortcut(
+      for: AppShortcuts.CommandID.expandCanvasCard,
+      in: resolvedKeybindings
+    )
+    let _ = configReloadCounter
     CanvasScrollContainer(
       offset: $canvasOffset,
       lastOffset: $lastCanvasOffset,
       scale: $canvasScale,
-      lastScale: $lastCanvasScale
+      lastScale: $lastCanvasScale,
+      isInteractionEnabled: expandedTabID == nil
     ) {
       GeometryReader { _ in
         let activeStates = terminalManager.activeWorktreeStates
@@ -52,122 +106,65 @@ struct CanvasView: View {
         // Background layer: handles canvas pan and tap-to-clear.
         Color.clear
           .onAppear {
+            if !allCardKeys.isEmpty {
+              hasSeenCanvasCards = true
+            }
             ensureLayouts(for: allCardKeys)
+            if !allCardKeys.isEmpty {
+              layoutStore.ensureZOrder(for: allCardKeys)
+            }
             pruneSelection(previousOrder: [], currentOrder: allTabIDs, states: activeStates)
             syncBroadcastCallbacks(states: activeStates)
+            fulfillPendingFocusRequest(focusRequest, states: activeStates)
           }
           .onChange(of: allCardKeys) { _, newKeys in
             if newKeys.isEmpty {
               CanvasLayoutStore.hasAutoArrangedInSession = false
+              if hasSeenCanvasCards {
+                layoutStore.prune(to: [])
+              }
+            } else {
+              hasSeenCanvasCards = true
             }
             ensureLayouts(for: newKeys)
+            if !newKeys.isEmpty {
+              layoutStore.ensureZOrder(for: newKeys)
+            }
             syncBroadcastCallbacks(states: activeStates)
+            fulfillPendingFocusRequest(focusRequest, states: activeStates)
           }
           .onChange(of: allTabIDs) { oldTabIDs, newTabIDs in
             pruneSelection(previousOrder: oldTabIDs, currentOrder: newTabIDs, states: activeStates)
+            if let expandedTabID, !newTabIDs.contains(expandedTabID) {
+              cancelExpandForRelayout()
+            }
+            fulfillPendingFocusRequest(focusRequest, states: activeStates)
+          }
+          .onChange(of: focusRequest) { _, newRequest in
+            fulfillPendingFocusRequest(newRequest, states: activeStates)
           }
           .contentShape(.rect)
           .accessibilityAddTraits(.isButton)
           .onTapGesture { clearSelection(states: activeStates) }
-          .gesture(canvasPanGesture)
+          .gesture(canvasPanGesture, isEnabled: expandedTabID == nil)
 
-        // Cards layer: one card per open tab across all worktrees.
-        // Uses .offset() (not .position()) to avoid parent size proposals
-        // reaching the NSView, keeping terminal grid stable during zoom.
-        ForEach(activeStates, id: \.worktreeID) { state in
-          ForEach(state.tabManager.tabs) { tab in
-            if state.surfaceView(for: tab.id) != nil {
-              let tree = state.splitTree(for: tab.id)
-              let cardKey = tab.id.rawValue.uuidString
-              let baseLayout = layoutStore.cardLayouts[cardKey] ?? CanvasCardLayout(position: .zero)
-              let resized = resizedFrame(for: tab.id, baseLayout: baseLayout)
-              let screenCenter = screenPosition(for: resized.center)
-              let cardTotalHeight = resized.size.height + titleBarHeight
-
-              let repositoryAppearance = appearance(for: state.repositoryRootURL)
-              CanvasCardView(
-                repositoryName: Repository.name(for: state.repositoryRootURL),
-                worktreeName: tab.title,
-                repositoryIcon: repositoryAppearance.icon,
-                repositoryColor: repositoryAppearance.color?.color,
-                repositoryRootURL: state.repositoryRootURL,
-                tree: tree,
-                isFocused: selectionState.primaryTabID == tab.id,
-                isSelected: selectionState.selectedTabIDs.contains(tab.id),
-                hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
-                cardSize: resized.size,
-                canvasScale: canvasScale,
-                showsSelectionShield: showsSelectionShield(for: tab.id),
-                onTap: {
-                  let cmdHeld = NSEvent.modifierFlags.contains(.command)
-                  if cmdHeld {
-                    handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
-                  } else {
-                    focusSingleCard(tab.id, surfaceState: state, states: activeStates)
-                  }
-                },
-                onSelectionTap: {
-                  handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
-                },
-                onDragCommit: { translation in commitDrag(for: cardKey, translation: translation) },
-                onResize: { edge, translation in
-                  activeResize[tab.id] = ActiveResize(
-                    edge: edge,
-                    translation: CGSize(
-                      width: translation.width / canvasScale,
-                      height: translation.height / canvasScale
-                    )
-                  )
-                },
-                onResizeEnd: { commitResize(for: tab.id, cardKey: cardKey, surfaces: tree.leaves()) },
-                onSplitOperation: { operation in
-                  state.performSplitOperation(operation, in: tab.id)
-                  if selectionState.isBroadcasting {
-                    syncBroadcastCallbacks(states: activeStates)
-                  }
-                },
-                onTitleBarTap: {
-                  let wasAlreadyFocused =
-                    selectionState.primaryTabID == tab.id
-                    && selectionState.selectedTabIDs.count <= 1
-                  focusSingleCard(tab.id, surfaceState: state, states: activeStates)
-                  let now = Date()
-                  if wasAlreadyFocused,
-                    now.timeIntervalSince(lastTitleBarTapDate) <= NSEvent.doubleClickInterval
-                  {
-                    onExitToTab()
-                  }
-                  lastTitleBarTapDate = now
-                },
-                onExpand: {
-                  focusSingleCard(tab.id, surfaceState: state, states: activeStates)
-                  onExitToTab()
-                },
-                onClose: {
-                  state.closeTab(tab.id)
-                }
-              )
-              .scaleEffect(canvasScale, anchor: .center)
-              .offset(
-                x: screenCenter.x - resized.size.width / 2,
-                y: screenCenter.y - cardTotalHeight / 2
-              )
-              .zIndex(zIndex(for: tab.id))
-            }
-          }
-        }
+        cardsLayer(activeStates: activeStates)
       }
       .contentShape(.rect)
-      .simultaneousGesture(canvasZoomGesture)
+      .simultaneousGesture(canvasZoomGesture, isEnabled: expandedTabID == nil)
+      .animation(.easeInOut(duration: 0.22), value: focusViewportAnimationID)
       .onGeometryChange(for: CGSize.self) { proxy in
         proxy.size
       } action: { newSize in
         viewportSize = newSize
-        if !hasPerformedInitialFit {
+        let currentCardKeys = collectCardKeys(from: terminalManager.activeWorktreeStates)
+        if !hasPerformedInitialFit, !currentCardKeys.isEmpty {
           hasPerformedInitialFit = true
           if !CanvasLayoutStore.hasAutoArrangedInSession {
             CanvasLayoutStore.hasAutoArrangedInSession = true
-            arrangeCards()
+            if layoutStore.shouldAutoArrangeOnInitialEntry(for: currentCardKeys) {
+              arrangeCards()
+            }
           }
           fitToView(canvasSize: newSize)
         }
@@ -188,25 +185,253 @@ struct CanvasView: View {
       selectAllCanvasShortcut?.keyEquivalent ?? AppShortcuts.selectAllCanvasCards.keyEquivalent,
       phases: .down
     ) { keyPress in
-      let shortcutModifiers = selectAllCanvasShortcut?.modifiers ?? AppShortcuts.selectAllCanvasCards.modifiers
-      guard keyPress.modifiers == shortcutModifiers else { return .ignored }
+      // Bail when the binding is disabled in Settings (resolved shortcut is nil);
+      // otherwise the app-default key would still fire despite being unbound.
+      guard let shortcut = selectAllCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
       selectAllCards()
       return .handled
     }
+    .onKeyPress(
+      arrangeCanvasShortcut?.keyEquivalent ?? AppShortcuts.arrangeCanvasCards.keyEquivalent,
+      phases: .down
+    ) { keyPress in
+      guard let shortcut = arrangeCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
+      arrangeCardsWithFit()
+      return .handled
+    }
+    .onKeyPress(
+      organizeCanvasShortcut?.keyEquivalent ?? AppShortcuts.organizeCanvasCards.keyEquivalent,
+      phases: .down
+    ) { keyPress in
+      guard let shortcut = organizeCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
+      organizeCardsWithFit()
+      return .handled
+    }
+    .onKeyPress(
+      expandCanvasShortcut?.keyEquivalent ?? AppShortcuts.expandCanvasCard.keyEquivalent,
+      phases: .down
+    ) { keyPress in
+      guard let shortcut = expandCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
+      toggleExpandFocusedCard()
+      return .handled
+    }
+    .onChange(of: expandedTabID) { _, newValue in
+      onExpandedChange(newValue != nil)
+    }
+    .onChange(of: commandRequest) { _, newRequest in
+      fulfillCommandRequest(newRequest)
+    }
     .task { activateCanvas() }
+    .onReceive(NotificationCenter.default.publisher(for: .ghosttyRuntimeConfigDidChange)) { _ in
+      configReloadCounter &+= 1
+    }
     .onDisappear { deactivateCanvas() }
   }
 
-  private func showsSelectionShield(for tabID: TerminalTabID) -> Bool {
+  func showsSelectionShield(for tabID: TerminalTabID) -> Bool {
     if commandKeyObserver.isPressed { return true }
     if selectionState.isSelecting { return true }
     if selectionState.isBroadcasting, selectionState.primaryTabID != tabID { return true }
     return false
   }
 
+  // MARK: - Cards Layer
+
+  /// Cards layer: one card per open tab across all worktrees.
+  /// Uses .offset() (not .position()) to avoid parent size proposals
+  /// reaching the NSView, keeping terminal grid stable during zoom.
+  @ViewBuilder
+  func cardsLayer(activeStates: [WorktreeTerminalState]) -> some View {
+    // Pin to .topLeading and fill the viewport so each card's `.offset()` keeps
+    // the same (0,0) origin it had under GeometryReader — otherwise the scrim's
+    // full-size frame would resize the stack and shift the cards' base position.
+    ZStack(alignment: .topLeading) {
+      ForEach(activeStates, id: \.worktreeID) { state in
+        ForEach(state.tabManager.tabs) { tab in
+          if state.surfaceView(for: tab.id) != nil {
+            cardView(for: tab, in: state, activeStates: activeStates)
+          }
+        }
+      }
+
+      // Dimming scrim behind the expanded card (above all other cards). Tapping
+      // it — i.e. anywhere outside the expanded card, including the padding —
+      // restores the layout.
+      if expandedTabID != nil {
+        // Material gives a GPU-efficient backdrop blur; a small black overlay
+        // adds the dim. The whole scrim is kept partly transparent so the
+        // background cards stay clearly visible (still running) behind it.
+        Rectangle()
+          .fill(.ultraThinMaterial)
+          .overlay(Color.black.opacity(0.1))
+          .opacity(0.7)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .contentShape(.rect)
+          .accessibilityAddTraits(.isButton)
+          .accessibilityLabel("Restore expanded card")
+          .onTapGesture { collapseExpand() }
+          .zIndex(5_000)
+          .transition(.opacity)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+
+  @ViewBuilder
+  func cardView(
+    for tab: TerminalTabItem,
+    in state: WorktreeTerminalState,
+    activeStates: [WorktreeTerminalState]
+  ) -> some View {
+    let tree = state.splitTree(for: tab.id)
+    let cardKey = tab.id.rawValue.uuidString
+    let baseLayout = layoutStore.cardLayouts[cardKey] ?? CanvasCardLayout(position: .zero)
+    let isCardExpanded = expandedTabID == tab.id
+    let expandHelp = AppShortcuts.helpText(
+      title: isCardExpanded ? "Restore card size" : "Expand card",
+      commandID: AppShortcuts.CommandID.expandCanvasCard,
+      in: resolvedKeybindings
+    )
+    // The expanded card magic-moves between its in-canvas frame and the full
+    // viewport. AnimatedExpandableCard drives every sub-value (size, center,
+    // scale) from one animatable progress, so they advance frame by frame in
+    // lock-step. The canvas transform is never touched → background frozen.
+    let fromGeometry = nonExpandedGeometry(for: tab.id, baseLayout: baseLayout)
+    let toGeometry = expandedGeometry()
+    let unfocusedSplitOverlay = terminalManager.unfocusedSplitOverlay()
+    let splitDivider = terminalManager.splitDividerAppearance()
+    let repositoryAppearance = appearance(for: state.repositoryRootURL)
+    let resolvedRepositoryName = repositoryDisplayName(for: state.repositoryRootURL)
+
+    AnimatedExpandableCard(
+      progress: isCardExpanded ? 1 : 0,
+      collapsed: fromGeometry,
+      expanded: toGeometry,
+      titleBarHeight: titleBarHeight
+    ) { renderSize in
+      CanvasCardView(
+        repositoryName: resolvedRepositoryName,
+        worktreeName: tab.displayTitle,
+        repositoryIcon: repositoryAppearance.icon,
+        repositoryColor: repositoryAppearance.color?.color,
+        repositoryRootURL: state.repositoryRootURL,
+        tree: tree,
+        activeSurfaceID: state.activeSurfaceID(for: tab.id),
+        unfocusedSplitOverlay: unfocusedSplitOverlay,
+        splitDivider: splitDivider,
+        isFocused: selectionState.primaryTabID == tab.id,
+        isSelected: selectionState.selectedTabIDs.contains(tab.id),
+        hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
+        tabIcon: tab.iconLock != .auto ? tab.icon : nil,
+        tabId: tab.id,
+        tabs: state.tabManager.tabs,
+        tabContextMenuActions: tabContextMenuActions(for: state),
+        cardSize: renderSize,
+        isExpanded: isCardExpanded,
+        expandHelp: expandHelp,
+        canvasScale: isCardExpanded ? 1 : canvasScale,
+        showsSelectionShield: showsSelectionShield(for: tab.id),
+        onTap: {
+          let cmdHeld = NSEvent.modifierFlags.contains(.command)
+          if cmdHeld {
+            handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
+          } else {
+            focusSingleCard(tab.id, states: activeStates)
+          }
+        },
+        onSelectionTap: {
+          handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
+        },
+        onDragCommit: { translation in commitDrag(for: cardKey, translation: translation) },
+        onResize: { edge, translation in
+          activeResize[tab.id] = ActiveResize(
+            edge: edge,
+            translation: CGSize(
+              width: translation.width / canvasScale,
+              height: translation.height / canvasScale
+            )
+          )
+        },
+        onResizeEnd: { commitResize(for: tab.id, cardKey: cardKey, surfaces: tree.leaves()) },
+        onSplitOperation: { operation in
+          state.performSplitOperation(operation, in: tab.id)
+          if selectionState.isBroadcasting {
+            syncBroadcastCallbacks(states: activeStates)
+          }
+        },
+        onTitleBarTap: {
+          let wasAlreadyFocused =
+            selectionState.primaryTabID == tab.id
+            && selectionState.selectedTabIDs.count <= 1
+          focusSingleCard(tab.id, states: activeStates)
+          let now = Date()
+          if wasAlreadyFocused,
+            now.timeIntervalSince(lastTitleBarTapDate) <= NSEvent.doubleClickInterval
+          {
+            toggleExpand(tab.id, states: activeStates)
+          }
+          lastTitleBarTapDate = now
+        },
+        onExpand: {
+          toggleExpand(tab.id, states: activeStates)
+        },
+        onClose: {
+          state.closeTab(tab.id)
+        }
+      )
+      .sheet(item: iconPickerBinding(for: tab.id, in: state)) { tabId in
+        iconPickerSheet(state: state, tabId: tabId)
+      }
+    }
+    // Animatable progress is interpolated by binding the animation to this
+    // card's expanded state. A plain withAnimation around expandedTabID doesn't
+    // reach here (the GeometryReader's value-scoped .animation swallows the
+    // implicit transaction), so drive it explicitly. Only the toggled card's
+    // value changes, so the rest stay put.
+    .animation(expandAnimation, value: isCardExpanded)
+    .zIndex(zIndex(for: tab.id, cardKey: cardKey))
+  }
+
+  func tabContextMenuActions(for state: WorktreeTerminalState) -> TerminalTabContextMenuActions {
+    TerminalTabContextMenuActions(
+      renameTab: { state.promptChangeTabTitle($0) },
+      changeIcon: { state.presentIconPicker(for: $0) },
+      closeTab: { state.closeTab($0) },
+      closeOthers: { state.closeOtherTabs(keeping: $0) },
+      closeToRight: { state.closeTabsToRight(of: $0) },
+      closeAll: { state.closeAllTabs() }
+    )
+  }
+
+  func iconPickerBinding(for tabId: TerminalTabID, in state: WorktreeTerminalState) -> Binding<TerminalTabID?> {
+    Binding(
+      get: { state.iconPickerTabId == tabId ? tabId : nil },
+      set: { state.iconPickerTabId = $0 }
+    )
+  }
+
+  func iconPickerSheet(state: WorktreeTerminalState, tabId: TerminalTabID) -> some View {
+    let currentIcon = state.tabManager.tabs.first(where: { $0.id == tabId })?.icon
+    return TabIconPickerView(
+      initialIcon: currentIcon,
+      defaultIcon: state.defaultIcon(for: tabId),
+      onApply: { newIcon in
+        state.applyIconChange(tabId, icon: newIcon)
+        state.dismissIconPicker()
+      },
+      onCancel: {
+        state.dismissIconPicker()
+      }
+    )
+  }
+
   // MARK: - Canvas Gestures
 
-  private var canvasPanGesture: some Gesture {
+  var canvasPanGesture: some Gesture {
     DragGesture()
       .onChanged { value in
         canvasOffset = CGSize(
@@ -219,7 +444,7 @@ struct CanvasView: View {
       }
   }
 
-  private var canvasZoomGesture: some Gesture {
+  var canvasZoomGesture: some Gesture {
     MagnifyGesture()
       .onChanged { value in
         let newScale = max(0.25, min(2.0, lastCanvasScale * value.magnification))
@@ -249,7 +474,7 @@ struct CanvasView: View {
   /// Batch-position all cards that don't have stored layouts yet.
   /// Uses a single, consistent column count to avoid overlap between
   /// cards positioned in different passes.
-  private func ensureLayouts(for cardKeys: [String]) {
+  func ensureLayouts(for cardKeys: [String]) {
     let unpositioned = cardKeys.filter { layoutStore.cardLayouts[$0] == nil }
     guard !unpositioned.isEmpty else { return }
 
@@ -263,24 +488,26 @@ struct CanvasView: View {
       : gridColumns(for: cardKeys.count)
 
     // Build locally, assign once to trigger a single save.
+    let cardSize = adaptiveDefaultCardSize
     var layouts = layoutStore.cardLayouts
     for (offset, key) in unpositioned.enumerated() {
       layouts[key] = CanvasCardLayout(
-        position: gridPosition(index: positionedCount + offset, columns: columns)
+        position: gridPosition(index: positionedCount + offset, columns: columns, cardSize: cardSize),
+        size: cardSize
       )
     }
-    layoutStore.cardLayouts = layouts
+    layoutStore.setCardLayouts(layouts)
   }
 
   /// Balanced grid: columns ≈ sqrt(N). No viewport constraint — the canvas
   /// is infinite and fitToView handles zoom.
-  private func gridColumns(for count: Int) -> Int {
+  func gridColumns(for count: Int) -> Int {
     max(1, Int(ceil(sqrt(Double(count)))))
   }
 
-  private func gridPosition(index: Int, columns: Int) -> CGPoint {
-    let cardW = CanvasCardLayout.defaultSize.width
-    let cardH = CanvasCardLayout.defaultSize.height + titleBarHeight
+  func gridPosition(index: Int, columns: Int, cardSize: CGSize) -> CGPoint {
+    let cardW = cardSize.width
+    let cardH = cardSize.height + titleBarHeight
     let row = index / columns
     let col = index % columns
     return CGPoint(
@@ -291,7 +518,7 @@ struct CanvasView: View {
 
   /// Compute effective center and size accounting for resize only (not drag).
   /// Drag is applied separately via `.offset()` to avoid layout passes.
-  private func resizedFrame(
+  func resizedFrame(
     for tabID: TerminalTabID,
     baseLayout: CanvasCardLayout
   ) -> (center: CGPoint, size: CGSize) {
@@ -317,24 +544,24 @@ struct CanvasView: View {
     return (CGPoint(x: centerX, y: centerY), CGSize(width: width, height: height))
   }
 
-  private func screenPosition(for canvasCenter: CGPoint) -> CGPoint {
+  func screenPosition(for canvasCenter: CGPoint) -> CGPoint {
     CGPoint(
       x: canvasCenter.x * canvasScale + canvasOffset.width,
       y: canvasCenter.y * canvasScale + canvasOffset.height
     )
   }
 
-  private func clampWidth(_ width: CGFloat) -> CGFloat {
+  func clampWidth(_ width: CGFloat) -> CGFloat {
     max(minCardWidth, min(maxCardWidth, width))
   }
 
-  private func clampHeight(_ height: CGFloat) -> CGFloat {
+  func clampHeight(_ height: CGFloat) -> CGFloat {
     max(minCardHeight, min(maxCardHeight, height))
   }
 
   // MARK: - Organize & Fit
 
-  private func collectCardKeys(from states: [WorktreeTerminalState]) -> [String] {
+  func collectCardKeys(from states: [WorktreeTerminalState]) -> [String] {
     states.flatMap { state in
       state.tabManager.tabs.compactMap { tab in
         state.surfaceView(for: tab.id) != nil ? tab.id.rawValue.uuidString : nil
@@ -342,7 +569,7 @@ struct CanvasView: View {
     }
   }
 
-  private func collectVisibleTabIDs(from states: [WorktreeTerminalState]) -> [TerminalTabID] {
+  func collectVisibleTabIDs(from states: [WorktreeTerminalState]) -> [TerminalTabID] {
     states.flatMap { state in
       state.tabManager.tabs.compactMap { tab in
         state.surfaceView(for: tab.id) != nil ? tab.id : nil
@@ -350,28 +577,40 @@ struct CanvasView: View {
     }
   }
 
+  func collectFocusCandidates(from states: [WorktreeTerminalState]) -> [CanvasFocusCandidate] {
+    states.flatMap { state in
+      state.tabManager.tabs.compactMap { tab in
+        state.surfaceView(for: tab.id) != nil
+          ? CanvasFocusCandidate(worktreeID: state.worktreeID, tabID: tab.id)
+          : nil
+      }
+    }
+  }
+
   /// Reset all card positions to a clean grid layout (uniform sizes).
-  private func organizeCards() {
+  func organizeCards() {
     let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
     let columns = gridColumns(for: keys.count)
+    let cardSize = adaptiveDefaultCardSize
     var layouts = layoutStore.cardLayouts
     for (index, key) in keys.enumerated() {
       layouts[key] = CanvasCardLayout(
-        position: gridPosition(index: index, columns: columns)
+        position: gridPosition(index: index, columns: columns, cardSize: cardSize),
+        size: cardSize
       )
     }
-    layoutStore.cardLayouts = layouts
+    layoutStore.setCardLayouts(layouts, zOrder: keys)
   }
 
   /// Arrange cards using MaxRects-BSSF bin packing. Preserves each card's
   /// current size and finds a compact layout whose aspect ratio matches
   /// the viewport.
-  private func arrangeCards() {
+  func arrangeCards() {
     let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
     guard !keys.isEmpty, viewportSize.width > 0, viewportSize.height > 0 else { return }
 
     let cards: [CanvasCardPacker.CardInfo] = keys.map { key in
-      let size = layoutStore.cardLayouts[key]?.size ?? CanvasCardLayout.defaultSize
+      let size = layoutStore.cardLayouts[key]?.size ?? adaptiveDefaultCardSize
       return CanvasCardPacker.CardInfo(key: key, size: size)
     }
 
@@ -380,11 +619,31 @@ struct CanvasView: View {
     let result = packer.pack(cards: cards, targetRatio: targetRatio)
 
     guard !result.layouts.isEmpty else { return }
-    layoutStore.cardLayouts = result.layouts
+    layoutStore.setCardLayouts(result.layouts, zOrder: keys)
+  }
+
+  /// Arrange cards (preserving sizes) and refit the viewport, animated.
+  /// Shared by the toolbar button and the keyboard shortcut.
+  func arrangeCardsWithFit() {
+    withAnimation(.easeInOut(duration: 0.2)) {
+      cancelExpandForRelayout()
+      arrangeCards()
+      fitToView(canvasSize: viewportSize)
+    }
+  }
+
+  /// Organize cards into a uniform grid and refit the viewport, animated.
+  /// Shared by the toolbar button and the keyboard shortcut.
+  func organizeCardsWithFit() {
+    withAnimation(.easeInOut(duration: 0.2)) {
+      cancelExpandForRelayout()
+      organizeCards()
+      fitToView(canvasSize: viewportSize)
+    }
   }
 
   /// Adjust scale and offset so all cards fit within the viewport.
-  private func fitToView(canvasSize: CGSize) {
+  func fitToView(canvasSize: CGSize) {
     guard canvasSize.width > 0, canvasSize.height > 0 else { return }
 
     let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
@@ -426,18 +685,13 @@ struct CanvasView: View {
   }
 
   /// Remove stored layouts for tabs that no longer exist.
-  private func cleanStaleLayouts() {
+  func cleanStaleLayouts() {
     let visibleKeys = Set(collectCardKeys(from: terminalManager.activeWorktreeStates))
-    let staleKeys = layoutStore.cardLayouts.keys.filter { !visibleKeys.contains($0) }
-    guard !staleKeys.isEmpty else { return }
-    var layouts = layoutStore.cardLayouts
-    for key in staleKeys {
-      layouts.removeValue(forKey: key)
-    }
-    layoutStore.cardLayouts = layouts
+    guard !visibleKeys.isEmpty || hasSeenCanvasCards else { return }
+    layoutStore.prune(to: visibleKeys)
   }
 
-  private var canvasHelpButton: some View {
+  var canvasHelpButton: some View {
     Button {
       showsCanvasHelp.toggle()
     } label: {
@@ -453,8 +707,12 @@ struct CanvasView: View {
     .padding()
   }
 
-  private var canvasHelpContent: some View {
-    VStack(alignment: .leading, spacing: 14) {
+  var canvasHelpContent: some View {
+    let expandShortcut = AppShortcuts.display(
+      for: AppShortcuts.CommandID.expandCanvasCard,
+      in: resolvedKeybindings
+    )
+    return VStack(alignment: .leading, spacing: 14) {
       Text("Canvas Navigation")
         .font(.headline)
 
@@ -469,13 +727,19 @@ struct CanvasView: View {
           title: "Pan canvas",
           detail: "Drag empty area, middle-click drag, or two-finger swipe"
         )
+        canvasHelpRow(
+          icon: "arrow.up.left.and.arrow.down.right",
+          title: "Expand / restore card",
+          detail: expandShortcut.map { "\($0), or the card's title-bar button" }
+            ?? "Use the card's title-bar button"
+        )
       }
     }
     .padding()
     .frame(width: 320, alignment: .leading)
   }
 
-  private func canvasHelpRow(icon: String, title: String, detail: String) -> some View {
+  func canvasHelpRow(icon: String, title: String, detail: String) -> some View {
     HStack(alignment: .firstTextBaseline, spacing: 10) {
       Image(systemName: icon)
         .foregroundStyle(.secondary)
@@ -491,7 +755,7 @@ struct CanvasView: View {
     }
   }
 
-  private var canvasToolbar: some View {
+  var canvasToolbar: some View {
     HStack(spacing: 8) {
       if selectionState.isBroadcasting {
         Label(
@@ -520,47 +784,52 @@ struct CanvasView: View {
         ))
 
       Button {
-        withAnimation(.easeInOut(duration: 0.2)) {
-          arrangeCards()
-          fitToView(canvasSize: viewportSize)
-        }
+        arrangeCardsWithFit()
       } label: {
         Image(systemName: "rectangle.3.group")
           .font(.body)
           .accessibilityLabel("Arrange")
       }
       .buttonStyle(.bordered)
-      .help("Arrange cards preserving sizes")
+      .help(
+        AppShortcuts.helpText(
+          title: "Arrange cards preserving sizes",
+          commandID: AppShortcuts.CommandID.arrangeCanvasCards,
+          in: resolvedKeybindings
+        ))
 
       Button {
-        withAnimation(.easeInOut(duration: 0.2)) {
-          organizeCards()
-          fitToView(canvasSize: viewportSize)
-        }
+        organizeCardsWithFit()
       } label: {
         Image(systemName: "square.grid.2x2")
           .font(.body)
           .accessibilityLabel("Organize")
       }
       .buttonStyle(.bordered)
-      .help("Organize cards in a uniform grid")
+      .help(
+        AppShortcuts.helpText(
+          title: "Organize cards in a uniform grid",
+          commandID: AppShortcuts.CommandID.organizeCanvasCards,
+          in: resolvedKeybindings
+        ))
     }
     .padding()
   }
 
-  private func zIndex(for tabID: TerminalTabID) -> Double {
+  func zIndex(for tabID: TerminalTabID, cardKey: String) -> Double {
+    let base = layoutStore.zIndex(for: cardKey)
     if selectionState.primaryTabID == tabID {
-      return 2
+      return 10_000 + base
     }
     if selectionState.selectedTabIDs.contains(tabID) {
-      return 1
+      return 9_000 + base
     }
-    return 0
+    return base
   }
 
   // MARK: - Drag
 
-  private func commitDrag(for cardKey: String, translation: CGSize) {
+  func commitDrag(for cardKey: String, translation: CGSize) {
     if var layout = layoutStore.cardLayouts[cardKey] {
       layout.position.x += translation.width
       layout.position.y += translation.height
@@ -570,13 +839,17 @@ struct CanvasView: View {
 
   // MARK: - Resize
 
-  private func commitResize(for tabID: TerminalTabID, cardKey: String, surfaces: [GhosttySurfaceView]) {
+  func commitResize(for tabID: TerminalTabID, cardKey: String, surfaces: [GhosttySurfaceView]) {
     guard activeResize[tabID] != nil else { return }
     if var layout = layoutStore.cardLayouts[cardKey] {
       let resized = resizedFrame(for: tabID, baseLayout: layout)
-      layout.position = resized.center
-      layout.size = resized.size
-      layoutStore.cardLayouts[cardKey] = layout
+      // Settle the card into its committed size with a short animation (cards
+      // no longer animate size on their own; the canvas drives it explicitly).
+      withAnimation(.easeInOut(duration: 0.2)) {
+        layout.position = resized.center
+        layout.size = resized.size
+        layoutStore.cardLayouts[cardKey] = layout
+      }
     }
     activeResize[tabID] = nil
     for surface in surfaces {
@@ -585,7 +858,7 @@ struct CanvasView: View {
     }
   }
 
-  private func selectAllCards() {
+  func selectAllCards() {
     let activeStates = terminalManager.activeWorktreeStates
     let allTabIDs = collectVisibleTabIDs(from: activeStates)
     guard allTabIDs.count > 1 else { return }
@@ -596,535 +869,76 @@ struct CanvasView: View {
 
   // MARK: - Selection and Focus
 
-  private func focusSingleCard(
+  func focusSingleCard(
     _ tabID: TerminalTabID,
-    surfaceState _: WorktreeTerminalState,
     states: [WorktreeTerminalState]
   ) {
+    layoutStore.moveToFront(tabID.rawValue.uuidString)
     mutateSelection(states: states) { state in
       state.focusSingle(tabID)
     }
   }
 
-  private func handleSelectionShieldTap(
-    _ tabID: TerminalTabID,
-    surfaceState _: WorktreeTerminalState,
-    states: [WorktreeTerminalState]
-  ) {
-    let cmdHeld = NSEvent.modifierFlags.contains(.command)
-    mutateSelection(states: states) { state in
-      if cmdHeld {
-        state.toggleSelection(tabID)
-      } else if state.isBroadcasting, state.selectedTabIDs.contains(tabID) {
-        state.setPrimary(tabID)
-      } else {
-        state.focusSingle(tabID)
-      }
-    }
+  // MARK: - Expand In Place
+
+  var expandMetrics: CanvasExpandGeometry.Metrics {
+    CanvasExpandGeometry.Metrics(
+      padding: expandPadding,
+      bottomReserve: bottomToolbarReserve,
+      titleBarHeight: titleBarHeight,
+      minSize: CGSize(width: minCardWidth, height: minCardHeight)
+    )
   }
 
-  private func clearSelection(states: [WorktreeTerminalState]) {
-    mutateSelection(states: states) { state in
-      state.clear()
-    }
+  /// Screen-space center for a fully expanded card: horizontally centered and
+  /// within the toolbar-adjusted viewport. Independent of canvas pan/zoom.
+  var expandedScreenCenter: CGPoint {
+    CGPoint(x: viewportSize.width / 2, y: (viewportSize.height - bottomToolbarReserve) / 2)
   }
 
-  private func pruneSelection(
-    previousOrder: [TerminalTabID],
-    currentOrder: [TerminalTabID],
-    states: [WorktreeTerminalState]
-  ) {
-    let previousPrimaryTabID = selectionState.primaryTabID
-    selectionState.pruneAutoAdvancingPrimary(previousOrder: previousOrder, currentOrder: currentOrder)
-    syncPrimaryFocus(from: previousPrimaryTabID, to: selectionState.primaryTabID, states: states)
-    syncBroadcastCallbacks(states: states)
+  /// A card's normal (non-expanded) on-screen frame, following the canvas
+  /// pan/zoom and any in-progress resize. This is the `progress = 0` endpoint of
+  /// the expand magic-move.
+  func nonExpandedGeometry(
+    for tabID: TerminalTabID,
+    baseLayout: CanvasCardLayout
+  ) -> CardScreenGeometry {
+    let resized = resizedFrame(for: tabID, baseLayout: baseLayout)
+    return CardScreenGeometry(
+      size: resized.size,
+      center: screenPosition(for: resized.center),
+      scale: canvasScale
+    )
   }
 
-  private func mutateSelection(
-    states: [WorktreeTerminalState],
-    mutation: (inout CanvasSelectionState) -> Void
-  ) {
-    let previousPrimaryTabID = selectionState.primaryTabID
-    mutation(&selectionState)
-    selectionState.prune(to: Set(collectVisibleTabIDs(from: states)))
-    syncPrimaryFocus(from: previousPrimaryTabID, to: selectionState.primaryTabID, states: states)
-    syncBroadcastCallbacks(states: states)
+  /// The full-viewport expanded frame at scale 1 — the `progress = 1` endpoint.
+  /// Independent of the canvas transform, so it covers the viewport regardless
+  /// of the (frozen) background.
+  func expandedGeometry() -> CardScreenGeometry {
+    CardScreenGeometry(
+      size: CanvasExpandGeometry.expandedSize(viewport: viewportSize, metrics: expandMetrics),
+      center: expandedScreenCenter,
+      scale: 1
+    )
   }
 
-  private func syncPrimaryFocus(
-    from previousTabID: TerminalTabID?,
-    to newTabID: TerminalTabID?,
-    states: [WorktreeTerminalState]
-  ) {
-    if let previousTabID, previousTabID != newTabID {
-      unfocusTab(previousTabID, states: states)
-    }
-
-    guard let newTabID,
-      let ownerState = states.first(where: { $0.surfaceView(for: newTabID) != nil }),
-      let surfaceView = ownerState.surfaceView(for: newTabID)
-    else {
-      terminalManager.canvasFocusedWorktreeID = nil
-      return
-    }
-
-    ownerState.tabManager.selectTab(newTabID)
-    terminalManager.canvasFocusedWorktreeID = ownerState.worktreeID
-    surfaceView.focusDidChange(true)
-    surfaceView.requestFocus()
-  }
-
-  private func unfocusTab(_ tabID: TerminalTabID, states: [WorktreeTerminalState]) {
-    guard let state = states.first(where: { $0.surfaceView(for: tabID) != nil }) else { return }
-    for surface in state.splitTree(for: tabID).leaves() {
-      surface.focusDidChange(false)
-    }
-  }
-
-  private func syncBroadcastCallbacks(states: [WorktreeTerminalState]) {
-    clearBroadcastCallbacks(states: states)
-
-    guard selectionState.isBroadcasting,
-      let primaryTabID = selectionState.primaryTabID,
-      let primaryState = terminalManager.stateContaining(tabId: primaryTabID)
-    else {
-      return
-    }
-
-    let selectedTabIDs = selectionState.selectedTabIDs
-    let beginBroadcast = { selectionState.beginBroadcastInteractionIfNeeded() }
-    for primarySurface in primaryState.splitTree(for: primaryTabID).leaves() {
-      primarySurface.onCommittedText = { [terminalManager, selectedTabIDs, primaryTabID, beginBroadcast] text in
-        Task { @MainActor in
-          beginBroadcast()
-          terminalManager.broadcastCommittedText(text, from: primaryTabID, to: selectedTabIDs)
-        }
-      }
-      primarySurface.onMirroredKey = {
-        [terminalManager, selectedTabIDs, primaryTabID, beginBroadcast] mirroredKey in
-        Task { @MainActor in
-          beginBroadcast()
-          terminalManager.broadcastMirroredKey(mirroredKey, from: primaryTabID, to: selectedTabIDs)
-        }
-      }
-    }
-  }
-
-  private func clearBroadcastCallbacks(states: [WorktreeTerminalState]) {
-    for state in states {
-      for tab in state.tabManager.tabs {
-        for surface in state.splitTree(for: tab.id).leaves() {
-          surface.onCommittedText = nil
-          surface.onMirroredKey = nil
-        }
-      }
-    }
-  }
-
-  // MARK: - Occlusion
-
-  private func activateCanvas() {
-    cleanStaleLayouts()
-
-    let activeStates = terminalManager.activeWorktreeStates
-
-    // Mark all states as canvas-managed so that tree updates (e.g. split
-    // creation) don't trigger applySurfaceActivity with stale normal-mode
-    // window visibility, which would occlude every surface.
-    for state in activeStates {
-      state.isCanvasManaged = true
-    }
-
-    // Auto-focus the card that was active before entering canvas.
-    if let selectedID = terminalManager.selectedWorktreeID,
-      let state = activeStates.first(where: { $0.worktreeID == selectedID }),
-      let tabID = state.tabManager.selectedTabId
-    {
-      selectionState.focusSingle(tabID)
-      syncPrimaryFocus(from: nil, to: tabID, states: activeStates)
+  /// Toggle expand/restore for a card — used by the title-bar button and the
+  /// title-bar double-click.
+  func toggleExpand(_ tabID: TerminalTabID, states: [WorktreeTerminalState]) {
+    if expandedTabID == tabID {
+      collapseExpand()
     } else {
-      selectionState.clear()
-      syncBroadcastCallbacks(states: activeStates)
-    }
-
-    for state in activeStates {
-      state.setAllSurfacesOccluded()
-    }
-    // Un-occlude all surfaces visible on canvas (including split panes)
-    for state in activeStates {
-      for tab in state.tabManager.tabs {
-        for surface in state.splitTree(for: tab.id).leaves() {
-          surface.setOcclusion(true)
-        }
-      }
+      expandCard(tabID, states: states)
     }
   }
 
-  private func deactivateCanvas() {
-    let activeStates = terminalManager.activeWorktreeStates
-    for state in activeStates {
-      state.isCanvasManaged = false
+  /// Toggle expand/restore for the focused (primary) card. Used by the keyboard
+  /// shortcut and the command palette, which target whichever card is focused.
+  func toggleExpandFocusedCard() {
+    if expandedTabID != nil {
+      collapseExpand()
+    } else if let tabID = selectionState.primaryTabID {
+      expandCard(tabID, states: terminalManager.activeWorktreeStates)
     }
-    clearBroadcastCallbacks(states: activeStates)
-    selectionState.clear()
-    // Don't occlude surfaces here. In SwiftUI's if/else view swap,
-    // onAppear fires before onDisappear, so occluding here would undo
-    // WorktreeTerminalTabsView.onAppear's syncFocus() and cause blank
-    // surfaces. Cleanup of non-selected worktrees is handled by
-    // setSelectedWorktreeID in the async exit flow.
-  }
-
-  /// Looks up the user-pinned `RepositoryAppearance` for a given repo
-  /// root URL by deriving the canonical `Repository.ID` (the
-  /// path-policy-normalized path string) and querying the @Shared
-  /// dict. Returns `.empty` when no entry exists, which keeps cards
-  /// visually identical to before the appearance feature shipped.
-  private func appearance(for repositoryRootURL: URL) -> RepositoryAppearance {
-    let id =
-      PathPolicy.normalizePath(
-        repositoryRootURL.path(percentEncoded: false), resolvingSymlinks: true
-      ) ?? repositoryRootURL.path(percentEncoded: false)
-    return repositoryAppearances[id] ?? .empty
-  }
-}
-
-private struct ActiveResize {
-  let edge: CanvasCardView.CardResizeEdge
-  var translation: CGSize
-}
-
-// MARK: - Scroll Container
-
-/// Wraps SwiftUI content in an NSView whose `scrollWheel` override catches
-/// unhandled scroll-wheel events and translates them into canvas-offset changes.
-/// Focused terminals consume their own scroll events (they don't call super),
-/// so only events over empty space or unfocused cards reach this container.
-private struct CanvasScrollContainer<Content: View>: NSViewRepresentable {
-  @Binding var offset: CGSize
-  @Binding var lastOffset: CGSize
-  @Binding var scale: CGFloat
-  @Binding var lastScale: CGFloat
-  @ViewBuilder var content: Content
-
-  func makeCoordinator() -> CanvasScrollCoordinator {
-    CanvasScrollCoordinator()
-  }
-
-  func makeNSView(context: Context) -> CanvasScrollContainerView {
-    let container = CanvasScrollContainerView()
-    let hosting = NSHostingView(rootView: content)
-    hosting.translatesAutoresizingMaskIntoConstraints = false
-    container.addSubview(hosting)
-    NSLayoutConstraint.activate([
-      hosting.topAnchor.constraint(equalTo: container.topAnchor),
-      hosting.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-      hosting.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-      hosting.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-    ])
-    container.scrollCoordinator = context.coordinator
-    return container
-  }
-
-  func updateNSView(_ nsView: CanvasScrollContainerView, context: Context) {
-    context.coordinator.offset = $offset
-    context.coordinator.lastOffset = $lastOffset
-    context.coordinator.scale = $scale
-    context.coordinator.lastScale = $lastScale
-    if let hosting = nsView.subviews.first as? NSHostingView<Content> {
-      hosting.rootView = content
-    }
-  }
-}
-
-private class CanvasScrollCoordinator {
-  var offset: Binding<CGSize> = .constant(.zero)
-  var lastOffset: Binding<CGSize> = .constant(.zero)
-  var scale: Binding<CGFloat> = .constant(1.0)
-  var lastScale: Binding<CGFloat> = .constant(1.0)
-
-  func handleScroll(deltaX: CGFloat, deltaY: CGFloat) {
-    let current = offset.wrappedValue
-    let newOffset = CGSize(
-      width: current.width + deltaX,
-      height: current.height + deltaY
-    )
-    offset.wrappedValue = newOffset
-    lastOffset.wrappedValue = newOffset
-  }
-
-  func handleZoom(deltaY: CGFloat, anchor: CGPoint, isPrecise: Bool) {
-    let result = CanvasZoomMath.zoom(
-      currentScale: scale.wrappedValue,
-      currentOffset: offset.wrappedValue,
-      deltaY: deltaY,
-      anchor: anchor,
-      isPrecise: isPrecise
-    )
-    scale.wrappedValue = result.scale
-    lastScale.wrappedValue = result.scale
-    offset.wrappedValue = result.offset
-    lastOffset.wrappedValue = result.offset
-  }
-
-  func setOffset(_ newOffset: CGSize) {
-    offset.wrappedValue = newOffset
-    lastOffset.wrappedValue = newOffset
-  }
-}
-
-/// Pure zoom math, extracted for testability.
-enum CanvasZoomMath {
-  static let minScale: CGFloat = 0.25
-  static let maxScale: CGFloat = 2.0
-
-  struct Result: Equatable {
-    let scale: CGFloat
-    let offset: CGSize
-  }
-
-  /// Compute the new scale and offset for a Cmd+wheel zoom step.
-  /// Keeps the canvas point under `anchor` fixed under the cursor:
-  /// `screen = canvas * scale + offset` ⇒ `canvas = (anchor - offset) / scale`.
-  static func zoom(
-    currentScale: CGFloat,
-    currentOffset: CGSize,
-    deltaY: CGFloat,
-    anchor: CGPoint,
-    isPrecise: Bool
-  ) -> Result {
-    let sensitivity: CGFloat = isPrecise ? 0.0025 : 0.005
-    let factor = exp(deltaY * sensitivity)
-    let newScale = max(minScale, min(maxScale, currentScale * factor))
-    guard newScale != currentScale else {
-      return Result(scale: currentScale, offset: currentOffset)
-    }
-    let canvasX = (anchor.x - currentOffset.width) / currentScale
-    let canvasY = (anchor.y - currentOffset.height) / currentScale
-    let newOffset = CGSize(
-      width: anchor.x - canvasX * newScale,
-      height: anchor.y - canvasY * newScale
-    )
-    return Result(scale: newScale, offset: newOffset)
-  }
-}
-
-private class CanvasScrollContainerView: NSView {
-  var scrollCoordinator: CanvasScrollCoordinator?
-
-  /// Whether the container is actively redirecting scroll events to canvas
-  /// panning (as opposed to the brief bounce period after a gesture ends).
-  private var isPanning = false
-  private var scrollMonitor: Any?
-  /// Brief delay after finger-up to wait for momentum events.
-  private var momentumTimer: Timer?
-  /// Grace period after a pan gesture ends. A follow-up gesture that begins
-  /// during this window is still treated as canvas panning, even if the
-  /// cursor now sits on a focused terminal.
-  private var bounceTimer: Timer?
-
-  // MARK: - Middle-click pan
-  private var middleButtonMonitor: Any?
-  private var isMiddlePanning = false
-  private var middlePanStartLocation: NSPoint = .zero
-  private var middlePanStartOffset: CGSize = .zero
-  private var hasPushedPanCursor = false
-
-  override func scrollWheel(with event: NSEvent) {
-    if handleZoomEventIfNeeded(event) { return }
-    if event.phase == .began {
-      startPanning()
-    }
-    if event.phase == .began || event.phase == .changed || event.phase == .mayBegin || event.momentumPhase != [] {
-      scrollCoordinator?.handleScroll(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
-      return
-    }
-    super.scrollWheel(with: event)
-  }
-
-  /// If the event is a Cmd+scroll, route it to canvas zoom and report `true`.
-  /// Used by both the direct `scrollWheel` override and the local monitor so
-  /// pressing Cmd mid-gesture switches behavior immediately.
-  fileprivate func handleZoomEventIfNeeded(_ event: NSEvent) -> Bool {
-    guard event.modifierFlags.contains(.command), event.scrollingDeltaY != 0 else { return false }
-    let viewLocation = convert(event.locationInWindow, from: nil)
-    let anchor = CGPoint(x: viewLocation.x, y: bounds.height - viewLocation.y)
-    scrollCoordinator?.handleZoom(
-      deltaY: event.scrollingDeltaY,
-      anchor: anchor,
-      isPrecise: event.hasPreciseScrollingDeltas
-    )
-    return true
-  }
-
-  // MARK: - Pan lifecycle
-
-  private func startPanning() {
-    isPanning = true
-    momentumTimer?.invalidate()
-    momentumTimer = nil
-    bounceTimer?.invalidate()
-    bounceTimer = nil
-    guard scrollMonitor == nil else { return }
-    installMonitor()
-  }
-
-  private func installMonitor() {
-    scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-      guard let self, event.window === self.window else { return event }
-
-      // Cmd toggled mid-gesture — switch to zoom for this event.
-      if self.handleZoomEventIfNeeded(event) { return nil }
-
-      // --- New gesture ------------------------------------------------
-      if event.phase == .began {
-        if self.isPanning {
-          // Already panning (edge case). Let normal dispatch decide.
-          return event
-        }
-        // Within the bounce window — treat as a continuation of panning.
-        self.startPanning()
-        self.scrollCoordinator?.handleScroll(
-          deltaX: event.scrollingDeltaX,
-          deltaY: event.scrollingDeltaY
-        )
-        return nil
-      }
-
-      // Only intercept while actively panning (not during bounce).
-      guard self.isPanning else { return event }
-
-      // --- Ongoing gesture / momentum --------------------------------
-      self.momentumTimer?.invalidate()
-      self.momentumTimer = nil
-
-      if event.phase == .changed || event.momentumPhase != [] {
-        self.scrollCoordinator?.handleScroll(
-          deltaX: event.scrollingDeltaX,
-          deltaY: event.scrollingDeltaY
-        )
-      }
-
-      // Finger lifted — momentum may follow shortly.
-      if event.phase == .ended || event.phase == .cancelled {
-        self.momentumTimer = Timer.scheduledTimer(
-          withTimeInterval: 0.1, repeats: false
-        ) { [weak self] _ in
-          MainActor.assumeIsolated { self?.enterBounce() }
-        }
-      }
-
-      // Momentum finished.
-      if event.momentumPhase == .ended || event.momentumPhase == .cancelled {
-        self.enterBounce()
-      }
-
-      return nil
-    }
-  }
-
-  /// Transition from active panning to the bounce (grace) period.
-  /// The monitor stays alive so a quick follow-up gesture resumes panning.
-  private func enterBounce() {
-    isPanning = false
-    momentumTimer?.invalidate()
-    momentumTimer = nil
-    bounceTimer?.invalidate()
-    bounceTimer = Timer.scheduledTimer(
-      withTimeInterval: 0.3, repeats: false
-    ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.tearDownMonitor() }
-    }
-  }
-
-  private func tearDownMonitor() {
-    isPanning = false
-    momentumTimer?.invalidate()
-    momentumTimer = nil
-    bounceTimer?.invalidate()
-    bounceTimer = nil
-    if let monitor = scrollMonitor {
-      scrollMonitor = nil
-      DispatchQueue.main.async { MainActor.assumeIsolated { NSEvent.removeMonitor(monitor) } }
-    }
-  }
-
-  // MARK: - Middle-click pan
-
-  override func viewDidMoveToWindow() {
-    super.viewDidMoveToWindow()
-    if window != nil {
-      installMiddleButtonMonitor()
-    } else {
-      tearDownMiddleButtonMonitor()
-    }
-  }
-
-  private func installMiddleButtonMonitor() {
-    guard middleButtonMonitor == nil else { return }
-    let mask: NSEvent.EventTypeMask = [.otherMouseDown, .otherMouseDragged, .otherMouseUp]
-    middleButtonMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-      guard let self, event.window === self.window, event.buttonNumber == 2 else { return event }
-
-      switch event.type {
-      case .otherMouseDown:
-        let location = self.convert(event.locationInWindow, from: nil)
-        guard self.bounds.contains(location) else { return event }
-        self.beginMiddlePan(at: event.locationInWindow)
-        return nil
-      case .otherMouseDragged:
-        guard self.isMiddlePanning else { return event }
-        self.updateMiddlePan(to: event.locationInWindow)
-        return nil
-      case .otherMouseUp:
-        guard self.isMiddlePanning else { return event }
-        self.endMiddlePan()
-        return nil
-      default:
-        return event
-      }
-    }
-  }
-
-  private func beginMiddlePan(at windowLocation: NSPoint) {
-    isMiddlePanning = true
-    middlePanStartLocation = windowLocation
-    middlePanStartOffset = scrollCoordinator?.offset.wrappedValue ?? .zero
-    if !hasPushedPanCursor {
-      NSCursor.closedHand.push()
-      hasPushedPanCursor = true
-    }
-  }
-
-  private func updateMiddlePan(to windowLocation: NSPoint) {
-    let deltaX = windowLocation.x - middlePanStartLocation.x
-    // Window Y grows upward; canvas offset Y grows downward (SwiftUI top-left).
-    let deltaY = middlePanStartLocation.y - windowLocation.y
-    let newOffset = CGSize(
-      width: middlePanStartOffset.width + deltaX,
-      height: middlePanStartOffset.height + deltaY
-    )
-    scrollCoordinator?.setOffset(newOffset)
-  }
-
-  private func endMiddlePan() {
-    isMiddlePanning = false
-    if hasPushedPanCursor {
-      NSCursor.pop()
-      hasPushedPanCursor = false
-    }
-  }
-
-  private func tearDownMiddleButtonMonitor() {
-    if isMiddlePanning { endMiddlePan() }
-    if let monitor = middleButtonMonitor {
-      middleButtonMonitor = nil
-      DispatchQueue.main.async { MainActor.assumeIsolated { NSEvent.removeMonitor(monitor) } }
-    }
-  }
-
-  override func removeFromSuperview() {
-    tearDownMonitor()
-    tearDownMiddleButtonMonitor()
-    super.removeFromSuperview()
   }
 }

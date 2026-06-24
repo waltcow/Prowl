@@ -6,6 +6,7 @@ struct AppearanceSettingsView: View {
 
   var body: some View {
     let openActionOptions = OpenWorktreeAction.availableCases
+    let externalDiffToolOptions = ExternalDiffTool.settingsMenuCases
     VStack(alignment: .leading) {
       Form {
         Section("Appearance") {
@@ -46,15 +47,81 @@ struct AppearanceSettingsView: View {
           .font(.footnote)
           .foregroundStyle(.secondary)
         }
+        Section("Window Tint") {
+          Picker("Tint nav & toolbar", selection: $store.windowTintMode) {
+            ForEach(WindowTintMode.allCases) { mode in
+              Text(mode.title).tag(mode)
+            }
+          }
+          .help("Color the navigation panel and toolbar.")
+          if store.windowTintMode == .custom {
+            ColorPicker(
+              "Custom tint color",
+              selection: $store.windowTintCustomColor,
+              supportsOpacity: false
+            )
+            .help("Tint the nav and toolbar with this color in every view, ignoring repository colors.")
+          }
+          Text(tintFootnote)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+
+          Picker("Tint spines in Shelf View", selection: $store.shelfSpineTintFallback) {
+            ForEach(ShelfSpineTintFallback.allCases) { fallback in
+              Text(fallback.title).tag(fallback)
+            }
+          }
+          .help("Spine style for repositories without a color, or for every spine when Follow Repo Color is off.")
+          Toggle(
+            "Follow Repo Color Setting",
+            isOn: $store.shelfSpineTintFollowsRepositoryColor
+          )
+          .help("When disabled, all Shelf spines use the selected Neutral or System Tint style.")
+          Text(shelfSpineTintFootnote)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Section("Splits") {
+          Toggle(
+            "Dim unfocused split panes",
+            isOn: $store.dimUnfocusedSplits
+          )
+          .help("Fade split panes that aren't focused so the active one stands out.")
+        }
+        Section("Active Agents") {
+          Toggle(
+            "Show Active Agents panel automatically",
+            isOn: $store.autoShowActiveAgentsPanel
+          )
+          .help("Open the Active Agents panel when an agent is detected.")
+          Text("Hidden panels reopen as soon as an agent starts or updates.")
+            .foregroundStyle(.secondary)
+            .font(.callout)
+          Toggle(
+            "Show tab titles in agent rows",
+            isOn: $store.showActiveAgentTabTitles
+          )
+          .help("Display each agent's tab title in the row and show the branch name on hover.")
+          Toggle(
+            "Show agent status in Shelf tabs",
+            isOn: $store.showActiveAgentStatusInShelf
+          )
+          .help("Overlay detected agent status on the owning tab icon in Shelf View.")
+        }
         Section("Default View") {
           Picker("Launch in", selection: $store.defaultViewMode) {
             ForEach(DefaultViewMode.allCases) { mode in
               Text(mode.title).tag(mode)
             }
           }
-          .help("View Prowl starts in on launch. Shelf requires at least one worktree or folder.")
+          .help("View Prowl starts in on launch. Shelf and Canvas require at least one worktree or folder.")
         }
         Section("Default Editor") {
+          Toggle(
+            "Show in toolbar",
+            isOn: $store.showDefaultEditorInToolbar
+          )
+          .help("Show the Open in Editor button in the worktree toolbar.")
           Picker(
             "Default editor",
             selection: $store.defaultEditorID
@@ -66,7 +133,45 @@ struct AppearanceSettingsView: View {
                 .tag(action.settingsID)
             }
           }
-          .help("Applies to worktrees without repository overrides.")
+          .help(
+            "Applies to worktrees without repository overrides. "
+              + "Automatic prefers an app matching the project type, e.g. Xcode for Swift projects."
+          )
+        }
+        Section("Diff Tool") {
+          Picker(
+            "Open diff with",
+            selection: $store.externalDiffToolID
+          ) {
+            ForEach(externalDiffToolOptions) { tool in
+              Text(tool.title)
+                .tag(tool.settingsID)
+                .disabled(!tool.isInstalled)
+            }
+          }
+          .help("Choose what opens when you click a diff badge or run Show Diff.")
+          Text("Tools not installed on this Mac appear disabled.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+          if store.externalDiffToolID == ExternalDiffTool.custom.settingsID {
+            TextField(
+              "Command",
+              text: $store.externalDiffCustomCommand,
+              prompt: Text("my-diff {leftPath} {rightPath}")
+            )
+            .textFieldStyle(.roundedBorder)
+            .help(
+              "Runs in the worktree directory. Supports {leftPath}, {rightPath}, "
+                + "{worktreePath}, {repoPath}, and {branch}."
+            )
+          }
+        }
+        Section("Run") {
+          Toggle(
+            "Show in toolbar",
+            isOn: $store.showRunButtonInToolbar
+          )
+          .help("Show the Run button in the worktree toolbar.")
         }
         Section("Quit") {
           Toggle(
@@ -79,5 +184,32 @@ struct AppearanceSettingsView: View {
       .formStyle(.grouped)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+
+  private var tintFootnote: String {
+    switch store.windowTintMode {
+    case .none:
+      return "No tint. The nav and toolbar use the neutral system chrome."
+    case .repositoryColor:
+      return "Uses the active repository's color. Uncolored repositories get a neutral surface."
+    case .custom:
+      return "Uses your chosen color everywhere, regardless of per-repository colors."
+    }
+  }
+
+  private var shelfSpineTintFootnote: String {
+    let fallback =
+      switch store.shelfSpineTintFallback {
+      case .neutral:
+        "Uncolored repositories use a neutral spine."
+      case .systemTint:
+        "Uncolored repositories use the system tint color."
+      }
+
+    if store.shelfSpineTintFollowsRepositoryColor {
+      return fallback + " Repositories with a custom color still use that color."
+    } else {
+      return fallback + " Repository colors are ignored for Shelf spines."
+    }
   }
 }

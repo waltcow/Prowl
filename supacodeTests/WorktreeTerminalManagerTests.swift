@@ -1,6 +1,7 @@
 import ConcurrencyExtras
 import DependenciesTestSupport
 import Foundation
+import GhosttyKit
 import Testing
 
 @testable import supacode
@@ -64,6 +65,132 @@ struct WorktreeTerminalManagerTests {
     let state = manager.state(for: worktree)
 
     #expect(state.onFontSizeAdjusted != nil)
+  }
+
+  @Test func closeTargetAvailabilityFollowsTerminalModelState() {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    #expect(state.canCloseFocusedTab == false)
+    #expect(state.canCloseFocusedSurface == false)
+
+    let tabId = state.createTab()
+
+    #expect(tabId != nil)
+    #expect(state.canCloseFocusedTab == true)
+    #expect(state.canCloseFocusedSurface == true)
+
+    if let tabId {
+      state.closeTab(tabId)
+    }
+
+    #expect(state.canCloseFocusedTab == false)
+    #expect(state.canCloseFocusedSurface == false)
+  }
+
+  @Test func newEmptyTabStartsColdAgentDetection() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    #expect(state.agentDetectionSchedules[surfaceId] == nil)
+    #expect(state.agentDetectionTasks[surfaceId] == nil)
+  }
+
+  @Test func wakingSurfaceStartsWarmAgentDetection() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    state.wakeAgentDetection(forSurfaceID: surfaceId)
+
+    let schedule = try #require(state.agentDetectionSchedules[surfaceId])
+    #expect(schedule.nextInterval(now: Date()) != nil)
+    #expect(state.agentDetectionTasks[surfaceId] != nil)
+
+    state.cleanupAllAgentDetectionState()
+  }
+
+  @Test func initialInputStartsWarmAgentDetection() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab(initialInput: "codex\n"))
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    let schedule = try #require(state.agentDetectionSchedules[surfaceId])
+    #expect(schedule.nextInterval(now: Date()) != nil)
+    #expect(state.agentDetectionTasks[surfaceId] != nil)
+
+    state.cleanupAllAgentDetectionState()
+  }
+
+  @Test func firstTabUsesTabSurfaceContext() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+    let surface = try #require(state.surfaceView(for: surfaceId))
+
+    #expect(surface.surfaceContextForTesting == GHOSTTY_SURFACE_CONTEXT_TAB)
+  }
+
+  @Test func splitTreeDoesNotRecreateSurfaceForClosedTab() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    state.closeTab(tabId)
+    let staleTree = state.splitTree(for: tabId)
+
+    #expect(staleTree.isEmpty)
+    #expect(state.surfaceView(for: surfaceId) == nil)
+    #expect(state.surfaceView(for: tabId) == nil)
+  }
+
+  @Test func ghosttyCloseRequestDoesNotRecreateSurfaceForClosedTab() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+    let surface = try #require(state.surfaceView(for: surfaceId))
+
+    surface.bridge.closeSurface(processAlive: false)
+    let staleTree = state.splitTree(for: tabId)
+
+    #expect(staleTree.isEmpty)
+    #expect(state.tabManager.tabs.isEmpty)
+    #expect(state.surfaceView(for: surfaceId) == nil)
+    #expect(state.surfaceView(for: tabId) == nil)
+  }
+
+  @Test func closeSurfaceReturnsActualRemovalResult() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    #expect(state.closeSurface(id: surfaceId, confirmation: .skip) == true)
+    #expect(state.surfaceView(for: surfaceId) == nil)
+    #expect(state.tabManager.tabs.isEmpty)
+    #expect(state.closeSurface(id: surfaceId, confirmation: .skip) == false)
   }
 
   @Test func notificationIndicatorUsesCurrentCountOnStreamStart() async {
@@ -192,6 +319,99 @@ struct WorktreeTerminalManagerTests {
     #expect(manager.hasUnseenNotifications(for: worktree.id) == false)
   }
 
+  @Test func markNotificationReadOnlyAffectsMatchingID() {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+    let notificationA = UUID()
+    let notificationB = UUID()
+    let surfaceID = UUID()
+
+    state.notifications = [
+      makeNotification(id: notificationA, surfaceId: surfaceID, isRead: false),
+      makeNotification(id: notificationB, surfaceId: surfaceID, isRead: false),
+    ]
+
+    state.markNotificationRead(id: notificationB)
+
+    #expect(state.notifications.map(\.isRead) == [false, true])
+    #expect(manager.hasUnseenNotifications(for: worktree.id) == true)
+  }
+
+  @Test func latestUnreadNotificationLocationChoosesNewestFocusableAcrossWorktrees() {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktreeA = makeWorktree(id: "/tmp/repo/wt-a", name: "wt-a")
+    let worktreeB = makeWorktree(id: "/tmp/repo/wt-b", name: "wt-b")
+    let stateA = manager.state(for: worktreeA)
+    let stateB = manager.state(for: worktreeB)
+    let tabA = stateA.createTab()!
+    let tabB = stateB.createTab()!
+    let surfaceA = stateA.focusedSurfaceId(in: tabA)!
+    let surfaceB = stateB.focusedSurfaceId(in: tabB)!
+    let notificationA = UUID()
+    let notificationB = UUID()
+
+    stateA.notifications = [
+      makeNotification(
+        id: notificationA,
+        surfaceId: surfaceA,
+        createdAt: Date(timeIntervalSince1970: 10),
+        isRead: false
+      )
+    ]
+    stateB.notifications = [
+      makeNotification(
+        id: notificationB,
+        surfaceId: surfaceB,
+        createdAt: Date(timeIntervalSince1970: 20),
+        isRead: false
+      )
+    ]
+
+    #expect(
+      manager.latestUnreadNotificationLocation()
+        == NotificationLocation(
+          worktreeID: worktreeB.id,
+          tabID: tabB,
+          surfaceID: surfaceB,
+          notificationID: notificationB
+        )
+    )
+  }
+
+  @Test func latestUnreadNotificationLocationSkipsClosedSurfaces() {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+    let tabID = state.createTab()!
+    let surfaceID = state.focusedSurfaceId(in: tabID)!
+    let focusableNotification = UUID()
+
+    state.notifications = [
+      makeNotification(
+        surfaceId: UUID(),
+        createdAt: Date(timeIntervalSince1970: 20),
+        isRead: false
+      ),
+      makeNotification(
+        id: focusableNotification,
+        surfaceId: surfaceID,
+        createdAt: Date(timeIntervalSince1970: 10),
+        isRead: false
+      ),
+    ]
+
+    #expect(
+      manager.latestUnreadNotificationLocation()
+        == NotificationLocation(
+          worktreeID: worktree.id,
+          tabID: tabID,
+          surfaceID: surfaceID,
+          notificationID: focusableNotification
+        )
+    )
+  }
+
   @Test func setNotificationsDisabledMarksAllRead() {
     let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
     let worktree = makeWorktree()
@@ -222,6 +442,49 @@ struct WorktreeTerminalManagerTests {
 
     #expect(state.notifications.isEmpty)
     #expect(manager.hasUnseenNotifications(for: worktree.id) == false)
+  }
+
+  @Test func makeLayoutSnapshotPersistsCustomTabTitle() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+    let tabID = try #require(state.createTab())
+
+    state.tabManager.updateTitle(tabID, title: "npm test")
+    state.tabManager.setCustomTitle(tabID, title: "Build")
+
+    let snapshot = try #require(state.makeLayoutSnapshotWorktree())
+
+    #expect(snapshot.tabs.first?.title == "npm test")
+    #expect(snapshot.tabs.first?.customTitle == "Build")
+  }
+
+  @Test func applyLayoutSnapshotRestoresCustomTabTitle() throws {
+    let tabID = UUID()
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+    let snapshot = TerminalLayoutSnapshotPayload.SnapshotWorktree(
+      worktreeID: worktree.id,
+      selectedTabID: tabID.uuidString,
+      tabs: [
+        TerminalLayoutSnapshotPayload.SnapshotTab(
+          tabID: tabID.uuidString,
+          title: "npm test",
+          customTitle: "Build",
+          icon: nil,
+          splitRoot: .leaf(surfaceID: UUID().uuidString)
+        )
+      ]
+    )
+
+    #expect(state.applyLayoutSnapshot(snapshot))
+    let restored = try #require(state.tabManager.tabs.first)
+
+    #expect(restored.title == "npm test")
+    #expect(restored.customTitle == "Build")
+    #expect(restored.displayTitle == "Build")
+    #expect(restored.isTitleLocked == false)
   }
 
   @Test func restoreLayoutSnapshotFailClosedClearsSnapshotWhenWorktreeMissing() async {
@@ -268,6 +531,26 @@ struct WorktreeTerminalManagerTests {
     #expect(event == .layoutRestoreFailed(message: "Saved terminal layout was invalid and has been reset"))
   }
 
+  @Test func restoreLayoutSnapshotEmitsRestoredNilWhenSnapshotMissing() async {
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      layoutPersistence: TerminalLayoutPersistenceClient(
+        loadSnapshot: { nil },
+        saveSnapshot: { _ in true },
+        clearSnapshot: { true }
+      )
+    )
+    let stream = manager.eventStream()
+
+    await manager.restoreLayoutSnapshot(from: [makeWorktree()])
+
+    let event = await nextEvent(stream) { event in
+      event == .layoutRestored(selectedWorktreeID: nil)
+    }
+
+    #expect(event == .layoutRestored(selectedWorktreeID: nil))
+  }
+
   @Test func persistLayoutSnapshotWithoutTabsClearsSnapshot() async {
     let clearCount = LockIsolated(0)
     let saveCount = LockIsolated(0)
@@ -292,14 +575,66 @@ struct WorktreeTerminalManagerTests {
     #expect(clearCount.value == 1)
   }
 
-  private func makeWorktree() -> Worktree {
+  private func makeWorktree(
+    id: Worktree.ID = "/tmp/repo/wt-1",
+    name: String = "wt-1"
+  ) -> Worktree {
     Worktree(
-      id: "/tmp/repo/wt-1",
-      name: "wt-1",
+      id: id,
+      name: name,
       detail: "detail",
-      workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
+      workingDirectory: URL(fileURLWithPath: id),
       repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
     )
+  }
+
+  @Test func busyAgentFoldsIntoTaskStatusAndEmits() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    #expect(state.taskStatus == .idle)
+
+    var emissions: [WorktreeTaskStatus] = []
+    state.onTaskStatusChanged = { emissions.append($0) }
+
+    // A working agent on the tab makes the worktree run, with one emission.
+    state.surfaceAgentStates[surfaceId] = PaneAgentState(detectedAgent: .claude, state: .working)
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(state.taskStatus == .running)
+    #expect(emissions == [.running])
+
+    // Idempotent while it stays busy — no duplicate emission.
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(emissions == [.running])
+
+    // Returning to idle clears the indicator and emits once more.
+    state.surfaceAgentStates[surfaceId] = PaneAgentState(detectedAgent: .claude, state: .idle)
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(state.taskStatus == .idle)
+    #expect(emissions == [.running, .idle])
+
+    state.cleanupAllAgentDetectionState()
+  }
+
+  @Test func tabTeardownClearsAgentBusyTaskStatus() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+
+    let tabId = try #require(state.createTab())
+    let surfaceId = try #require(state.focusedSurfaceId(in: tabId))
+
+    state.surfaceAgentStates[surfaceId] = PaneAgentState(detectedAgent: .claude, state: .working)
+    state.updateTabAgentBusyState(for: tabId)
+    #expect(state.taskStatus == .running)
+
+    state.closeAllSurfaces()
+    #expect(state.tabAgentBusyById.isEmpty)
+    #expect(state.taskStatus == .idle)
   }
 
   private func nextEvent(
@@ -313,13 +648,17 @@ struct WorktreeTerminalManagerTests {
   }
 
   private func makeNotification(
+    id: UUID = UUID(),
     surfaceId: UUID = UUID(),
+    createdAt: Date = .distantPast,
     isRead: Bool
   ) -> WorktreeTerminalNotification {
     WorktreeTerminalNotification(
+      id: id,
       surfaceId: surfaceId,
       title: "Title",
       body: "Body",
+      createdAt: createdAt,
       isRead: isRead
     )
   }

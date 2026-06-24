@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Sharing
+import SwiftUI
 
 private let terminalLogger = SupaLogger("Terminal")
 private let layoutRestoreFailureMessage = "Saved terminal layout was invalid and has been reset"
@@ -19,6 +20,11 @@ final class WorktreeTerminalManager {
   private var lastNotificationIndicatorCount: Int?
   private var eventContinuation: AsyncStream<TerminalClient.Event>.Continuation?
   private var pendingEvents: [TerminalClient.Event] = []
+  private var eventCoalescer = TerminalEventCoalescer()
+  /// Caps the live stream and the pre-subscription backlog so a producer that
+  /// outruns the single main-actor consumer can't grow memory without bound.
+  private static let eventBufferCap = 2048
+  private static let pendingEventCap = 1024
   var selectedWorktreeID: Worktree.ID?
   /// The worktree+tab focused in Canvas, updated by CanvasView on card tap.
   /// Used by toggleCanvas to know which worktree to return to.
@@ -81,6 +87,8 @@ final class WorktreeTerminalManager {
       Task {
         createTabAsync(in: worktree, runSetupScriptIfNew: false, workingDirectory: directory)
       }
+    case .focusOrCreateTabInDirectory(let worktree, let directory, let title):
+      state(for: worktree).focusOrCreateTab(boundToDirectory: directory, title: title)
     case .ensureInitialTab(let worktree, let runSetupScriptIfNew, let focusing):
       let state = state(for: worktree) { runSetupScriptIfNew }
       state.ensureInitialTab(focusing: focusing)
@@ -103,6 +111,8 @@ final class WorktreeTerminalManager {
       _ = closeFocusedTab(in: worktree)
     case .closeFocusedSurface(let worktree):
       _ = closeFocusedSurface(in: worktree)
+    case .focusSelectedTab(let worktree):
+      state(for: worktree).focusSelectedTab()
     default:
       return false
     }
@@ -131,6 +141,8 @@ final class WorktreeTerminalManager {
     switch command {
     case .performBindingAction(let worktree, let action):
       state(for: worktree).performBindingActionOnFocusedSurface(action)
+    case .performBindingActionOnSurface(let worktree, let surfaceID, let action):
+      state(for: worktree).performBindingAction(action, onSurfaceID: surfaceID)
     default:
       return false
     }
@@ -183,9 +195,15 @@ final class WorktreeTerminalManager {
 
   func eventStream() -> AsyncStream<TerminalClient.Event> {
     eventContinuation?.finish()
-    let (stream, continuation) = AsyncStream.makeStream(of: TerminalClient.Event.self)
+    let (stream, continuation) = AsyncStream.makeStream(
+      of: TerminalClient.Event.self,
+      bufferingPolicy: .bufferingNewest(Self.eventBufferCap)
+    )
     eventContinuation = continuation
     lastNotificationIndicatorCount = nil
+    // A new subscriber must be re-seeded with current state, so the dedup cache
+    // can't suppress the next emit as a duplicate of one the old stream saw.
+    eventCoalescer.reset()
     if !pendingEvents.isEmpty {
       let bufferedEvents = pendingEvents
       pendingEvents.removeAll()
@@ -226,8 +244,8 @@ final class WorktreeTerminalManager {
     state.isSelected = { [weak self] in
       self?.selectedWorktreeID == worktree.id
     }
-    state.onNotificationReceived = { [weak self] title, body in
-      self?.emit(.notificationReceived(worktreeID: worktree.id, title: title, body: body))
+    state.onNotificationReceived = { [weak self] surfaceID, title, body in
+      self?.emit(.notificationReceived(worktreeID: worktree.id, surfaceID: surfaceID, title: title, body: body))
     }
     state.onNotificationIndicatorChanged = { [weak self] in
       self?.emitNotificationIndicatorCountIfNeeded()
@@ -245,6 +263,12 @@ final class WorktreeTerminalManager {
     }
     state.onTaskStatusChanged = { [weak self] status in
       self?.emit(.taskStatusChanged(worktreeID: worktree.id, status: status))
+    }
+    state.onAgentEntryChanged = { [weak self] entry in
+      self?.emit(.agentEntryChanged(entry))
+    }
+    state.onAgentEntryRemoved = { [weak self] id in
+      self?.emit(.agentEntryRemoved(id))
     }
     state.onRunScriptStatusChanged = { [weak self] isRunning in
       self?.emit(.runScriptStatusChanged(worktreeID: worktree.id, isRunning: isRunning))
@@ -346,8 +370,10 @@ final class WorktreeTerminalManager {
 
   func prune(keeping worktreeIDs: Set<Worktree.ID>) {
     var removed: [WorktreeTerminalState] = []
+    var removedIDs: Set<Worktree.ID> = []
     for (id, state) in states where !worktreeIDs.contains(id) {
       removed.append(state)
+      removedIDs.insert(id)
     }
     for state in removed {
       state.closeAllSurfaces()
@@ -356,6 +382,7 @@ final class WorktreeTerminalManager {
       terminalLogger.info("Pruned \(removed.count) terminal state(s)")
     }
     states = states.filter { worktreeIDs.contains($0.key) }
+    eventCoalescer.forget(worktreeIDs: removedIDs)
     emitNotificationIndicatorCountIfNeeded()
   }
 
@@ -433,8 +460,55 @@ final class WorktreeTerminalManager {
     states[worktreeID]?.hasUnseenNotification == true
   }
 
+  func latestUnreadNotificationLocation() -> NotificationLocation? {
+    var bestLocation: NotificationLocation?
+    var bestCreatedAt: Date?
+    for (worktreeID, state) in states {
+      for notification in state.unreadNotifications() {
+        if let bestCreatedAt, bestCreatedAt >= notification.createdAt {
+          break
+        }
+        guard let tabID = state.tabID(containing: notification.surfaceId) else {
+          continue
+        }
+        bestLocation = NotificationLocation(
+          worktreeID: worktreeID,
+          tabID: tabID,
+          surfaceID: notification.surfaceId,
+          notificationID: notification.id
+        )
+        bestCreatedAt = notification.createdAt
+        break
+      }
+    }
+    return bestLocation
+  }
+
+  @discardableResult
+  func focusSurface(worktreeID: Worktree.ID, surfaceID: UUID) -> Bool {
+    states[worktreeID]?.focusSurface(id: surfaceID) == true
+  }
+
+  func markNotificationRead(worktreeID: Worktree.ID, notificationID: UUID) {
+    states[worktreeID]?.markNotificationRead(id: notificationID)
+  }
+
+  func markNotificationsRead(worktreeID: Worktree.ID, surfaceID: UUID) {
+    states[worktreeID]?.markNotificationsRead(forSurfaceID: surfaceID)
+  }
+
   func surfaceBackgroundOpacity() -> Double {
     runtime?.backgroundOpacity() ?? 1.0
+  }
+
+  func unfocusedSplitOverlay() -> (fill: Color?, opacity: Double) {
+    guard let runtime else { return (nil, 0) }
+    return (runtime.unfocusedSplitFill(), runtime.unfocusedSplitOverlayOpacity())
+  }
+
+  func splitDividerAppearance() -> (color: Color?, width: CGFloat?) {
+    guard let runtime else { return (nil, nil) }
+    return (runtime.splitDividerColor(), runtime.splitDividerWidth())
   }
 
   func syncPreferredFontSize(from worktreeID: Worktree.ID) {
@@ -459,7 +533,12 @@ final class WorktreeTerminalManager {
   }
 
   private func emit(_ event: TerminalClient.Event) {
+    guard eventCoalescer.shouldEmit(event) else { return }
     guard let eventContinuation else {
+      if pendingEvents.count >= Self.pendingEventCap {
+        pendingEvents.removeFirst()
+        terminalLogger.debug("Dropped oldest pending terminal event (backlog cap reached)")
+      }
       pendingEvents.append(event)
       return
     }
@@ -507,6 +586,7 @@ final class WorktreeTerminalManager {
     terminalLogger.info("[LayoutRestore] restore: loading snapshot from disk")
     guard let payload = await layoutPersistence.loadSnapshot() else {
       terminalLogger.info("[LayoutRestore] restore: no snapshot found on disk, skipping")
+      emit(.layoutRestored(selectedWorktreeID: nil))
       return
     }
     terminalLogger.info(

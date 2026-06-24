@@ -7,13 +7,16 @@ import Testing
 
 @MainActor
 struct SupacodeAppCLITests {
-  @Test func cliRouterWiresKeyAndReadHandlersInsteadOfStubHandlers() async {
+  @Test func cliRouterWiresAgentsKeyAndReadHandlersInsteadOfStubHandlers() async {
     let store = Store(initialState: AppFeature.State()) {
       AppFeature()
     }
     let terminalManager = WorktreeTerminalManager(runtime: GhosttyRuntime())
     let router = SupacodeApp.makeCLICommandRouter(appStore: store, terminalManager: terminalManager)
 
+    let agentsResponse = await router.route(
+      CommandEnvelope(output: .json, command: .agents(AgentsInput()))
+    )
     let keyResponse = await router.route(
       CommandEnvelope(output: .json, command: .key(KeyInput(rawToken: "enter", token: "enter")))
     )
@@ -21,8 +24,10 @@ struct SupacodeAppCLITests {
       CommandEnvelope(output: .json, command: .read(ReadInput()))
     )
 
+    #expect(agentsResponse.command == "agents")
     #expect(keyResponse.command == "key")
     #expect(readResponse.command == "read")
+    #expect(agentsResponse.error?.code != "NOT_IMPLEMENTED")
     #expect(keyResponse.error?.code != "NOT_IMPLEMENTED")
     #expect(readResponse.error?.code != "NOT_IMPLEMENTED")
   }

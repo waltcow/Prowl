@@ -57,6 +57,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "agents",
+         let data = response.data,
+         let payload = try? data.decode(as: AgentsCommandPayload.self)
+      {
+        print(renderAgents(payload))
+        return
+      }
+
       if response.command == "focus",
          let data = response.data,
          let payload = try? data.decode(as: FocusCommandPayload.self)
@@ -78,6 +86,22 @@ enum OutputRenderer {
          let payload = try? data.decode(as: ReadCommandPayload.self)
       {
         print(renderRead(payload))
+        return
+      }
+
+      if response.command == "tab",
+         let data = response.data,
+         let payload = try? data.decode(as: TabCommandPayload.self)
+      {
+        print(renderTab(payload))
+        return
+      }
+
+      if response.command == "pane",
+         let data = response.data,
+         let payload = try? data.decode(as: PaneCommandPayload.self)
+      {
+        print(renderPane(payload))
         return
       }
 
@@ -176,6 +200,90 @@ enum OutputRenderer {
       }
     }
 
+    return lines.joined(separator: "\n")
+  }
+
+  private static func renderAgents(_ payload: AgentsCommandPayload) -> String {
+    guard !payload.agents.isEmpty else {
+      return "No agents found."
+    }
+
+    let order: [AgentsCommandStatus: Int] = [
+      .blocked: 0,
+      .working: 1,
+      .done: 2,
+      .idle: 3,
+    ]
+    let indexedAgents = payload.agents.enumerated()
+    let sortedAgents = indexedAgents.sorted { left, right in
+      let leftRank = order[left.element.status] ?? Int.max
+      let rightRank = order[right.element.status] ?? Int.max
+      if leftRank != rightRank {
+        return leftRank < rightRank
+      }
+      return left.offset < right.offset
+    }.map(\.element)
+
+    return sortedAgents.map { agent in
+      let statusLabel = agentStatusLabel(agent.status)
+      let projectLabel = "\(agent.project.name):\(agent.project.branch)"
+      return "\(statusLabel)  \(agent.name)  \(projectLabel)  \(agent.tab.title)  \(agent.pane.id)"
+    }.joined(separator: "\n")
+  }
+
+  private static func agentStatusLabel(_ status: AgentsCommandStatus) -> String {
+    switch status {
+    case .blocked:
+      return "Blocked".red.bold
+    case .working:
+      return "Working".green
+    case .done:
+      return "Done".dim
+    case .idle:
+      return "Idle".dim
+    }
+  }
+
+  private static func renderTab(_ payload: TabCommandPayload) -> String {
+    let wt = payload.target.worktree
+    let tab = payload.target.tab
+    let pane = payload.target.pane
+    let projectName = projectName(from: wt.path)
+    let verb =
+      switch payload.action {
+      case .create: "Created tab"
+      case .close: "Closed tab"
+      }
+
+    var lines: [String] = []
+    lines.append(
+      "\(verb) \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(tab.title.yellow)"
+      + "  \(tab.id.dim)"
+    )
+    lines.append("  \("pane:".dim) \(pane.title.green)  \(pane.id.dim)")
+    if let cwd = pane.cwd {
+      lines.append("  \("cwd:".dim) \(cwd)")
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  private static func renderPane(_ payload: PaneCommandPayload) -> String {
+    let wt = payload.target.worktree
+    let pane = payload.target.pane
+    let projectName = projectName(from: wt.path)
+    let verb =
+      switch payload.action {
+      case .close: "Closed pane"
+      }
+
+    var lines: [String] = []
+    lines.append(
+      "\(verb) \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(pane.title.green)"
+      + "  \(pane.id.dim)"
+    )
+    if let cwd = pane.cwd {
+      lines.append("  \("cwd:".dim) \(cwd)")
+    }
     return lines.joined(separator: "\n")
   }
 
@@ -313,6 +421,15 @@ enum OutputRenderer {
       + "  \("truncated:".dim) \(truncatedLabel)"
       + "  \("lines:".dim) \(payload.lineCount)"
     )
+
+    if let stabilized = payload.stabilized {
+      let stableLabel = stabilized ? "yes".green : "timed out".yellow
+      lines.append(
+        "  \("stable:".dim) \(stableLabel)"
+        + "  \("waited:".dim) \(formatDurationMs(payload.waitedMs ?? 0))"
+        + "  \("samples:".dim) \(payload.samples ?? 0)"
+      )
+    }
 
     if let cwd = pane.cwd {
       lines.append("  \("cwd:".dim) \(cwd)")

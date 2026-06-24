@@ -7,7 +7,9 @@ struct WorktreeInfoWatcherClient {
 
   enum Command: Equatable {
     case setWorktrees([Worktree])
+    case setOpenedWorktreeIDs(Set<Worktree.ID>)
     case setSelectedWorktreeID(Worktree.ID?)
+    case refreshLineChanges
     case setPullRequestTrackingEnabled(Bool)
     case stop
   }
@@ -15,6 +17,8 @@ struct WorktreeInfoWatcherClient {
   enum Event: Equatable {
     case branchChanged(worktreeID: Worktree.ID)
     case filesChanged(worktreeID: Worktree.ID)
+    case repositoryWorktreesChanged(repositoryRootURL: URL)
+    case repositoryRemoteConfigurationChanged(repositoryRootURL: URL)
     case repositoryPullRequestRefresh(repositoryRootURL: URL, worktreeIDs: [Worktree.ID])
   }
 }

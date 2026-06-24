@@ -140,6 +140,31 @@ struct GitClientWorktreeDiscoveryTests {
     #expect(recorder.loginInvocations().isEmpty)
   }
 
+  @Test func worktreesDeduplicateStandardizedPaths() async throws {
+    let output = """
+      [
+        {"branch":"main","path":"/tmp/repo","head":"abc","is_bare":false},
+        {"branch":"feature","path":"/tmp/repo/.worktrees/feature","head":"def","is_bare":false},
+        {"branch":"feature","path":"/tmp/repo/.worktrees/./feature","head":"def","is_bare":false}
+      ]
+      """
+    let shell = ShellClient(
+      run: { _, _, _ in
+        ShellOutput(stdout: output, stderr: "", exitCode: 0)
+      },
+      runLoginImpl: { _, _, _, _ in
+        Issue.record("worktrees should not use runLogin when direct execution succeeds")
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      }
+    )
+    let client = GitClient(shell: shell)
+    let repoRoot = URL(fileURLWithPath: "/tmp/repo")
+
+    let worktrees = try await client.worktrees(for: repoRoot)
+
+    #expect(worktrees.map(\.id) == ["/tmp/repo", "/tmp/repo/.worktrees/feature"])
+  }
+
   @Test func repoRootFallsBackToLoginShellWhenDirectExecutionCannotResolveGit() async throws {
     let recorder = GitWorktreeDiscoveryRecorder()
     let shell = ShellClient(
@@ -184,7 +209,43 @@ struct GitClientWorktreeDiscoveryTests {
     }
   }
 
-  @Test func worktreesDoNotFallbackToLoginShellForRegularFailures() async {
+  @Test func worktreesDoNotFallbackToLoginShellForNonGitDirectory() async {
+    let recorder = GitWorktreeDiscoveryRecorder()
+    let shell = ShellClient(
+      run: { executableURL, arguments, currentDirectoryURL in
+        recorder.recordRun(
+          executableURL: executableURL,
+          arguments: arguments,
+          currentDirectoryURL: currentDirectoryURL
+        )
+        throw ShellClientError(
+          command: "wt ls --json",
+          stdout: "",
+          stderr: "fatal: not a git repository (or any of the parent directories): .git",
+          exitCode: 128
+        )
+      },
+      runLoginImpl: { executableURL, arguments, currentDirectoryURL, _ in
+        recorder.recordLogin(
+          executableURL: executableURL,
+          arguments: arguments,
+          currentDirectoryURL: currentDirectoryURL
+        )
+        Issue.record("worktrees should not fallback to runLogin for non-git directories")
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      }
+    )
+    let client = GitClient(shell: shell)
+
+    await #expect(throws: GitClientError.self) {
+      _ = try await client.worktrees(for: URL(fileURLWithPath: "/tmp/not-a-repo"))
+    }
+
+    #expect(recorder.runInvocations().count == 1)
+    #expect(recorder.loginInvocations().isEmpty)
+  }
+
+  @Test func worktreesFallbackToLoginShellForEnvironmentErrors() async throws {
     let recorder = GitWorktreeDiscoveryRecorder()
     let shell = ShellClient(
       run: { executableURL, arguments, currentDirectoryURL in
@@ -206,17 +267,21 @@ struct GitClientWorktreeDiscoveryTests {
           arguments: arguments,
           currentDirectoryURL: currentDirectoryURL
         )
-        Issue.record("worktrees should not fallback to runLogin for regular command failures")
-        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+        return ShellOutput(
+          stdout: """
+            [{"branch":"main","path":"/tmp/repo","head":"abc","is_bare":false}]
+            """,
+          stderr: "",
+          exitCode: 0
+        )
       }
     )
     let client = GitClient(shell: shell)
 
-    await #expect(throws: GitClientError.self) {
-      _ = try await client.worktrees(for: URL(fileURLWithPath: "/tmp/repo"))
-    }
+    let worktrees = try await client.worktrees(for: URL(fileURLWithPath: "/tmp/repo"))
 
+    #expect(worktrees.count == 1)
     #expect(recorder.runInvocations().count == 1)
-    #expect(recorder.loginInvocations().isEmpty)
+    #expect(recorder.loginInvocations().count == 1)
   }
 }

@@ -1,0 +1,132 @@
+import Foundation
+
+public struct AgentsCommandPayload: Codable, Equatable {
+  public let count: Int
+  public let agents: [AgentsCommandAgent]
+
+  public init(count: Int, agents: [AgentsCommandAgent]) {
+    self.count = count
+    self.agents = agents
+  }
+}
+
+public struct AgentsCommandAgent: Codable, Equatable {
+  public let id: String
+  public let type: String
+  public let name: String
+  public let status: AgentsCommandStatus
+  public let rawState: String
+  public let lastChangedAt: String
+  public let project: AgentsCommandProject
+  public let worktree: AgentsCommandWorktree
+  public let tab: AgentsCommandTab
+  public let pane: AgentsCommandPane
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case type
+    case name
+    case status
+    case rawState = "raw_state"
+    case lastChangedAt = "last_changed_at"
+    case project
+    case worktree
+    case tab
+    case pane
+  }
+
+  public init(
+    id: String,
+    type: String,
+    name: String,
+    status: AgentsCommandStatus,
+    rawState: String,
+    lastChangedAt: String,
+    project: AgentsCommandProject,
+    worktree: AgentsCommandWorktree,
+    tab: AgentsCommandTab,
+    pane: AgentsCommandPane
+  ) {
+    self.id = id
+    self.type = type
+    self.name = name
+    self.status = status
+    self.rawState = rawState
+    self.lastChangedAt = lastChangedAt
+    self.project = project
+    self.worktree = worktree
+    self.tab = tab
+    self.pane = pane
+  }
+}
+
+public enum AgentsCommandStatus: String, Codable, Equatable {
+  case blocked
+  case working
+  case done
+  case idle
+}
+
+public struct AgentsCommandProject: Codable, Equatable {
+  public let name: String
+  public let branch: String
+  public let path: String
+
+  public init(name: String, branch: String, path: String) {
+    self.name = name
+    self.branch = branch
+    self.path = path
+  }
+}
+
+public struct AgentsCommandWorktree: Codable, Equatable {
+  public let id: String
+  public let name: String
+  public let path: String
+  public let rootPath: String
+  public let kind: String
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case path
+    case rootPath = "root_path"
+    case kind
+  }
+
+  public init(id: String, name: String, path: String, rootPath: String, kind: String) {
+    self.id = id
+    self.name = name
+    self.path = path
+    self.rootPath = rootPath
+    self.kind = kind
+  }
+}
+
+public struct AgentsCommandTab: Codable, Equatable {
+  public let id: String
+  public let title: String
+  public let selected: Bool
+
+  public init(id: String, title: String, selected: Bool) {
+    self.id = id
+    self.title = title
+    self.selected = selected
+  }
+}
+
+public struct AgentsCommandPane: Codable, Equatable {
+  public let id: String
+  public let index: Int
+  public let title: String
+  public let cwd: String?
+  public let focused: Bool
+
+  public init(id: String, index: Int, title: String, cwd: String?, focused: Bool) {
+    self.id = id
+    self.index = index
+    self.title = title
+    self.cwd = cwd
+    self.focused = focused
+  }
+}

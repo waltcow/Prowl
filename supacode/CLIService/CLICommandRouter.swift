@@ -7,25 +7,34 @@ import Foundation
 final class CLICommandRouter {
   private let openHandler: any CommandHandler
   private let listHandler: any CommandHandler
+  private let agentsHandler: any CommandHandler
   private let focusHandler: any CommandHandler
   private let sendHandler: any CommandHandler
   private let keyHandler: any CommandHandler
   private let readHandler: any CommandHandler
+  private let tabHandler: any CommandHandler
+  private let paneHandler: any CommandHandler
 
   init(
     openHandler: any CommandHandler = StubCommandHandler(command: "open"),
     listHandler: any CommandHandler = StubCommandHandler(command: "list"),
+    agentsHandler: any CommandHandler = StubCommandHandler(command: "agents"),
     focusHandler: any CommandHandler = StubCommandHandler(command: "focus"),
     sendHandler: any CommandHandler = StubCommandHandler(command: "send"),
     keyHandler: any CommandHandler = StubCommandHandler(command: "key"),
-    readHandler: any CommandHandler = StubCommandHandler(command: "read")
+    readHandler: any CommandHandler = StubCommandHandler(command: "read"),
+    tabHandler: any CommandHandler = StubCommandHandler(command: "tab"),
+    paneHandler: any CommandHandler = StubCommandHandler(command: "pane")
   ) {
     self.openHandler = openHandler
     self.listHandler = listHandler
+    self.agentsHandler = agentsHandler
     self.focusHandler = focusHandler
     self.sendHandler = sendHandler
     self.keyHandler = keyHandler
     self.readHandler = readHandler
+    self.tabHandler = tabHandler
+    self.paneHandler = paneHandler
   }
 
   func route(_ envelope: CommandEnvelope) async -> CommandResponse {
@@ -33,10 +42,13 @@ final class CLICommandRouter {
     switch envelope.command {
     case .open: handler = openHandler
     case .list: handler = listHandler
+    case .agents: handler = agentsHandler
     case .focus: handler = focusHandler
     case .send: handler = sendHandler
     case .key: handler = keyHandler
     case .read: handler = readHandler
+    case .tab: handler = tabHandler
+    case .pane: handler = paneHandler
     }
     return await handler.handle(envelope: envelope)
   }

@@ -36,10 +36,11 @@ struct CommandPaletteFeature {
     case openSettings
     case newWorktree
     case openRepository
-    case removeWorktree(Worktree.ID, Repository.ID)
-    case archiveWorktree(Worktree.ID, Repository.ID)
+    case newWorkspace
+    case deleteWorktree(Worktree.ID, Repository.ID)
     case viewArchivedWorktrees
     case refreshWorktrees
+    case jumpToLatestUnread
     case ghosttyCommand(String)
     case openPullRequest(Worktree.ID)
     case markPullRequestReady(Worktree.ID)
@@ -51,9 +52,28 @@ struct CommandPaletteFeature {
     case openFailingCheckDetails(Worktree.ID)
     case installCLI
     case changeFocusedTabIcon(Worktree.ID)
+    case toggleLeftSidebar
+    case toggleActiveAgentsPanel
+    case toggleCanvas
+    case expandCanvasCard
+    case arrangeCanvasCards
+    case organizeCanvasCards
+    case selectAllCanvasCards
+    case toggleShelf
+    case showDiff
+    case revealInFinder
+    case copyPath
+    case revealInSidebar
+    case runScript
+    case stopRunScript
+    case togglePinWorktree(Worktree.ID, isCurrentlyPinned: Bool)
+    case renameBranch
+    case openRepositorySettings(Repository.ID)
+    case runCustomCommand(Int)
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
+      case debugLightDockNotificationDot
     #endif
   }
 
@@ -148,6 +168,42 @@ struct CommandPaletteFeature {
     }
   }
 
+  static func suggestions(
+    items: [CommandPaletteItem],
+    recencyByID: [CommandPaletteItem.ID: TimeInterval] = [:],
+    now: Date = .now
+  ) -> CommandPaletteSuggestions {
+    let recencyScored: [(item: CommandPaletteItem, score: Double)] = items.compactMap { item in
+      let score = commandPaletteRecencyScore(item, recencyByID: recencyByID, now: now)
+      return score > 0 ? (item, score) : nil
+    }
+    let recent = Array(
+      recencyScored
+        .sorted { $0.score > $1.score }
+        .prefix(CommandPaletteSuggestions.maxItems)
+        .map(\.item)
+    )
+
+    let recentIDs = Set(recent.map(\.id))
+    let suggestedCandidates = items.enumerated().compactMap { idx, item -> (item: CommandPaletteItem, idx: Int)? in
+      guard item.defaultSuggestion, !recentIDs.contains(item.id) else { return nil }
+      return (item, idx)
+    }
+    let suggested = Array(
+      suggestedCandidates
+        .sorted { left, right in
+          if left.item.priorityTier != right.item.priorityTier {
+            return left.item.priorityTier < right.item.priorityTier
+          }
+          return left.idx < right.idx
+        }
+        .prefix(CommandPaletteSuggestions.maxItems - recent.count)
+        .map(\.item)
+    )
+
+    return CommandPaletteSuggestions(recent: recent, suggested: suggested)
+  }
+
   static func filterItems(
     items: [CommandPaletteItem],
     query: String,
@@ -155,10 +211,8 @@ struct CommandPaletteFeature {
     now: Date = .now
   ) -> [CommandPaletteItem] {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let globalItems = items.filter(\.isGlobal)
     guard !trimmed.isEmpty else {
-      let visibleItems = globalItems.filter { !$0.isRootAction }
-      return prioritizeItems(items: visibleItems, recencyByID: recencyByID, now: now)
+      return suggestions(items: items, recencyByID: recencyByID, now: now).allItems
     }
     let scorer = CommandPaletteFuzzyScorer(query: trimmed, recencyByID: recencyByID, now: now)
     return scorer.rankedItems(from: items)
@@ -166,75 +220,75 @@ struct CommandPaletteFeature {
 
   static func commandPaletteItems(
     from repositories: RepositoriesFeature.State,
+    customCommands: [UserCustomCommand] = [],
+    runScriptStatusByWorktreeID: [Worktree.ID: Bool] = [:],
+    actionTargetWorktreeID: Worktree.ID? = nil,
     ghosttyCommands: [GhosttyCommand] = []
   ) -> [CommandPaletteItem] {
     let showsNewWorktreeAction =
       repositories.repositories.isEmpty
       || repositories.repositories.contains { $0.capabilities.supportsWorktrees }
-    var items: [CommandPaletteItem] = [
-      CommandPaletteItem(
-        id: CommandPaletteItemID.globalCheckForUpdates,
-        title: "Check for Updates",
-        subtitle: nil,
-        kind: .checkForUpdates
-      ),
-      CommandPaletteItem(
-        id: CommandPaletteItemID.globalOpenSettings,
-        title: "Open Settings",
-        subtitle: nil,
-        kind: .openSettings
-      ),
-      CommandPaletteItem(
-        id: CommandPaletteItemID.globalOpenRepository,
-        title: "Open Repository",
-        subtitle: nil,
-        kind: .openRepository
-      ),
-    ]
-    if showsNewWorktreeAction {
+    var items = globalCommandItems(showsNewWorktreeAction: showsNewWorktreeAction)
+    if repositories.isShowingCanvas {
+      items.append(contentsOf: canvasCommandItems())
+    }
+    let worktreeActionTargetID = actionTargetWorktreeID ?? repositories.selectedWorktreeID
+    if repositories.selectedWorktreeID != nil {
       items.append(
-        CommandPaletteItem(
-          id: CommandPaletteItemID.globalNewWorktree,
-          title: "New Worktree",
-          subtitle: nil,
-          kind: .newWorktree
+        .appShortcut(
+          id: CommandPaletteItemID.globalShowDiff,
+          title: "Show Diff",
+          category: .view,
+          kind: .showDiff,
+          keywords: ["diff", "changes", "git"]
+        )
+      )
+      items.append(contentsOf: worktreeNavigationCommandItems())
+      items.append(
+        contentsOf: worktreeActionCommandItems(
+          repositories: repositories,
+          worktreeID: worktreeActionTargetID,
+          runScriptStatusByWorktreeID: runScriptStatusByWorktreeID
+        )
+      )
+    } else if worktreeActionTargetID != nil {
+      items.append(
+        contentsOf: worktreeActionCommandItems(
+          repositories: repositories,
+          worktreeID: worktreeActionTargetID,
+          runScriptStatusByWorktreeID: runScriptStatusByWorktreeID,
+          includeSelectionScopedItems: false
         )
       )
     }
-    items.append(
-      CommandPaletteItem(
-        id: CommandPaletteItemID.globalRefreshWorktrees,
-        title: "Refresh Worktrees",
-        subtitle: nil,
-        kind: .refreshWorktrees
-      )
-    )
-    items.append(
-      CommandPaletteItem(
-        id: CommandPaletteItemID.globalViewArchivedWorktrees,
-        title: "View Archived Worktrees",
-        subtitle: nil,
-        kind: .viewArchivedWorktrees
-      )
-    )
-    items.append(
-      CommandPaletteItem(
-        id: CommandPaletteItemID.globalInstallCLI,
-        title: "Install Command Line Tool",
-        subtitle: nil,
-        kind: .installCLI
-      )
-    )
+    items.append(contentsOf: customCommandItems(customCommands))
     if let terminalWorktree = repositories.selectedTerminalWorktree {
       items.append(
         CommandPaletteItem(
           id: CommandPaletteItemID.changeFocusedTabIcon(terminalWorktree.id),
           title: "Change Tab Icon...",
           subtitle: terminalWorktree.name,
-          kind: .changeFocusedTabIcon(terminalWorktree.id)
+          kind: .changeFocusedTabIcon(terminalWorktree.id),
+          category: .worktree,
+          defaultSuggestion: false
         )
       )
       items.append(contentsOf: ghosttyCommandItems(ghosttyCommands))
+    } else if worktreeActionTargetID != nil {
+      items.append(contentsOf: ghosttyCommandItems(ghosttyCommands))
+    }
+    if let repository = activeRepository(in: repositories) {
+      items.append(
+        CommandPaletteItem(
+          id: CommandPaletteItemID.openRepositorySettings(repository.id),
+          title: "Repo Settings",
+          subtitle: repository.name,
+          kind: .openRepositorySettings(repository.id),
+          category: .app,
+          defaultSuggestion: true,
+          keywords: ["repo", "settings", "configure", "preferences"]
+        )
+      )
     }
     items.append(contentsOf: selectedCodeHostItems(from: repositories))
     #if DEBUG
@@ -249,7 +303,9 @@ struct CommandPaletteFeature {
           id: CommandPaletteItemID.worktreeSelect(row.id),
           title: title,
           subtitle: nil,
-          kind: .worktreeSelect(row.id)
+          kind: .worktreeSelect(row.id),
+          category: .navigation,
+          defaultSuggestion: false
         )
       )
     }
@@ -257,11 +313,14 @@ struct CommandPaletteFeature {
   }
 
   static func recencyRetentionIDs(
-    from repositories: IdentifiedArrayOf<Repository>
+    from repositories: IdentifiedArrayOf<Repository>,
+    customCommands: [UserCustomCommand] = []
   ) -> [CommandPaletteItem.ID] {
     var ids = CommandPaletteItemID.globalIDs
+    ids.append(contentsOf: customCommands.map { CommandPaletteItemID.customCommand($0.id) })
     for repository in repositories {
       ids.append(contentsOf: CommandPaletteItemID.pullRequestIDs(repositoryID: repository.id))
+      ids.append(CommandPaletteItemID.openRepositorySettings(repository.id))
       for worktree in repository.worktrees {
         ids.append(CommandPaletteItemID.worktreeSelect(worktree.id))
         ids.append(CommandPaletteItemID.changeFocusedTabIcon(worktree.id))
@@ -269,6 +328,306 @@ struct CommandPaletteFeature {
     }
     return ids
   }
+}
+
+private func globalCommandItems(showsNewWorktreeAction: Bool) -> [CommandPaletteItem] {
+  var items: [CommandPaletteItem] = [
+    .appShortcut(
+      id: CommandPaletteItemID.globalCheckForUpdates,
+      title: "Check for Updates",
+      category: .app,
+      kind: .checkForUpdates,
+      keywords: ["update", "version"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalOpenSettings,
+      title: "Open Settings",
+      category: .app,
+      kind: .openSettings,
+      keywords: ["preferences", "config"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalOpenRepository,
+      title: "Open Repository",
+      category: .app,
+      kind: .openRepository,
+      keywords: ["repo", "add repo"]
+    ),
+    CommandPaletteItem(
+      id: CommandPaletteItemID.globalNewWorkspace,
+      title: "New Workspace",
+      subtitle: nil,
+      kind: .newWorkspace,
+      category: .app,
+      defaultSuggestion: true,
+      keywords: ["workspace", "multi repo", "many repos"]
+    ),
+  ]
+  if showsNewWorktreeAction {
+    items.append(
+      .appShortcut(
+        id: CommandPaletteItemID.globalNewWorktree,
+        title: "New Worktree",
+        category: .worktree,
+        kind: .newWorktree,
+        keywords: ["worktree", "branch"]
+      )
+    )
+  }
+  items.append(
+    .appShortcut(
+      id: CommandPaletteItemID.globalRefreshWorktrees,
+      title: "Refresh Worktrees",
+      category: .worktree,
+      kind: .refreshWorktrees,
+      keywords: ["reload", "rescan"]
+    )
+  )
+  items.append(
+    .appShortcut(
+      id: CommandPaletteItemID.globalJumpToLatestUnread,
+      title: "Jump to Latest Unread",
+      category: .navigation,
+      kind: .jumpToLatestUnread,
+      keywords: ["unread", "bell", "notification"]
+    )
+  )
+  items.append(
+    .appShortcut(
+      id: CommandPaletteItemID.globalViewArchivedWorktrees,
+      title: "View Archived Worktrees",
+      category: .worktree,
+      kind: .viewArchivedWorktrees,
+      keywords: ["archive", "history"]
+    )
+  )
+  items.append(
+    .appShortcut(
+      id: CommandPaletteItemID.globalInstallCLI,
+      title: "Install Command Line Tool",
+      category: .app,
+      kind: .installCLI,
+      keywords: ["cli", "command line", "terminal", "prowl"]
+    )
+  )
+  items.append(contentsOf: viewToggleCommandItems())
+  return items
+}
+
+private func worktreeActionCommandItems(
+  repositories: RepositoriesFeature.State,
+  worktreeID: Worktree.ID?,
+  runScriptStatusByWorktreeID: [Worktree.ID: Bool],
+  includeSelectionScopedItems: Bool = true
+) -> [CommandPaletteItem] {
+  guard let worktreeID else { return [] }
+  var items: [CommandPaletteItem] = []
+  let isRunScriptRunning = runScriptStatusByWorktreeID[worktreeID] ?? false
+  if isRunScriptRunning {
+    items.append(
+      .appShortcut(
+        id: CommandPaletteItemID.globalStopRunScript,
+        title: "Stop Script",
+        category: .worktree,
+        kind: .stopRunScript,
+        keywords: ["stop", "kill", "cancel", "script"]
+      )
+    )
+  } else {
+    items.append(
+      .appShortcut(
+        id: CommandPaletteItemID.globalRunScript,
+        title: "Run Script",
+        category: .worktree,
+        kind: .runScript,
+        keywords: ["run", "script", "execute"]
+      )
+    )
+  }
+  guard includeSelectionScopedItems else { return items }
+  guard let row = repositories.selectedRow(for: worktreeID) else { return items }
+  // Rename Branch works on any worktree (main included).
+  items.append(
+    .appShortcut(
+      id: CommandPaletteItemID.globalRenameBranch,
+      title: "Rename Branch",
+      category: .worktree,
+      kind: .renameBranch,
+      keywords: ["rename", "branch", "name"]
+    )
+  )
+  // Pin / Unpin / Delete only apply to non-main worktrees.
+  guard !row.isMainWorktree else { return items }
+  let pinTitle = row.isPinned ? "Unpin Worktree" : "Pin Worktree"
+  let pinKeywords =
+    row.isPinned ? ["unpin", "favorite"] : ["pin", "favorite", "top"]
+  items.append(
+    .appShortcut(
+      id: CommandPaletteItemID.globalTogglePinWorktree,
+      title: pinTitle,
+      category: .worktree,
+      kind: .togglePinWorktree(worktreeID, isCurrentlyPinned: row.isPinned),
+      keywords: pinKeywords
+    )
+  )
+  if let repositoryID = repositories.repositoryID(containing: worktreeID) {
+    items.append(
+      CommandPaletteItem(
+        id: CommandPaletteItemID.globalDeleteWorktree,
+        title: "Delete Worktree",
+        subtitle: row.name,
+        kind: .deleteWorktree(worktreeID, repositoryID),
+        category: .worktree,
+        defaultSuggestion: false,
+        keywords: ["delete", "remove", "destroy"]
+      )
+    )
+  }
+  return items
+}
+
+/// Resolves the "active" repository for repo-scoped palette commands:
+/// prefers an explicitly selected repo, then falls back to the repo that
+/// owns the currently-selected worktree. Returns nil when nothing relevant
+/// is selected (e.g., archived view, empty palette).
+private func activeRepository(
+  in repositories: RepositoriesFeature.State
+) -> Repository? {
+  if let repository = repositories.selectedRepository {
+    return repository
+  }
+  guard let worktreeID = repositories.selectedWorktreeID,
+    let repositoryID = repositories.repositoryID(containing: worktreeID)
+  else {
+    return nil
+  }
+  return repositories.repositories[id: repositoryID]
+}
+
+private func customCommandItems(_ commands: [UserCustomCommand]) -> [CommandPaletteItem] {
+  commands.enumerated().compactMap { index, command in
+    guard command.hasRunnableCommand else { return nil }
+    return CommandPaletteItem(
+      id: CommandPaletteItemID.customCommand(command.id),
+      title: command.resolvedTitle,
+      subtitle: customCommandSubtitle(for: command),
+      kind: .runCustomCommand(
+        index: index,
+        commandID: command.id,
+        systemImage: command.resolvedSystemImage
+      ),
+      category: .worktree,
+      defaultSuggestion: false,
+      keywords: ["custom", "command", "script"]
+    )
+  }
+}
+
+private func customCommandSubtitle(for command: UserCustomCommand) -> String {
+  "Custom command in this repo · \(customCommandExecutionDescription(for: command))"
+}
+
+private func customCommandExecutionDescription(for command: UserCustomCommand) -> String {
+  switch command.execution {
+  case .shellScript:
+    return "Opens in a new tab"
+  case .terminalInput:
+    return "Runs in the focused terminal"
+  case .split:
+    return "Opens in a new split (\(command.splitDirection.title.lowercased()))"
+  }
+}
+
+private func worktreeNavigationCommandItems() -> [CommandPaletteItem] {
+  [
+    .appShortcut(
+      id: CommandPaletteItemID.globalRevealInFinder,
+      title: "Reveal in Finder",
+      category: .navigation,
+      kind: .revealInFinder,
+      keywords: ["finder", "open", "show"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalCopyPath,
+      title: "Copy Path",
+      category: .navigation,
+      kind: .copyPath,
+      keywords: ["copy", "path", "clipboard"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalRevealInSidebar,
+      title: "Reveal in Sidebar",
+      category: .navigation,
+      kind: .revealInSidebar,
+      keywords: ["reveal", "locate", "find worktree"]
+    ),
+  ]
+}
+
+private func viewToggleCommandItems() -> [CommandPaletteItem] {
+  [
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleLeftSidebar,
+      title: "Toggle Sidebar",
+      category: .view,
+      kind: .toggleLeftSidebar,
+      keywords: ["sidebar", "hide", "left panel"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleActiveAgentsPanel,
+      title: "Toggle Active Agents Panel",
+      category: .view,
+      kind: .toggleActiveAgentsPanel,
+      keywords: ["agents", "panel"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleCanvas,
+      title: "Toggle Canvas",
+      category: .view,
+      kind: .toggleCanvas,
+      keywords: ["canvas", "overview", "grid"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalToggleShelf,
+      title: "Toggle Shelf",
+      category: .view,
+      kind: .toggleShelf,
+      keywords: ["shelf", "books"]
+    ),
+  ]
+}
+
+private func canvasCommandItems() -> [CommandPaletteItem] {
+  [
+    .appShortcut(
+      id: CommandPaletteItemID.globalExpandCanvasCard,
+      title: "Expand / Restore Canvas Card",
+      category: .view,
+      kind: .expandCanvasCard,
+      keywords: ["canvas", "expand", "restore", "focus", "fullscreen", "card"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalArrangeCanvasCards,
+      title: "Arrange Canvas Cards",
+      category: .view,
+      kind: .arrangeCanvasCards,
+      keywords: ["canvas", "arrange", "layout", "pack", "fit"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalOrganizeCanvasCards,
+      title: "Organize Canvas Cards",
+      category: .view,
+      kind: .organizeCanvasCards,
+      keywords: ["canvas", "organize", "grid", "tidy", "uniform"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalSelectAllCanvasCards,
+      title: "Select All Canvas Cards",
+      category: .view,
+      kind: .selectAllCanvasCards,
+      keywords: ["canvas", "select all", "broadcast"]
+    ),
+  ]
 }
 
 private func selectedCodeHostItems(
@@ -307,6 +666,8 @@ private func selectedCodeHostItems(
       title: "Open Repository on \(codeHost.displayName)",
       subtitle: repository.name,
       kind: .openRepositoryOnCodeHost(selectedWorktreeID),
+      category: .pullRequest,
+      defaultSuggestion: false,
       priorityTier: 2
     )
   ]
@@ -318,74 +679,10 @@ private func pullRequestItems(
   repositoryID: Repository.ID,
   codeHost: CodeHost
 ) -> [CommandPaletteItem] {
-  let state = pullRequest.state.uppercased()
-  let isOpen = state == "OPEN"
-  let isDraft = pullRequest.isDraft
+  let isOpen = pullRequest.state.uppercased() == "OPEN"
   let mergeReadiness = PullRequestMergeReadiness(pullRequest: pullRequest)
-  let checks = pullRequest.statusCheckRollup?.checks ?? []
-  let breakdown = PullRequestCheckBreakdown(checks: checks)
-  let hasFailingChecks = breakdown.failed > 0
-  let canMerge = isOpen && !isDraft && !mergeReadiness.isBlocking
-
-  func makeReadyItem() -> CommandPaletteItem? {
-    guard isOpen && isDraft else { return nil }
-    return CommandPaletteItem(
-      id: CommandPaletteItemID.pullRequestReady(repositoryID),
-      title: "Mark PR Ready for Review",
-      subtitle: pullRequest.title,
-      kind: .markPullRequestReady(worktreeID),
-      priorityTier: 0
-    )
-  }
-
-  func makeFailingItems() -> [CommandPaletteItem] {
-    guard isOpen && hasFailingChecks else { return [] }
-    let hasFailingCheckWithDetails = checks.contains { $0.checkState == .failure && $0.detailsUrl != nil }
-    let leadingTier = isDraft ? 1 : 0
-    let followupTier = leadingTier + 1
-    var failingItems: [CommandPaletteItem] = []
-    if hasFailingCheckWithDetails {
-      failingItems.append(
-        CommandPaletteItem(
-          id: CommandPaletteItemID.pullRequestCopyFailingJobURL(repositoryID),
-          title: "Copy failing job URL",
-          subtitle: pullRequest.title,
-          kind: .copyFailingJobURL(worktreeID),
-          priorityTier: leadingTier
-        )
-      )
-    }
-    failingItems.append(
-      CommandPaletteItem(
-        id: CommandPaletteItemID.pullRequestCopyCiLogs(repositoryID),
-        title: "Copy CI Failure Logs",
-        subtitle: pullRequest.title,
-        kind: .copyCiFailureLogs(worktreeID),
-        priorityTier: hasFailingCheckWithDetails ? followupTier : leadingTier
-      )
-    )
-    failingItems.append(
-      CommandPaletteItem(
-        id: CommandPaletteItemID.pullRequestRerunFailedJobs(repositoryID),
-        title: "Re-run Failed Jobs",
-        subtitle: pullRequest.title,
-        kind: .rerunFailedJobs(worktreeID),
-        priorityTier: followupTier
-      )
-    )
-    if hasFailingCheckWithDetails {
-      failingItems.append(
-        CommandPaletteItem(
-          id: CommandPaletteItemID.pullRequestOpenFailingCheck(repositoryID),
-          title: "Open Failing Check Details",
-          subtitle: pullRequest.title,
-          kind: .openFailingCheckDetails(worktreeID),
-          priorityTier: followupTier
-        )
-      )
-    }
-    return failingItems
-  }
+  let breakdown = PullRequestCheckBreakdown(checks: pullRequest.statusCheckRollup?.checks ?? [])
+  let canMerge = isOpen && !pullRequest.isDraft && !mergeReadiness.isBlocking
 
   var items: [CommandPaletteItem] = [
     CommandPaletteItem(
@@ -393,15 +690,27 @@ private func pullRequestItems(
       title: "Open Pull Request on \(codeHost.displayName)",
       subtitle: pullRequest.title,
       kind: .openPullRequest(worktreeID),
+      category: .pullRequest,
+      defaultSuggestion: true,
       priorityTier: 2
     )
   ]
 
-  if let readyItem = makeReadyItem() {
+  if let readyItem = makeReadyPullRequestItem(
+    pullRequest: pullRequest,
+    repositoryID: repositoryID,
+    worktreeID: worktreeID
+  ) {
     items.append(readyItem)
   }
 
-  items.append(contentsOf: makeFailingItems())
+  items.append(
+    contentsOf: makeFailingPullRequestItems(
+      pullRequest: pullRequest,
+      repositoryID: repositoryID,
+      worktreeID: worktreeID
+    )
+  )
 
   if let mergeItem = makeMergePullRequestItem(
     canMerge: canMerge,
@@ -424,6 +733,88 @@ private func pullRequestItems(
   return items
 }
 
+private func makeReadyPullRequestItem(
+  pullRequest: GithubPullRequest,
+  repositoryID: Repository.ID,
+  worktreeID: Worktree.ID
+) -> CommandPaletteItem? {
+  let isOpen = pullRequest.state.uppercased() == "OPEN"
+  guard isOpen && pullRequest.isDraft else { return nil }
+  return CommandPaletteItem(
+    id: CommandPaletteItemID.pullRequestReady(repositoryID),
+    title: "Mark PR Ready for Review",
+    subtitle: pullRequest.title,
+    kind: .markPullRequestReady(worktreeID),
+    category: .pullRequest,
+    defaultSuggestion: true,
+    priorityTier: 0
+  )
+}
+
+private func makeFailingPullRequestItems(
+  pullRequest: GithubPullRequest,
+  repositoryID: Repository.ID,
+  worktreeID: Worktree.ID
+) -> [CommandPaletteItem] {
+  let isOpen = pullRequest.state.uppercased() == "OPEN"
+  let checks = pullRequest.statusCheckRollup?.checks ?? []
+  let hasFailingChecks = PullRequestCheckBreakdown(checks: checks).failed > 0
+  guard isOpen && hasFailingChecks else { return [] }
+  let hasFailingCheckWithDetails = checks.contains { $0.checkState == .failure && $0.detailsUrl != nil }
+  let leadingTier = pullRequest.isDraft ? 1 : 0
+  let followupTier = leadingTier + 1
+  var failingItems: [CommandPaletteItem] = []
+  if hasFailingCheckWithDetails {
+    failingItems.append(
+      CommandPaletteItem(
+        id: CommandPaletteItemID.pullRequestCopyFailingJobURL(repositoryID),
+        title: "Copy failing job URL",
+        subtitle: pullRequest.title,
+        kind: .copyFailingJobURL(worktreeID),
+        category: .pullRequest,
+        defaultSuggestion: true,
+        priorityTier: leadingTier
+      )
+    )
+  }
+  failingItems.append(
+    CommandPaletteItem(
+      id: CommandPaletteItemID.pullRequestCopyCiLogs(repositoryID),
+      title: "Copy CI Failure Logs",
+      subtitle: pullRequest.title,
+      kind: .copyCiFailureLogs(worktreeID),
+      category: .pullRequest,
+      defaultSuggestion: true,
+      priorityTier: hasFailingCheckWithDetails ? followupTier : leadingTier
+    )
+  )
+  failingItems.append(
+    CommandPaletteItem(
+      id: CommandPaletteItemID.pullRequestRerunFailedJobs(repositoryID),
+      title: "Re-run Failed Jobs",
+      subtitle: pullRequest.title,
+      kind: .rerunFailedJobs(worktreeID),
+      category: .pullRequest,
+      defaultSuggestion: true,
+      priorityTier: followupTier
+    )
+  )
+  if hasFailingCheckWithDetails {
+    failingItems.append(
+      CommandPaletteItem(
+        id: CommandPaletteItemID.pullRequestOpenFailingCheck(repositoryID),
+        title: "Open Failing Check Details",
+        subtitle: pullRequest.title,
+        kind: .openFailingCheckDetails(worktreeID),
+        category: .pullRequest,
+        defaultSuggestion: true,
+        priorityTier: followupTier
+      )
+    )
+  }
+  return failingItems
+}
+
 private func makeMergePullRequestItem(
   canMerge: Bool,
   breakdown: PullRequestCheckBreakdown,
@@ -441,6 +832,8 @@ private func makeMergePullRequestItem(
     title: "Merge PR",
     subtitle: "Merge Ready - \(successfulChecksLabel)",
     kind: .mergePullRequest(worktreeID),
+    category: .pullRequest,
+    defaultSuggestion: true,
     priorityTier: 0
   )
 }
@@ -457,6 +850,8 @@ private func makeClosePullRequestItem(
     title: "Close PR",
     subtitle: pullRequestTitle,
     kind: .closePullRequest(worktreeID),
+    category: .pullRequest,
+    defaultSuggestion: true,
     priorityTier: 1
   )
 }
@@ -468,908 +863,34 @@ private func makeClosePullRequestItem(
         id: "debug.toast.inProgress",
         title: "[Debug] Toast: In Progress",
         subtitle: "Simulates an in-progress toast",
-        kind: .debugTestToast(.inProgress("Merging pull request…"))
+        kind: .debugTestToast(.inProgress("Merging pull request…")),
+        category: .debug,
+        defaultSuggestion: true
       ),
       CommandPaletteItem(
         id: "debug.toast.success",
         title: "[Debug] Toast: Success",
         subtitle: "Simulates a success toast",
-        kind: .debugTestToast(.success("Pull request merged"))
+        kind: .debugTestToast(.success("Pull request merged")),
+        category: .debug,
+        defaultSuggestion: true
       ),
       CommandPaletteItem(
         id: "debug.update.simulate-found",
         title: "[Debug] Simulate Update Found",
         subtitle: "Shows the toolbar update badge without querying Sparkle",
-        kind: .debugSimulateUpdateFound
+        kind: .debugSimulateUpdateFound,
+        category: .debug,
+        defaultSuggestion: true
+      ),
+      CommandPaletteItem(
+        id: "debug.dock.notification-dot",
+        title: "[Debug] Light Dock Notification Dot",
+        subtitle: "Forces the Dock notification badge on for visual testing",
+        kind: .debugLightDockNotificationDot,
+        category: .debug,
+        defaultSuggestion: true
       ),
     ]
   }
 #endif
-
-private enum CommandPaletteItemID {
-  static let ghosttyPrefix = "ghostty."
-  static let globalCheckForUpdates = "global.check-for-updates"
-  static let globalOpenSettings = "global.open-settings"
-  static let globalOpenRepository = "global.open-repository"
-  static let globalNewWorktree = "global.new-worktree"
-  static let globalRefreshWorktrees = "global.refresh-worktrees"
-  static let globalViewArchivedWorktrees = "global.view-archived-worktrees"
-  static let globalInstallCLI = "global.install-cli"
-
-  static var globalIDs: [CommandPaletteItem.ID] {
-    [
-      globalCheckForUpdates,
-      globalOpenSettings,
-      globalOpenRepository,
-      globalNewWorktree,
-      globalRefreshWorktrees,
-      globalViewArchivedWorktrees,
-      globalInstallCLI,
-    ]
-  }
-
-  static func worktreeSelect(_ worktreeID: Worktree.ID) -> CommandPaletteItem.ID {
-    "worktree.\(worktreeID).select"
-  }
-
-  static func changeFocusedTabIcon(_ worktreeID: Worktree.ID) -> CommandPaletteItem.ID {
-    "terminal.\(worktreeID).change-focused-tab-icon"
-  }
-
-  static func ghosttyCommand(_ command: GhosttyCommand) -> CommandPaletteItem.ID {
-    "\(ghosttyPrefix)\(command.action)|\(command.title)"
-  }
-
-  static func pullRequestIDs(repositoryID: Repository.ID) -> [CommandPaletteItem.ID] {
-    [
-      pullRequestOpen(repositoryID),
-      pullRequestReady(repositoryID),
-      pullRequestCopyFailingJobURL(repositoryID),
-      pullRequestCopyCiLogs(repositoryID),
-      pullRequestRerunFailedJobs(repositoryID),
-      pullRequestOpenFailingCheck(repositoryID),
-      pullRequestMerge(repositoryID),
-      pullRequestClose(repositoryID),
-    ]
-  }
-
-  static func pullRequestOpen(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).open"
-  }
-
-  static func pullRequestReady(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).ready"
-  }
-
-  static func pullRequestCopyFailingJobURL(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).copy-failing-job-url"
-  }
-
-  static func pullRequestCopyCiLogs(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).copy-ci-logs"
-  }
-
-  static func pullRequestRerunFailedJobs(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).rerun-failed-jobs"
-  }
-
-  static func pullRequestOpenFailingCheck(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).open-failing-check"
-  }
-
-  static func pullRequestMerge(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).merge"
-  }
-
-  static func pullRequestClose(_ repositoryID: Repository.ID) -> CommandPaletteItem.ID {
-    "pr.\(repositoryID).close"
-  }
-}
-
-private func prioritizeItems(
-  items: [CommandPaletteItem],
-  recencyByID: [CommandPaletteItem.ID: TimeInterval],
-  now: Date
-) -> [CommandPaletteItem] {
-  let scored = items.enumerated().map { index, item in
-    (item: item, index: index, recency: commandPaletteRecencyScore(item, recencyByID: recencyByID, now: now))
-  }
-  let sorted = scored.sorted { left, right in
-    if left.item.priorityTier != right.item.priorityTier {
-      return left.item.priorityTier < right.item.priorityTier
-    }
-    if left.item.priorityTier < CommandPaletteItem.defaultPriorityTier, left.recency != right.recency {
-      return left.recency > right.recency
-    }
-    return left.index < right.index
-  }
-  return sorted.map(\.item)
-}
-
-private func commandPaletteRecencyScore(
-  _ item: CommandPaletteItem,
-  recencyByID: [CommandPaletteItem.ID: TimeInterval],
-  now: Date
-) -> Double {
-  guard let lastActivated = recencyByID[item.id] else { return 0 }
-  let ageSeconds = max(0, now.timeIntervalSince1970 - lastActivated)
-  let ageDays = ageSeconds / 86_400
-  let cappedAgeDays = min(ageDays, 30)
-  return pow(0.5, cappedAgeDays / 7)
-}
-
-private func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.Delegate {
-  switch kind {
-  case .worktreeSelect(let id):
-    return .selectWorktree(id)
-  case .checkForUpdates:
-    return .checkForUpdates
-  case .openSettings:
-    return .openSettings
-  case .newWorktree:
-    return .newWorktree
-  case .openRepository:
-    return .openRepository
-  case .removeWorktree(let worktreeID, let repositoryID):
-    return .removeWorktree(worktreeID, repositoryID)
-  case .archiveWorktree(let worktreeID, let repositoryID):
-    return .archiveWorktree(worktreeID, repositoryID)
-  case .viewArchivedWorktrees:
-    return .viewArchivedWorktrees
-  case .refreshWorktrees:
-    return .refreshWorktrees
-  case .installCLI:
-    return .installCLI
-  case .ghosttyCommand(let action):
-    return .ghosttyCommand(action)
-  case .changeFocusedTabIcon(let worktreeID):
-    return .changeFocusedTabIcon(worktreeID)
-  case .openPullRequest,
-    .openRepositoryOnCodeHost,
-    .markPullRequestReady,
-    .mergePullRequest,
-    .closePullRequest,
-    .copyFailingJobURL,
-    .copyCiFailureLogs,
-    .rerunFailedJobs,
-    .openFailingCheckDetails:
-    return pullRequestDelegateAction(for: kind)!
-  #if DEBUG
-    case .debugTestToast(let toast):
-      return .debugTestToast(toast)
-    case .debugSimulateUpdateFound:
-      return .debugSimulateUpdateFound
-  #endif
-  }
-}
-
-private func pullRequestDelegateAction(
-  for kind: CommandPaletteItem.Kind
-) -> CommandPaletteFeature.Delegate? {
-  switch kind {
-  case .openPullRequest(let worktreeID),
-    .openRepositoryOnCodeHost(let worktreeID):
-    return .openPullRequest(worktreeID)
-  case .markPullRequestReady(let worktreeID):
-    return .markPullRequestReady(worktreeID)
-  case .mergePullRequest(let worktreeID):
-    return .mergePullRequest(worktreeID)
-  case .closePullRequest(let worktreeID):
-    return .closePullRequest(worktreeID)
-  case .copyFailingJobURL(let worktreeID):
-    return .copyFailingJobURL(worktreeID)
-  case .copyCiFailureLogs(let worktreeID):
-    return .copyCiFailureLogs(worktreeID)
-  case .rerunFailedJobs(let worktreeID):
-    return .rerunFailedJobs(worktreeID)
-  case .openFailingCheckDetails(let worktreeID):
-    return .openFailingCheckDetails(worktreeID)
-  case .worktreeSelect,
-    .checkForUpdates,
-    .openSettings,
-    .newWorktree,
-    .openRepository,
-    .removeWorktree,
-    .archiveWorktree,
-    .viewArchivedWorktrees,
-    .refreshWorktrees,
-    .installCLI,
-    .ghosttyCommand,
-    .changeFocusedTabIcon:
-    return nil
-  #if DEBUG
-    case .debugTestToast, .debugSimulateUpdateFound:
-      return nil
-  #endif
-  }
-}
-
-/// Ghostty action keys that should be hidden from Prowl's command palette.
-///
-/// Includes:
-/// - actions Prowl already exposes natively (`check_for_updates`)
-/// - Ghostty actions intentionally unsupported by Prowl's architecture/platform
-private let filteredGhosttyActionKeys: Set<String> = [
-  "check_for_updates",
-  "new_window",
-  "close_all_windows",
-  "goto_window",
-  "toggle_tab_overview",
-  "toggle_window_decorations",
-  "inspector",
-  "show_gtk_inspector",
-  "show_on_screen_keyboard",
-]
-
-private func ghosttyCommandItems(_ commands: [GhosttyCommand]) -> [CommandPaletteItem] {
-  commands.compactMap { command in
-    guard !filteredGhosttyActionKeys.contains(command.actionKey) else { return nil }
-    let subtitle = command.description.trimmingCharacters(in: .whitespacesAndNewlines)
-    return CommandPaletteItem(
-      id: CommandPaletteItemID.ghosttyCommand(command),
-      title: command.title,
-      subtitle: subtitle.isEmpty ? nil : subtitle,
-      kind: .ghosttyCommand(command.action),
-      priorityTier: CommandPaletteItem.defaultPriorityTier + 100
-    )
-  }
-}
-
-private func loadRecency(into state: inout CommandPaletteFeature.State) {
-  @Shared(.appStorage("commandPaletteItemRecency")) var recency: [String: Double] = [:]
-  state.recencyByItemID = recency
-}
-
-private func saveRecency(_ recencyByItemID: [CommandPaletteItem.ID: TimeInterval]) {
-  @Shared(.appStorage("commandPaletteItemRecency")) var recency: [String: Double] = [:]
-  $recency.withLock {
-    $0 = recencyByItemID
-  }
-}
-
-private struct CommandPaletteFuzzyScorer {
-  private struct PreparedQueryPiece {
-    let normalized: String
-    let normalizedLowercase: String
-    let expectContiguousMatch: Bool
-  }
-
-  private struct PreparedQuery {
-    let piece: PreparedQueryPiece
-    let values: [PreparedQueryPiece]?
-  }
-
-  private struct Match {
-    var start: Int
-    var end: Int
-  }
-
-  private struct ItemScore {
-    var score: Int
-    var labelMatch: [Match]?
-    var descriptionMatch: [Match]?
-  }
-
-  private struct ScoredItem {
-    let item: CommandPaletteItem
-    let score: ItemScore
-    let recencyScore: Double
-    let index: Int
-  }
-
-  private static let labelPrefixScoreThreshold = 1 << 17
-  private static let labelScoreThreshold = 1 << 16
-
-  private let query: PreparedQuery
-  private let allowNonContiguousMatches: Bool
-  private let recencyByID: [CommandPaletteItem.ID: TimeInterval]
-  private let now: Date
-
-  init(
-    query: String,
-    recencyByID: [CommandPaletteItem.ID: TimeInterval],
-    now: Date,
-    allowNonContiguousMatches: Bool = true
-  ) {
-    self.query = Self.prepareQuery(query)
-    self.allowNonContiguousMatches = allowNonContiguousMatches
-    self.recencyByID = recencyByID
-    self.now = now
-  }
-
-  func rankedItems(from items: [CommandPaletteItem]) -> [CommandPaletteItem] {
-    let scoredItems = items.enumerated().compactMap { index, item in
-      let score = scoreItem(item)
-      return score.score > 0
-        ? ScoredItem(
-          item: item,
-          score: score,
-          recencyScore: recencyScore(for: item),
-          index: index
-        )
-        : nil
-    }
-    let sorted = scoredItems.sorted { compare($0, $1) < 0 }
-    return sorted.map(\.item)
-  }
-
-  private func scoreItem(_ item: CommandPaletteItem) -> ItemScore {
-    guard !query.piece.normalized.isEmpty else {
-      return ItemScore(score: 0, labelMatch: nil, descriptionMatch: nil)
-    }
-
-    let label = item.title
-    let description = item.subtitle
-
-    if let values = query.values, !values.isEmpty {
-      return scoreItemMultiple(label: label, description: description, query: values)
-    }
-
-    return scoreItemSingle(label: label, description: description, query: query.piece)
-  }
-
-  private func scoreItemMultiple(
-    label: String,
-    description: String?,
-    query: [PreparedQueryPiece]
-  ) -> ItemScore {
-    var totalScore = 0
-    var totalLabelMatches: [Match] = []
-    var totalDescriptionMatches: [Match] = []
-
-    for piece in query {
-      let score = scoreItemSingle(label: label, description: description, query: piece)
-      if score.score == 0 {
-        return ItemScore(score: 0, labelMatch: nil, descriptionMatch: nil)
-      }
-      totalScore += score.score
-      if let labelMatch = score.labelMatch {
-        totalLabelMatches.append(contentsOf: labelMatch)
-      }
-      if let descriptionMatch = score.descriptionMatch {
-        totalDescriptionMatches.append(contentsOf: descriptionMatch)
-      }
-    }
-
-    return ItemScore(
-      score: totalScore,
-      labelMatch: normalizeMatches(totalLabelMatches),
-      descriptionMatch: normalizeMatches(totalDescriptionMatches)
-    )
-  }
-
-  private func scoreItemSingle(
-    label: String,
-    description: String?,
-    query: PreparedQueryPiece
-  ) -> ItemScore {
-    let (labelScore, labelPositions) = scoreFuzzy(
-      target: label,
-      query: query,
-      allowNonContiguousMatches: allowNonContiguousMatches && !query.expectContiguousMatch
-    )
-    if labelScore > 0 {
-      let labelPrefixMatch = matchesPrefix(query: query.normalizedLowercase, target: label)
-      let baseScore: Int
-      if let labelPrefixMatch {
-        let prefixLengthBoost = Int(
-          (Double(query.normalized.count) / Double(label.count) * 100).rounded()
-        )
-        baseScore = Self.labelPrefixScoreThreshold + prefixLengthBoost
-        return ItemScore(
-          score: baseScore + labelScore,
-          labelMatch: labelPrefixMatch,
-          descriptionMatch: nil
-        )
-      }
-      baseScore = Self.labelScoreThreshold
-      return ItemScore(
-        score: baseScore + labelScore,
-        labelMatch: createMatches(labelPositions),
-        descriptionMatch: nil
-      )
-    }
-
-    if let description {
-      let descriptionPrefixLength = description.count
-      let descriptionAndLabel = description + label
-      let (labelDescriptionScore, labelDescriptionPositions) = scoreFuzzy(
-        target: descriptionAndLabel,
-        query: query,
-        allowNonContiguousMatches: allowNonContiguousMatches && !query.expectContiguousMatch
-      )
-      if labelDescriptionScore > 0 {
-        let labelDescriptionMatches = createMatches(labelDescriptionPositions)
-        var labelMatch: [Match] = []
-        var descriptionMatch: [Match] = []
-
-        for match in labelDescriptionMatches {
-          if match.start < descriptionPrefixLength && match.end > descriptionPrefixLength {
-            labelMatch.append(Match(start: 0, end: match.end - descriptionPrefixLength))
-            descriptionMatch.append(Match(start: match.start, end: descriptionPrefixLength))
-          } else if match.start >= descriptionPrefixLength {
-            labelMatch.append(
-              Match(
-                start: match.start - descriptionPrefixLength,
-                end: match.end - descriptionPrefixLength
-              )
-            )
-          } else {
-            descriptionMatch.append(match)
-          }
-        }
-
-        return ItemScore(
-          score: labelDescriptionScore,
-          labelMatch: labelMatch,
-          descriptionMatch: descriptionMatch
-        )
-      }
-    }
-
-    return ItemScore(score: 0, labelMatch: nil, descriptionMatch: nil)
-  }
-
-  private func compare(_ itemA: ScoredItem, _ itemB: ScoredItem) -> Int {
-    let scoreA = itemA.score.score
-    let scoreB = itemB.score.score
-
-    if scoreA > Self.labelScoreThreshold || scoreB > Self.labelScoreThreshold {
-      if scoreA != scoreB {
-        return scoreA > scoreB ? -1 : 1
-      }
-      if scoreA < Self.labelPrefixScoreThreshold && scoreB < Self.labelPrefixScoreThreshold {
-        let comparedByMatchLength = compareByMatchLength(itemA.score.labelMatch, itemB.score.labelMatch)
-        if comparedByMatchLength != 0 {
-          return comparedByMatchLength
-        }
-      }
-      let labelA = itemA.item.title
-      let labelB = itemB.item.title
-      if labelA.count != labelB.count {
-        return labelA.count - labelB.count
-      }
-    }
-
-    if scoreA != scoreB {
-      return scoreA > scoreB ? -1 : 1
-    }
-
-    let itemAHasLabelMatches = !(itemA.score.labelMatch?.isEmpty ?? true)
-    let itemBHasLabelMatches = !(itemB.score.labelMatch?.isEmpty ?? true)
-    if itemAHasLabelMatches && !itemBHasLabelMatches {
-      return -1
-    }
-    if itemBHasLabelMatches && !itemAHasLabelMatches {
-      return 1
-    }
-
-    if let itemAMatchDistance = matchDistance(itemA),
-      let itemBMatchDistance = matchDistance(itemB),
-      itemAMatchDistance != itemBMatchDistance
-    {
-      return itemBMatchDistance > itemAMatchDistance ? -1 : 1
-    }
-
-    if itemA.item.priorityTier != itemB.item.priorityTier {
-      return itemA.item.priorityTier < itemB.item.priorityTier ? -1 : 1
-    }
-
-    if itemA.recencyScore != itemB.recencyScore {
-      return itemA.recencyScore > itemB.recencyScore ? -1 : 1
-    }
-
-    let fallback = fallbackCompare(itemA.item, itemB.item)
-    if fallback != 0 {
-      return fallback
-    }
-
-    return itemA.index - itemB.index
-  }
-
-  private func matchDistance(_ item: ScoredItem) -> Int? {
-    var matchStart = -1
-    var matchEnd = -1
-
-    if let descriptionMatch = item.score.descriptionMatch, !descriptionMatch.isEmpty {
-      matchStart = descriptionMatch[0].start
-    } else if let labelMatch = item.score.labelMatch, !labelMatch.isEmpty {
-      matchStart = labelMatch[0].start
-    }
-
-    if let labelMatch = item.score.labelMatch, !labelMatch.isEmpty {
-      matchEnd = labelMatch[labelMatch.count - 1].end
-      if let descriptionMatch = item.score.descriptionMatch,
-        !descriptionMatch.isEmpty,
-        let description = item.item.subtitle
-      {
-        matchEnd += description.count
-      }
-    } else if let descriptionMatch = item.score.descriptionMatch, !descriptionMatch.isEmpty {
-      matchEnd = descriptionMatch[descriptionMatch.count - 1].end
-    }
-
-    guard matchStart != -1 else { return nil }
-    return matchEnd - matchStart
-  }
-
-  private func compareByMatchLength(_ matchesA: [Match]?, _ matchesB: [Match]?) -> Int {
-    guard let matchesA, let matchesB else { return 0 }
-    if matchesA.isEmpty && matchesB.isEmpty {
-      return 0
-    }
-    if matchesB.isEmpty {
-      return -1
-    }
-    if matchesA.isEmpty {
-      return 1
-    }
-
-    let matchLengthA = matchesA[matchesA.count - 1].end - matchesA[0].start
-    let matchLengthB = matchesB[matchesB.count - 1].end - matchesB[0].start
-
-    if matchLengthA == matchLengthB {
-      return 0
-    }
-    return matchLengthB < matchLengthA ? 1 : -1
-  }
-
-  private func fallbackCompare(_ itemA: CommandPaletteItem, _ itemB: CommandPaletteItem) -> Int {
-    let labelA = itemA.title
-    let labelB = itemB.title
-    let descriptionA = itemA.subtitle
-    let descriptionB = itemB.subtitle
-
-    let labelDescriptionALength = labelA.count + (descriptionA?.count ?? 0)
-    let labelDescriptionBLength = labelB.count + (descriptionB?.count ?? 0)
-
-    if labelDescriptionALength != labelDescriptionBLength {
-      return labelDescriptionALength - labelDescriptionBLength
-    }
-
-    if labelA != labelB {
-      return compareStrings(labelA, labelB)
-    }
-
-    if let descriptionA, let descriptionB, descriptionA != descriptionB {
-      return compareStrings(descriptionA, descriptionB)
-    }
-
-    return 0
-  }
-
-  private func compareStrings(_ stringA: String, _ stringB: String) -> Int {
-    switch stringA.localizedStandardCompare(stringB) {
-    case .orderedAscending:
-      return -1
-    case .orderedDescending:
-      return 1
-    case .orderedSame:
-      return 0
-    }
-  }
-
-  private func recencyScore(for item: CommandPaletteItem) -> Double {
-    commandPaletteRecencyScore(item, recencyByID: recencyByID, now: now)
-  }
-
-  private func scoreFuzzy(
-    target: String,
-    query: PreparedQueryPiece,
-    allowNonContiguousMatches: Bool
-  ) -> (Int, [Int]) {
-    if target.isEmpty || query.normalized.isEmpty {
-      return (0, [])
-    }
-
-    let targetChars = Array(target)
-    let queryChars = Array(query.normalized)
-
-    if targetChars.count < queryChars.count {
-      return (0, [])
-    }
-
-    let targetLower = Array(target.lowercased())
-    let queryLower = Array(query.normalizedLowercase)
-
-    return doScoreFuzzy(
-      query: queryChars,
-      queryLower: queryLower,
-      target: targetChars,
-      targetLower: targetLower,
-      allowNonContiguousMatches: allowNonContiguousMatches
-    )
-  }
-
-  private func doScoreFuzzy(
-    query: [Character],
-    queryLower: [Character],
-    target: [Character],
-    targetLower: [Character],
-    allowNonContiguousMatches: Bool
-  ) -> (Int, [Int]) {
-    let queryLength = query.count
-    let targetLength = target.count
-    let scores = Array(repeating: 0, count: queryLength * targetLength)
-    var mutableScores = scores
-    let matches = Array(repeating: 0, count: queryLength * targetLength)
-    var mutableMatches = matches
-
-    for queryIndex in 0..<queryLength {
-      let queryIndexOffset = queryIndex * targetLength
-      let queryIndexPreviousOffset = queryIndexOffset - targetLength
-      let queryIndexGtNull = queryIndex > 0
-
-      let queryCharAtIndex = query[queryIndex]
-      let queryLowerCharAtIndex = queryLower[queryIndex]
-
-      for targetIndex in 0..<targetLength {
-        let targetIndexGtNull = targetIndex > 0
-
-        let currentIndex = queryIndexOffset + targetIndex
-        let leftIndex = currentIndex - 1
-        let diagIndex = queryIndexPreviousOffset + targetIndex - 1
-
-        let leftScore = targetIndexGtNull ? mutableScores[leftIndex] : 0
-        let diagScore = queryIndexGtNull && targetIndexGtNull ? mutableScores[diagIndex] : 0
-
-        let matchesSequenceLength =
-          queryIndexGtNull && targetIndexGtNull ? mutableMatches[diagIndex] : 0
-
-        let score: Int
-        let scoreContext = CharScoreContext(
-          queryChar: queryCharAtIndex,
-          queryLowerChar: queryLowerCharAtIndex,
-          target: target,
-          targetLower: targetLower,
-          targetIndex: targetIndex,
-          matchesSequenceLength: matchesSequenceLength
-        )
-        if diagScore != 0 && queryIndexGtNull {
-          score = computeCharScore(scoreContext)
-        } else if queryIndexGtNull {
-          score = 0
-        } else {
-          score = computeCharScore(scoreContext)
-        }
-
-        let isValidScore = score > 0 && diagScore + score >= leftScore
-
-        if isValidScore
-          && (allowNonContiguousMatches || queryIndexGtNull
-            || startsWith(
-              targetLower,
-              queryLower,
-              at: targetIndex
-            ))
-        {
-          mutableMatches[currentIndex] = matchesSequenceLength + 1
-          mutableScores[currentIndex] = diagScore + score
-        } else {
-          mutableMatches[currentIndex] = 0
-          mutableScores[currentIndex] = leftScore
-        }
-      }
-    }
-
-    var positions: [Int] = []
-    var queryIndex = queryLength - 1
-    var targetIndex = targetLength - 1
-    while queryIndex >= 0 && targetIndex >= 0 {
-      let currentIndex = queryIndex * targetLength + targetIndex
-      let match = mutableMatches[currentIndex]
-      if match == 0 {
-        targetIndex -= 1
-      } else {
-        positions.append(targetIndex)
-        queryIndex -= 1
-        targetIndex -= 1
-      }
-    }
-
-    positions.reverse()
-    let finalScore = mutableScores[queryLength * targetLength - 1]
-    return (finalScore, positions)
-  }
-
-  private struct CharScoreContext {
-    let queryChar: Character
-    let queryLowerChar: Character
-    let target: [Character]
-    let targetLower: [Character]
-    let targetIndex: Int
-    let matchesSequenceLength: Int
-  }
-
-  private func computeCharScore(_ context: CharScoreContext) -> Int {
-    if !considerAsEqual(context.queryLowerChar, context.targetLower[context.targetIndex]) {
-      return 0
-    }
-
-    var score = 1
-
-    if context.matchesSequenceLength > 0 {
-      score += (min(context.matchesSequenceLength, 3) * 6)
-      score += max(0, context.matchesSequenceLength - 3) * 3
-    }
-
-    if context.queryChar == context.target[context.targetIndex] {
-      score += 1
-    }
-
-    if context.targetIndex == 0 {
-      score += 8
-    } else {
-      let separatorBonus = scoreSeparatorAtPos(context.target[context.targetIndex - 1])
-      if separatorBonus > 0 {
-        score += separatorBonus
-      } else if isUpper(context.target[context.targetIndex]) && context.matchesSequenceLength == 0 {
-        score += 2
-      }
-    }
-
-    return score
-  }
-
-  private func considerAsEqual(_ lhs: Character, _ rhs: Character) -> Bool {
-    if lhs == rhs {
-      return true
-    }
-    if lhs == "/" || lhs == "\\" {
-      return rhs == "/" || rhs == "\\"
-    }
-    return false
-  }
-
-  private func scoreSeparatorAtPos(_ char: Character) -> Int {
-    switch char {
-    case "/", "\\":
-      return 5
-    case "_", "-", ".", " ", "'", "\"", ":":
-      return 4
-    default:
-      return 0
-    }
-  }
-
-  private func isUpper(_ char: Character) -> Bool {
-    guard let scalar = String(char).unicodeScalars.first else { return false }
-    return scalar.properties.isUppercase
-  }
-
-  private func startsWith(
-    _ target: [Character],
-    _ query: [Character],
-    at index: Int
-  ) -> Bool {
-    guard index + query.count <= target.count else { return false }
-    for queryIndex in 0..<query.count where target[index + queryIndex] != query[queryIndex] {
-      return false
-    }
-    return true
-  }
-
-  private func createMatches(_ offsets: [Int]) -> [Match] {
-    var matches: [Match] = []
-    var lastMatch: Match?
-
-    for position in offsets {
-      if var lastMatch, lastMatch.end == position {
-        lastMatch.end += 1
-        matches[matches.count - 1] = lastMatch
-      } else {
-        let match = Match(start: position, end: position + 1)
-        matches.append(match)
-        lastMatch = match
-      }
-    }
-
-    return matches
-  }
-
-  private func normalizeMatches(_ matches: [Match]) -> [Match]? {
-    guard !matches.isEmpty else { return nil }
-
-    let sortedMatches = matches.sorted { $0.start < $1.start }
-    var normalizedMatches: [Match] = []
-    var currentMatch: Match?
-
-    for match in sortedMatches {
-      if let existing = currentMatch, matchOverlaps(existing, match) {
-        let merged = Match(
-          start: min(existing.start, match.start),
-          end: max(existing.end, match.end)
-        )
-        currentMatch = merged
-        normalizedMatches[normalizedMatches.count - 1] = merged
-      } else {
-        currentMatch = match
-        normalizedMatches.append(match)
-      }
-    }
-
-    return normalizedMatches
-  }
-
-  private func matchOverlaps(_ matchA: Match, _ matchB: Match) -> Bool {
-    if matchA.end < matchB.start {
-      return false
-    }
-    if matchB.end < matchA.start {
-      return false
-    }
-    return true
-  }
-
-  private func matchesPrefix(query: String, target: String) -> [Match]? {
-    let targetLower = target.lowercased()
-    guard targetLower.hasPrefix(query) else { return nil }
-    return [Match(start: 0, end: query.count)]
-  }
-
-  private static func prepareQuery(_ original: String) -> PreparedQuery {
-    let expectContiguousMatch = queryExpectsExactMatch(original)
-    let normalized = normalizeQuery(original)
-    let piece = PreparedQueryPiece(
-      normalized: normalized.normalized,
-      normalizedLowercase: normalized.normalizedLowercase,
-      expectContiguousMatch: expectContiguousMatch
-    )
-
-    let splitPieces = original.split(separator: " ")
-    var values: [PreparedQueryPiece] = []
-    if splitPieces.count > 1 {
-      for pieceValue in splitPieces {
-        let value = String(pieceValue)
-        let expectExactMatchPiece = queryExpectsExactMatch(value)
-        let normalizedPiece = normalizeQuery(value)
-        if normalizedPiece.normalized.isEmpty {
-          continue
-        }
-        values.append(
-          PreparedQueryPiece(
-            normalized: normalizedPiece.normalized,
-            normalizedLowercase: normalizedPiece.normalizedLowercase,
-            expectContiguousMatch: expectExactMatchPiece
-          )
-        )
-      }
-    }
-
-    return PreparedQuery(
-      piece: piece,
-      values: values.isEmpty ? nil : values
-    )
-  }
-
-  private static func normalizeQuery(_ original: String) -> (normalized: String, normalizedLowercase: String) {
-    var pathNormalized = String()
-    pathNormalized.reserveCapacity(original.count)
-    for char in original {
-      if char == "\\" {
-        pathNormalized.append("/")
-      } else {
-        pathNormalized.append(char)
-      }
-    }
-
-    var normalized = String()
-    normalized.reserveCapacity(pathNormalized.count)
-    for char in pathNormalized {
-      if char == "*" || char == "…" || char == "\"" || char.isWhitespace {
-        continue
-      }
-      normalized.append(char)
-    }
-
-    if normalized.count > 1, normalized.hasSuffix("#") {
-      normalized.removeLast()
-    }
-
-    return (normalized, normalized.lowercased())
-  }
-
-  private static func queryExpectsExactMatch(_ query: String) -> Bool {
-    query.hasPrefix("\"") && query.hasSuffix("\"")
-  }
-}

@@ -7,6 +7,16 @@ import Testing
 
 @MainActor
 struct RepositorySettingsFeatureTests {
+  @Test func githubAccountOverrideRoundTripsThroughRepositorySettings() throws {
+    var settings = RepositorySettings.default
+    settings.githubAccountOverride = GithubAccountOverride(host: "github.com", login: "work")
+
+    let data = try JSONEncoder().encode(settings)
+    let decoded = try JSONDecoder().decode(RepositorySettings.self, from: data)
+
+    #expect(decoded.githubAccountOverride == GithubAccountOverride(host: "github.com", login: "work"))
+  }
+
   @Test(.dependencies) func plainFolderTaskLoadsWithoutGitRequests() async throws {
     let rootURL = URL(fileURLWithPath: "/tmp/folder-\(UUID().uuidString)")
     let settingsStorage = SettingsTestStorage()
@@ -147,6 +157,78 @@ struct RepositorySettingsFeatureTests {
     let savedData = try #require(localStorage.data(at: SupacodePaths.userRepositorySettingsURL(for: rootURL)))
     let decoded = try JSONDecoder().decode(UserRepositorySettings.self, from: savedData)
     #expect(decoded.customCommands.first?.shortcut == conflicted.customCommands.first?.shortcut)
+  }
+
+  @Test(.dependencies) func customTitleBindingPersistsToRepositoryFile() async throws {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo-\(UUID().uuidString)")
+    let settingsStorage = SettingsTestStorage()
+    let localStorage = RepositoryLocalSettingsTestStorage()
+    let settingsFileURL = URL(fileURLWithPath: "/tmp/supacode-settings-\(UUID().uuidString).json")
+    let repositorySettingsURL = SupacodePaths.repositorySettingsURL(for: rootURL)
+
+    // Pre-seed a per-repo settings file so save() writes through to it
+    // instead of falling back to the global settings file.
+    let seedData = try #require(try? JSONEncoder().encode(RepositorySettings.default))
+    try #require(try? localStorage.save(seedData, at: repositorySettingsURL))
+
+    let store = TestStore(
+      initialState: RepositorySettingsFeature.State(
+        rootURL: rootURL,
+        repositoryKind: .plain,
+        settings: .default,
+        userSettings: .default
+      )
+    ) {
+      RepositorySettingsFeature()
+    } withDependencies: {
+      $0.settingsFileStorage = settingsStorage.storage
+      $0.settingsFileURL = settingsFileURL
+      $0.repositoryLocalSettingsStorage = localStorage.storage
+    }
+
+    await store.send(.binding(.set(\.settings.customTitle, "My Custom Repo"))) {
+      $0.settings.customTitle = "My Custom Repo"
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    let savedData = try #require(localStorage.data(at: repositorySettingsURL))
+    let decoded = try JSONDecoder().decode(RepositorySettings.self, from: savedData)
+    #expect(decoded.customTitle == "My Custom Repo")
+  }
+
+  @Test(.dependencies) func customTitleWhitespaceOnlyPersistsAsNil() async throws {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo-\(UUID().uuidString)")
+    let settingsStorage = SettingsTestStorage()
+    let localStorage = RepositoryLocalSettingsTestStorage()
+    let settingsFileURL = URL(fileURLWithPath: "/tmp/supacode-settings-\(UUID().uuidString).json")
+    let repositorySettingsURL = SupacodePaths.repositorySettingsURL(for: rootURL)
+
+    let seedData = try #require(try? JSONEncoder().encode(RepositorySettings.default))
+    try #require(try? localStorage.save(seedData, at: repositorySettingsURL))
+
+    let store = TestStore(
+      initialState: RepositorySettingsFeature.State(
+        rootURL: rootURL,
+        repositoryKind: .plain,
+        settings: .default,
+        userSettings: .default
+      )
+    ) {
+      RepositorySettingsFeature()
+    } withDependencies: {
+      $0.settingsFileStorage = settingsStorage.storage
+      $0.settingsFileURL = settingsFileURL
+      $0.repositoryLocalSettingsStorage = localStorage.storage
+    }
+
+    await store.send(.binding(.set(\.settings.customTitle, "   "))) {
+      $0.settings.customTitle = "   "
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    let savedData = try #require(localStorage.data(at: repositorySettingsURL))
+    let decoded = try JSONDecoder().decode(RepositorySettings.self, from: savedData)
+    #expect(decoded.customTitle == nil)
   }
 
   @Test(.dependencies) func taskLoadsLatestUserSettingsAfterAsyncGitProbe() async throws {

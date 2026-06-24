@@ -126,6 +126,19 @@ struct SettingsFeatureTests {
     #expect(settingsFile.global.systemNotificationsEnabled == true)
   }
 
+  @Test(.dependencies) func refreshDockBadgeAuthorizationStoresSystemState() async {
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    } withDependencies: {
+      $0.systemNotificationClient.dockBadgeAuthorization = { .badgeDisabled }
+    }
+
+    await store.send(.refreshDockBadgeAuthorization)
+    await store.receive(\.dockBadgeAuthorizationResponse) {
+      $0.dockBadgeAuthorization = .badgeDisabled
+    }
+  }
+
   @Test(.dependencies) func selectionDoesNotMutateRepositorySettings() async {
     let selection = SettingsSection.repository("repo-id")
     let store = TestStore(initialState: SettingsFeature.State()) {
@@ -362,6 +375,60 @@ struct SettingsFeatureTests {
     await store.receive(\.delegate.settingsChanged)
 
     #expect(settingsFile.global.keybindingUserOverrides == overrides)
+  }
+
+  @Test(.dependencies) func autoShowActiveAgentsPanelPersistsChanges() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.autoShowActiveAgentsPanel = false
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.autoShowActiveAgentsPanel, true))) {
+      $0.autoShowActiveAgentsPanel = true
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.autoShowActiveAgentsPanel == true)
+  }
+
+  @Test(.dependencies) func showActiveAgentTabTitlesPersistsChanges() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.showActiveAgentTabTitles = false
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.showActiveAgentTabTitles, true))) {
+      $0.showActiveAgentTabTitles = true
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.showActiveAgentTabTitles == true)
+  }
+
+  @Test(.dependencies) func showActiveAgentStatusInShelfPersistsChanges() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.showActiveAgentStatusInShelf = true
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.showActiveAgentStatusInShelf, false))) {
+      $0.showActiveAgentStatusInShelf = false
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.showActiveAgentStatusInShelf == false)
   }
 
   @Test(.dependencies) func disablingAnalyticsResetsClient() async {

@@ -15,6 +15,16 @@ nonisolated struct RepositorySettings: Codable, Equatable, Sendable {
   var copyIgnoredOnWorktreeCreate: Bool?
   var copyUntrackedOnWorktreeCreate: Bool?
   var pullRequestMergeStrategy: PullRequestMergeStrategy?
+  var githubAccountOverride: GithubAccountOverride?
+  var customTitle: String?
+  /// When `nil` (unset) or `true`, Prowl keeps the worktree line-change badges
+  /// up to date in the background. Set to `false` to skip the periodic `git diff`
+  /// work for large repositories.
+  var observeLineDiffsAutomatically: Bool?
+  /// When `nil` (unset) or `true`, Prowl periodically fetches pull request state
+  /// for this repository's branches. Set to `false` to skip background GitHub
+  /// queries (saving API rate-limit budget).
+  var fetchPullRequestState: Bool?
   private var schemaVersion: Int
 
   private enum CodingKeys: String, CodingKey {
@@ -28,6 +38,10 @@ nonisolated struct RepositorySettings: Codable, Equatable, Sendable {
     case copyIgnoredOnWorktreeCreate
     case copyUntrackedOnWorktreeCreate
     case pullRequestMergeStrategy
+    case githubAccountOverride
+    case customTitle
+    case observeLineDiffsAutomatically
+    case fetchPullRequestState
   }
 
   static let `default` = RepositorySettings(
@@ -39,7 +53,11 @@ nonisolated struct RepositorySettings: Codable, Equatable, Sendable {
     worktreeBaseDirectoryPath: nil,
     copyIgnoredOnWorktreeCreate: nil,
     copyUntrackedOnWorktreeCreate: nil,
-    pullRequestMergeStrategy: nil
+    pullRequestMergeStrategy: nil,
+    githubAccountOverride: nil,
+    customTitle: nil,
+    observeLineDiffsAutomatically: nil,
+    fetchPullRequestState: nil
   )
 
   init(
@@ -51,7 +69,11 @@ nonisolated struct RepositorySettings: Codable, Equatable, Sendable {
     worktreeBaseDirectoryPath: String? = nil,
     copyIgnoredOnWorktreeCreate: Bool? = nil,
     copyUntrackedOnWorktreeCreate: Bool? = nil,
-    pullRequestMergeStrategy: PullRequestMergeStrategy? = nil
+    pullRequestMergeStrategy: PullRequestMergeStrategy? = nil,
+    githubAccountOverride: GithubAccountOverride? = nil,
+    customTitle: String? = nil,
+    observeLineDiffsAutomatically: Bool? = nil,
+    fetchPullRequestState: Bool? = nil
   ) {
     self.setupScript = setupScript
     self.archiveScript = archiveScript
@@ -62,6 +84,10 @@ nonisolated struct RepositorySettings: Codable, Equatable, Sendable {
     self.copyIgnoredOnWorktreeCreate = copyIgnoredOnWorktreeCreate
     self.copyUntrackedOnWorktreeCreate = copyUntrackedOnWorktreeCreate
     self.pullRequestMergeStrategy = pullRequestMergeStrategy
+    self.githubAccountOverride = githubAccountOverride?.normalized
+    self.customTitle = customTitle
+    self.observeLineDiffsAutomatically = observeLineDiffsAutomatically
+    self.fetchPullRequestState = fetchPullRequestState
     schemaVersion = Self.currentSchemaVersion
   }
 
@@ -86,6 +112,14 @@ nonisolated struct RepositorySettings: Codable, Equatable, Sendable {
       try container.decodeIfPresent(String.self, forKey: .worktreeBaseRef)
     worktreeBaseDirectoryPath =
       try container.decodeIfPresent(String.self, forKey: .worktreeBaseDirectoryPath)
+    customTitle =
+      try container.decodeIfPresent(String.self, forKey: .customTitle)
+    observeLineDiffsAutomatically =
+      try container.decodeIfPresent(Bool.self, forKey: .observeLineDiffsAutomatically)
+    fetchPullRequestState =
+      try container.decodeIfPresent(Bool.self, forKey: .fetchPullRequestState)
+    githubAccountOverride =
+      try container.decodeIfPresent(GithubAccountOverride.self, forKey: .githubAccountOverride)?.normalized
     if decodedSchemaVersion >= Self.currentSchemaVersion {
       copyIgnoredOnWorktreeCreate =
         try container.decodeIfPresent(
@@ -130,6 +164,18 @@ nonisolated struct RepositorySettings: Codable, Equatable, Sendable {
 }
 
 extension RepositorySettings {
+  /// Resolved value for background line-change observation. Defaults to `true`
+  /// when the override is unset.
+  var observesLineDiffsAutomatically: Bool {
+    observeLineDiffsAutomatically ?? true
+  }
+
+  /// Resolved value for background pull request state fetching. Defaults to
+  /// `true` when the override is unset.
+  var fetchesPullRequestState: Bool {
+    fetchPullRequestState ?? true
+  }
+
   nonisolated private static func normalizeLegacyOverride<Value: Equatable>(
     _ value: Value?,
     legacyDefault: Value

@@ -17,4 +17,8 @@ nonisolated struct GithubPullRequest: Decodable, Equatable, Hashable {
   let commitsCount: Int?
   let authorLogin: String?
   let statusCheckRollup: GithubPullRequestStatusCheckRollup?
+  // `var` (rather than `let`) keeps it decodable and gives the memberwise init an
+  // implicit `nil` default, so existing construction sites (tests, caches) compile
+  // unchanged; only the GraphQL decode path populates it.
+  var mergeQueueEntry: GithubMergeQueueEntry?
 }

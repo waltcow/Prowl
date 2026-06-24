@@ -89,11 +89,14 @@ enum AppShortcuts {
     static let quitApplication = "quit_application"
     static let openSettings = "open_settings"
     static let openWorktree = "open_worktree"
-    static let copyPath = "copy_path"
     static let openRepository = "open_repository"
     static let openPullRequest = "open_pull_request"
     static let toggleLeftSidebar = "toggle_left_sidebar"
+    static let toggleActiveAgentsPanel = "toggle_active_agents_panel"
+    static let selectNextActiveAgent = "select_next_active_agent"
+    static let selectPreviousActiveAgent = "select_previous_active_agent"
     static let refreshWorktrees = "refresh_worktrees"
+    static let jumpToLatestUnread = "jump_to_latest_unread"
     static let runScript = "run_script"
     static let stopScript = "stop_script"
     static let checkForUpdates = "check_for_updates"
@@ -115,6 +118,8 @@ enum AppShortcuts {
     static let archivedWorktrees = "archived_worktrees"
     static let selectNextWorktree = "select_next_worktree"
     static let selectPreviousWorktree = "select_previous_worktree"
+    static let worktreeHistoryBack = "worktree_history_back"
+    static let worktreeHistoryForward = "worktree_history_forward"
     static let selectWorktree1 = "select_worktree_1"
     static let selectWorktree2 = "select_worktree_2"
     static let selectWorktree3 = "select_worktree_3"
@@ -135,6 +140,9 @@ enum AppShortcuts {
     static let selectTerminalTab9 = "select_terminal_tab_9"
     static let renameBranch = "rename_branch"
     static let selectAllCanvasCards = "select_all_canvas_cards"
+    static let arrangeCanvasCards = "arrange_canvas_cards"
+    static let organizeCanvasCards = "organize_canvas_cards"
+    static let expandCanvasCard = "expand_canvas_card"
     static let selectPreviousTerminalTab = "select_previous_terminal_tab"
     static let selectNextTerminalTab = "select_next_terminal_tab"
     static let selectPreviousTerminalPane = "select_previous_terminal_pane"
@@ -143,6 +151,10 @@ enum AppShortcuts {
     static let selectTerminalPaneDown = "select_terminal_pane_down"
     static let selectTerminalPaneLeft = "select_terminal_pane_left"
     static let selectTerminalPaneRight = "select_terminal_pane_right"
+    static let toggleSplitZoom = "toggle_split_zoom"
+    static let startSearch = "start_search"
+    static let findNext = "find_next"
+    static let findPrevious = "find_previous"
   }
 
   enum Scope: String {
@@ -175,15 +187,25 @@ enum AppShortcuts {
   static let quitApplication = AppShortcut(key: "q", modifiers: .command)
   static let openSettings = AppShortcut(key: ",", modifiers: .command)
   static let openFinder = AppShortcut(key: "o", modifiers: .command)
-  static let copyPath = AppShortcut(key: "c", modifiers: [.command, .shift])
   static let openRepository = AppShortcut(key: "o", modifiers: [.command, .shift])
   static let openPullRequest = AppShortcut(key: "g", modifiers: [.command, .control])
   static let toggleLeftSidebar = AppShortcut(key: "s", modifiers: [.command, .control])
+  static let toggleActiveAgentsPanel = AppShortcut(key: "p", modifiers: [.command, .option])
+  static let selectNextActiveAgent = AppShortcut(
+    keyEquivalent: .downArrow, ghosttyKeyName: "arrow_down", modifiers: [.control, .option]
+  )
+  static let selectPreviousActiveAgent = AppShortcut(
+    keyEquivalent: .upArrow, ghosttyKeyName: "arrow_up", modifiers: [.control, .option]
+  )
   static let refreshWorktrees = AppShortcut(key: "r", modifiers: [.command, .shift])
+  static let jumpToLatestUnread = AppShortcut(key: "u", modifiers: [.command, .option])
   static let runScript = AppShortcut(key: "r", modifiers: .command)
   static let stopRunScript = AppShortcut(key: ".", modifiers: .command)
   static let checkForUpdates = AppShortcut(key: "u", modifiers: [.command, .shift])
   static let showDiff = AppShortcut(key: "y", modifiers: [.command, .shift])
+  static let startSearch = AppShortcut(key: "f", modifiers: .command)
+  static let findNext = AppShortcut(key: "g", modifiers: .command)
+  static let findPrevious = AppShortcut(key: "g", modifiers: [.command, .shift])
   static let toggleCanvas = AppShortcut(
     keyEquivalent: .return, ghosttyKeyName: "return", modifiers: [.command, .option]
   )
@@ -236,6 +258,8 @@ enum AppShortcuts {
   static let selectPreviousWorktree = AppShortcut(
     keyEquivalent: .upArrow, ghosttyKeyName: "arrow_up", modifiers: [.command, .control]
   )
+  static let worktreeHistoryBack = AppShortcut(key: "[", modifiers: [.command, .option])
+  static let worktreeHistoryForward = AppShortcut(key: "]", modifiers: [.command, .option])
   static let selectWorktree1 = AppShortcut(key: "1", modifiers: [.control])
   static let selectWorktree2 = AppShortcut(key: "2", modifiers: [.control])
   static let selectWorktree3 = AppShortcut(key: "3", modifiers: [.control])
@@ -270,8 +294,14 @@ enum AppShortcuts {
   static let selectTerminalPaneRight = AppShortcut(
     keyEquivalent: .rightArrow, ghosttyKeyName: "arrow_right", modifiers: [.command, .option]
   )
+  // ⌘⌃F is the system fullscreen toggle and ⌘⇧F is reserved for a future
+  // focus mode, so split zoom takes the heavier chord on purpose.
+  static let toggleSplitZoom = AppShortcut(key: "f", modifiers: [.command, .option, .shift])
   static let renameBranch = AppShortcut(key: "m", modifiers: [.command, .shift])
   static let selectAllCanvasCards = AppShortcut(key: "a", modifiers: [.command, .option])
+  static let arrangeCanvasCards = AppShortcut(key: "r", modifiers: [.command, .option])
+  static let organizeCanvasCards = AppShortcut(key: "g", modifiers: [.command, .option])
+  static let expandCanvasCard = AppShortcut(key: "e", modifiers: [.command, .option])
   static let worktreeSelection: [AppShortcut] = [
     selectWorktree1,
     selectWorktree2,
@@ -323,6 +353,10 @@ enum AppShortcuts {
   private static let reservedCustomCommandBindings: [ReservedCustomCommandBinding] = [
     .init(actionTitle: "Open Settings", shortcut: openSettings),
     .init(actionTitle: "Toggle Left Sidebar", shortcut: toggleLeftSidebar),
+    .init(actionTitle: "Toggle Active Agents Panel", shortcut: toggleActiveAgentsPanel),
+    .init(actionTitle: "Select Next Agent", shortcut: selectNextActiveAgent),
+    .init(actionTitle: "Select Previous Agent", shortcut: selectPreviousActiveAgent),
+    .init(actionTitle: "Jump to Latest Unread", shortcut: jumpToLatestUnread),
     .init(actionTitle: "Run Script", shortcut: runScript),
     .init(actionTitle: "Stop Script", shortcut: stopRunScript),
     .init(actionTitle: "Check for Updates", shortcut: checkForUpdates),
@@ -346,6 +380,7 @@ enum AppShortcuts {
     .init(actionTitle: "Select Pane Down", shortcut: selectTerminalPaneDown),
     .init(actionTitle: "Select Pane Left", shortcut: selectTerminalPaneLeft),
     .init(actionTitle: "Select Pane Right", shortcut: selectTerminalPaneRight),
+    .init(actionTitle: "Toggle Split Zoom", shortcut: toggleSplitZoom),
   ]
 
   static let bindings: [Binding] = [
@@ -368,12 +403,6 @@ enum AppShortcuts {
       shortcut: openFinder
     ),
     .init(
-      id: CommandID.copyPath,
-      title: "Copy Path",
-      scope: .configurableAppAction,
-      shortcut: copyPath
-    ),
-    .init(
       id: CommandID.openRepository,
       title: "Open Repository",
       scope: .configurableAppAction,
@@ -392,10 +421,34 @@ enum AppShortcuts {
       shortcut: toggleLeftSidebar
     ),
     .init(
+      id: CommandID.toggleActiveAgentsPanel,
+      title: "Toggle Active Agents Panel",
+      scope: .configurableAppAction,
+      shortcut: toggleActiveAgentsPanel
+    ),
+    .init(
+      id: CommandID.selectNextActiveAgent,
+      title: "Select Next Agent",
+      scope: .configurableAppAction,
+      shortcut: selectNextActiveAgent
+    ),
+    .init(
+      id: CommandID.selectPreviousActiveAgent,
+      title: "Select Previous Agent",
+      scope: .configurableAppAction,
+      shortcut: selectPreviousActiveAgent
+    ),
+    .init(
       id: CommandID.refreshWorktrees,
       title: "Refresh Worktrees",
       scope: .configurableAppAction,
       shortcut: refreshWorktrees
+    ),
+    .init(
+      id: CommandID.jumpToLatestUnread,
+      title: "Jump to Latest Unread",
+      scope: .configurableAppAction,
+      shortcut: jumpToLatestUnread
     ),
     .init(
       id: CommandID.runScript,
@@ -522,6 +575,18 @@ enum AppShortcuts {
       title: "Select Previous Worktree (Tab in Shelf View)",
       scope: .configurableAppAction,
       shortcut: selectPreviousWorktree
+    ),
+    .init(
+      id: CommandID.worktreeHistoryBack,
+      title: "Back in Worktree History",
+      scope: .configurableAppAction,
+      shortcut: worktreeHistoryBack
+    ),
+    .init(
+      id: CommandID.worktreeHistoryForward,
+      title: "Forward in Worktree History",
+      scope: .configurableAppAction,
+      shortcut: worktreeHistoryForward
     ),
     .init(
       id: CommandID.selectWorktree1,
@@ -680,6 +745,12 @@ enum AppShortcuts {
       shortcut: selectTerminalPaneRight
     ),
     .init(
+      id: CommandID.toggleSplitZoom,
+      title: "Toggle Split Zoom",
+      scope: .configurableAppAction,
+      shortcut: toggleSplitZoom
+    ),
+    .init(
       id: CommandID.commandPalette,
       title: "Command Palette",
       scope: .configurableAppAction,
@@ -702,6 +773,42 @@ enum AppShortcuts {
       title: "Select All Canvas Cards",
       scope: .localInteraction,
       shortcut: selectAllCanvasCards
+    ),
+    .init(
+      id: CommandID.arrangeCanvasCards,
+      title: "Arrange Canvas Cards",
+      scope: .localInteraction,
+      shortcut: arrangeCanvasCards
+    ),
+    .init(
+      id: CommandID.organizeCanvasCards,
+      title: "Organize Canvas Cards",
+      scope: .localInteraction,
+      shortcut: organizeCanvasCards
+    ),
+    .init(
+      id: CommandID.expandCanvasCard,
+      title: "Expand / Restore Canvas Card",
+      scope: .localInteraction,
+      shortcut: expandCanvasCard
+    ),
+    .init(
+      id: CommandID.startSearch,
+      title: "Find",
+      scope: .configurableAppAction,
+      shortcut: startSearch
+    ),
+    .init(
+      id: CommandID.findNext,
+      title: "Find Next",
+      scope: .configurableAppAction,
+      shortcut: findNext
+    ),
+    .init(
+      id: CommandID.findPrevious,
+      title: "Find Previous",
+      scope: .configurableAppAction,
+      shortcut: findPrevious
     ),
   ]
 
@@ -771,6 +878,24 @@ enum AppShortcuts {
     return display(for: worktreeSelectionCommandIDs[index], in: resolvedKeybindings)
   }
 
+  /// Combined up/down display for the Active Agents list navigation (e.g. "⌥⌃↑↓").
+  ///
+  /// Returns `nil` once either binding has been customized, so callers can hide a
+  /// hint that the merged glyph form could otherwise render inaccurately.
+  static func activeAgentsNavigationDisplay(in resolvedKeybindings: ResolvedKeybindingMap) -> String? {
+    guard
+      let previous = resolvedKeybindings.binding(for: CommandID.selectPreviousActiveAgent),
+      let next = resolvedKeybindings.binding(for: CommandID.selectNextActiveAgent),
+      previous.source == .appDefault,
+      next.source == .appDefault,
+      let upDisplay = resolvedKeybindings.display(for: CommandID.selectPreviousActiveAgent),
+      let downGlyph = resolvedKeybindings.display(for: CommandID.selectNextActiveAgent)?.last
+    else {
+      return nil
+    }
+    return upDisplay + String(downGlyph)
+  }
+
   static func terminalTabSelectionDisplay(at index: Int, in resolvedKeybindings: ResolvedKeybindingMap) -> String? {
     guard terminalTabSelectionCommandIDs.indices.contains(index) else { return nil }
     return display(for: terminalTabSelectionCommandIDs[index], in: resolvedKeybindings)
@@ -794,6 +919,7 @@ enum AppShortcuts {
     (CommandID.selectTerminalPaneDown, "goto_split:down"),
     (CommandID.selectTerminalPaneLeft, "goto_split:left"),
     (CommandID.selectTerminalPaneRight, "goto_split:right"),
+    (CommandID.toggleSplitZoom, "toggle_split_zoom"),
   ]
 
   static func ghosttyCLIKeybindArguments(from resolvedKeybindings: ResolvedKeybindingMap) -> [String] {
@@ -834,12 +960,15 @@ enum AppShortcuts {
     newWorktree,
     openSettings,
     openFinder,
-    copyPath,
     openRepository,
     openPullRequest,
     toggleLeftSidebar,
+    toggleActiveAgentsPanel,
+    selectNextActiveAgent,
+    selectPreviousActiveAgent,
     revealInSidebar,
     refreshWorktrees,
+    jumpToLatestUnread,
     runScript,
     stopRunScript,
     checkForUpdates,
@@ -860,6 +989,8 @@ enum AppShortcuts {
     archivedWorktrees,
     selectNextWorktree,
     selectPreviousWorktree,
+    worktreeHistoryBack,
+    worktreeHistoryForward,
     selectWorktree1,
     selectWorktree2,
     selectWorktree3,
@@ -886,6 +1017,7 @@ enum AppShortcuts {
     selectTerminalPaneDown,
     selectTerminalPaneLeft,
     selectTerminalPaneRight,
+    toggleSplitZoom,
   ]
 }
 

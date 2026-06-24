@@ -24,6 +24,7 @@ struct SettingsView: View {
   var body: some View {
     let updatesStore = store.scope(state: \.updates, action: \.updates)
     let repositories = store.repositories.repositories
+    let customTitles = store.repositories.repositoryCustomTitles
     let selection = settingsStore.selection ?? .general
 
     NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -46,8 +47,11 @@ struct SettingsView: View {
 
           Section("Repositories") {
             ForEach(repositories) { repository in
-              Text(repository.name)
-                .tag(SettingsSection.repository(repository.id))
+              RepoDisplayName(
+                fallbackName: repository.name,
+                customTitle: customTitles[repository.id]
+              )
+              .tag(SettingsSection.repository(repository.id))
             }
           }
         }
@@ -103,12 +107,20 @@ struct SettingsView: View {
       case .repository(let repositoryID):
         if let repository = repositories[id: repositoryID] {
           SettingsDetailView {
-            IfLetStore(
-              settingsStore.scope(state: \.repositorySettings, action: \.repositorySettings)
-            ) { repositorySettingsStore in
+            if let repositorySettingsStore = settingsStore.scope(
+              state: \.repositorySettings,
+              action: \.repositorySettings
+            ) {
               RepositorySettingsView(store: repositorySettingsStore)
                 .id(repository.id)
-                .navigationTitle(repository.name)
+                .navigationTitle(customTitles[repository.id] ?? repository.name)
+                .navigationSubtitle(repository.rootURL.path(percentEncoded: false))
+            } else {
+              // Settled placeholder while the scoped store is briefly nil (e.g. mid
+              // repository switch), instead of `IfLetStore` flashing an empty pane.
+              ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle(customTitles[repository.id] ?? repository.name)
                 .navigationSubtitle(repository.rootURL.path(percentEncoded: false))
             }
           }
@@ -123,8 +135,8 @@ struct SettingsView: View {
       }
     }
     .navigationSplitViewStyle(.balanced)
-    .alert(store: settingsStore.scope(state: \.$alert, action: \.alert))
-    .frame(minWidth: 750, minHeight: 500)
+    .alert($settingsStore.scope(state: \.alert, action: \.alert))
+    .frame(minWidth: 800, minHeight: 500)
     .background {
       WindowAppearanceSetter(colorScheme: settingsStore.appearanceMode.colorScheme)
       WindowLevelSetter(level: .normal)

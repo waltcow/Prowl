@@ -2,20 +2,19 @@ import SwiftUI
 
 struct TerminalTabsView: View {
   @Bindable var manager: TerminalTabManager
-  let changeTitle: (TerminalTabID) -> Void
+  let renameTab: (TerminalTabID) -> Void
   let changeIcon: (TerminalTabID) -> Void
   let closeTab: (TerminalTabID) -> Void
   let closeOthers: (TerminalTabID) -> Void
   let closeToRight: (TerminalTabID) -> Void
   let closeAll: () -> Void
+  let hasNotification: (TerminalTabID) -> Bool
 
   @State private var draggingTabId: TerminalTabID?
   @State private var draggingStartLocation: CGFloat?
   @State private var openedTabs: [TerminalTabID] = []
   @State private var tabLocations: [TerminalTabID: CGRect] = [:]
   @State private var closeButtonGestureActive = false
-  @State private var scrollOffset: CGFloat = 0
-  @State private var contentWidth: CGFloat = 0
   @State private var containerWidth: CGFloat = 0
 
   var body: some View {
@@ -30,7 +29,8 @@ struct TerminalTabsView: View {
             draggingStartLocation: $draggingStartLocation,
             closeButtonGestureActive: $closeButtonGestureActive,
             fixedTabWidth: effectiveTabWidth,
-            changeTitle: changeTitle,
+            hasNotification: hasNotification,
+            renameTab: renameTab,
             changeIcon: changeIcon,
             closeTab: closeTab,
             closeOthers: closeOthers,
@@ -39,23 +39,8 @@ struct TerminalTabsView: View {
             scrollReader: scrollReader
           )
           .padding(.horizontal, TerminalTabBarMetrics.barPadding)
-          .background(
-            GeometryReader { contentGeo in
-              Color.clear
-                .onChange(of: contentGeo.frame(in: .named("tabScroll"))) { _, newFrame in
-                  scrollOffset = -newFrame.minX
-                  contentWidth = newFrame.width
-                }
-                .onAppear {
-                  let frame = contentGeo.frame(in: .named("tabScroll"))
-                  scrollOffset = -frame.minX
-                  contentWidth = frame.width
-                }
-            }
-          )
         }
         .scrollIndicators(.never)
-        .coordinateSpace(name: "tabScroll")
         .onAppear {
           containerWidth = geometryProxy.size.width
           if let selectedId = manager.selectedTabId {
@@ -73,42 +58,25 @@ struct TerminalTabsView: View {
           }
         }
       }
-      .overlay(alignment: .leading) {
-        TerminalTabsOverflowShadow(
-          width: TerminalTabBarMetrics.overflowShadowWidth,
-          startPoint: .leading,
-          endPoint: .trailing
-        )
-        .opacity(canScrollLeft ? 1 : 0)
-        .animation(.easeInOut(duration: TerminalTabBarMetrics.fadeAnimationDuration), value: canScrollLeft)
-      }
-      .overlay(alignment: .trailing) {
-        TerminalTabsOverflowShadow(
-          width: TerminalTabBarMetrics.overflowShadowWidth,
-          startPoint: .trailing,
-          endPoint: .leading
-        )
-        .opacity(canScrollRight ? 1 : 0)
-        .animation(.easeInOut(duration: TerminalTabBarMetrics.fadeAnimationDuration), value: canScrollRight)
-      }
     }
-  }
-
-  private var canScrollLeft: Bool {
-    scrollOffset > 1
-  }
-
-  private var canScrollRight: Bool {
-    contentWidth > containerWidth && scrollOffset < contentWidth - containerWidth - 1
   }
 
   private var effectiveTabWidth: CGFloat? {
     let count = manager.tabs.count
     guard containerWidth > 0, count > 0 else { return nil }
-    let perTab = containerWidth / CGFloat(count)
-    return min(
-      TerminalTabBarMetrics.tabMaxWidth,
-      max(TerminalTabBarMetrics.tabMinWidth, perTab)
-    )
+    // Tabs split the bar equally and fill it (no max cap). Once the equal share
+    // would dip below the minimum (too many tabs), pin to the minimum so the
+    // row overflows and scrolls instead. Account for the row's horizontal
+    // padding, inter-tab spacing, and the always-present dividers so a filled
+    // row fits exactly — otherwise the leftover overflow lets selection-driven
+    // scrollTo(.center) nudge the whole row when picking a middle tab.
+    let interTabCount = CGFloat(count - 1)
+    let available =
+      containerWidth
+      - TerminalTabBarMetrics.barPadding * 2
+      - TerminalTabBarMetrics.tabSpacing * interTabCount
+      - TerminalTabBarMetrics.tabDividerWidth * interTabCount
+    let perTab = available / CGFloat(count)
+    return max(TerminalTabBarMetrics.tabMinWidth, perTab)
   }
 }

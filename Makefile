@@ -15,10 +15,21 @@ GHOSTTY_TERMINFO_PATH := $(CURRENT_MAKEFILE_DIR)/Resources/terminfo
 GHOSTTY_BUILD_OUTPUTS := $(GHOSTTY_XCFRAMEWORK_PATH) $(GHOSTTY_RESOURCE_PATH) $(GHOSTTY_TERMINFO_PATH)
 GHOSTTY_BUILD_STAMP := $(CURRENT_MAKEFILE_DIR)/.ghostty_build_stamp
 GHOSTTY_HASH_FILE := $(CURRENT_MAKEFILE_DIR)/.ghostty_hash
-SPM_CACHE_DIR := /tmp/supacode-spm-cache/SourcePackages
+SPM_CACHE_DIR := $(HOME)/Library/Caches/supacode-spm-cache/SourcePackages
+CLI_DEBUG_RESOURCE_PATH := $(CURRENT_MAKEFILE_DIR)/Resources/prowl-cli/prowl
+CLI_SOURCE_DIRS := $(CURRENT_MAKEFILE_DIR)/ProwlCLI $(CURRENT_MAKEFILE_DIR)/supacode/CLIService/Shared
+CLI_SOURCE_INPUTS := \
+	$(CURRENT_MAKEFILE_PATH) \
+	$(CURRENT_MAKEFILE_DIR)/Package.swift \
+	$(CURRENT_MAKEFILE_DIR)/Package.resolved \
+	$(CURRENT_MAKEFILE_DIR)/supacode.xcodeproj/project.pbxproj \
+	$(shell find $(CLI_SOURCE_DIRS) -type f 2>/dev/null)
 VERSION ?=
 BUILD ?=
 XCODEBUILD_FLAGS ?=
+FORMAT_BASE_REF ?= origin/main
+BUILD_SETTINGS_CACHE := $(CURRENT_MAKEFILE_DIR)/.build_settings_cache.json
+PBXPROJ_PATH := $(CURRENT_MAKEFILE_DIR)/supacode.xcodeproj/project.pbxproj
 
 # Release-only analytics/crash credentials. Included from Config/Secrets.env if present,
 # or overridable from the environment (e.g. CI). Debug builds skip SDK init regardless.
@@ -28,7 +39,7 @@ PROWL_POSTHOG_API_KEY ?=
 PROWL_POSTHOG_HOST ?=
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _check-ghostty-hash _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli run-app install-dev-build install-release archive export-archive format lint check test test-cli-smoke test-cli-integration bump-version bump-and-release log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration bump-version bump-and-release log-stream
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -40,6 +51,7 @@ build-ghostty-xcframework: $(GHOSTTY_BUILD_STAMP) # Build ghostty framework
 
 # Internal: actually rebuild ghostty.
 $(GHOSTTY_BUILD_STAMP):
+	git submodule update --init --recursive ThirdParty/ghostty
 	@cd $(CURRENT_MAKEFILE_DIR)/ThirdParty/ghostty && mise exec -- zig build -Doptimize=ReleaseFast -Demit-xcframework=true -Dsentry=false
 	rsync -a ThirdParty/ghostty/macos/GhosttyKit.xcframework Frameworks
 	@src="$(CURRENT_MAKEFILE_DIR)/ThirdParty/ghostty/zig-out/share/ghostty"; \
@@ -52,36 +64,34 @@ $(GHOSTTY_BUILD_STAMP):
 	rsync -a --delete "$$terminfo_src/" "$$terminfo_dst/"
 	touch "$(GHOSTTY_BUILD_STAMP)"
 
-# Public entry point: only rebuilds ghostty if submodule SHA changed (or outputs are missing).
-ensure-ghostty: _check-ghostty-hash # Ensure GhosttyKit is up-to-date (fast path when unchanged)
-
-# Internal: compare current submodule SHA against the recorded one.
-_check-ghostty-hash:
-	@current_sha="$$(git -C $(CURRENT_MAKEFILE_DIR)/ThirdParty/ghostty rev-parse HEAD)"; \
+# Public entry point: downloads pinned prebuilt artifacts when available, then
+# falls back to a local Ghostty source build.
+ensure-ghostty: # Ensure GhosttyKit is up-to-date (fast path when unchanged)
+	@set +e; \
+	"$(CURRENT_MAKEFILE_DIR)/scripts/ensure-ghosttykit-artifacts.sh"; \
+	status="$$?"; \
+	set -e; \
+	if [ "$$status" -eq 0 ]; then \
+		exit 0; \
+	fi; \
+	if [ "$$status" -ne 2 ]; then \
+		exit "$$status"; \
+	fi; \
+	current_sha="$$(git -C "$(CURRENT_MAKEFILE_DIR)" rev-parse HEAD:ThirdParty/ghostty)"; \
 	last_sha=""; \
 	if [ -f "$(GHOSTTY_HASH_FILE)" ]; then \
 		last_sha="$$(cat "$(GHOSTTY_HASH_FILE)")"; \
 	fi; \
-	artifacts_ok=1; \
-	for path in "$(GHOSTTY_XCFRAMEWORK_PATH)" "$(GHOSTTY_RESOURCE_PATH)" "$(GHOSTTY_TERMINFO_PATH)"; do \
-		if [ ! -e "$$path" ]; then \
-			artifacts_ok=0; \
-		fi; \
-	done; \
-	if [ "$$current_sha" != "$$last_sha" ] || [ "$$artifacts_ok" -ne 1 ]; then \
-		echo "Syncing GhosttyKit for submodule $$current_sha"; \
-		$(MAKE) -B build-ghostty-xcframework; \
-		if [ "$$current_sha" != "$$last_sha" ]; then \
-			rm -rf ~/Library/Developer/Xcode/DerivedData/supacode-*; \
-			echo "Cleared Xcode DerivedData for ghostty header/module changes"; \
-		fi; \
-	else \
-		echo "GhosttyKit up-to-date (SHA unchanged)"; \
+	echo "Building GhosttyKit locally for $$current_sha"; \
+	$(MAKE) -B build-ghostty-xcframework; \
+	if [ "$$current_sha" != "$$last_sha" ]; then \
+		rm -rf ~/Library/Developer/Xcode/DerivedData/supacode-*; \
+		echo "Cleared Xcode DerivedData for ghostty header/module changes"; \
 	fi
 
 # Internal: record the current submodule SHA after a successful build.
 _record-ghostty-hash:
-	@git -C $(CURRENT_MAKEFILE_DIR)/ThirdParty/ghostty rev-parse HEAD > "$(GHOSTTY_HASH_FILE)"
+	@git -C "$(CURRENT_MAKEFILE_DIR)" rev-parse HEAD:ThirdParty/ghostty > "$(GHOSTTY_HASH_FILE)"
 
 # Force a clean rebuild of GhosttyKit (ignores cached SHA, useful after submodule updates).
 sync-ghostty: # Force sync GhosttyKit to current submodule HEAD (always rebuilds)
@@ -90,14 +100,28 @@ sync-ghostty: # Force sync GhosttyKit to current submodule HEAD (always rebuilds
 	rm -rf ~/Library/Developer/Xcode/DerivedData/supacode-*
 	@echo "Done. Xcode module cache cleared for fresh compilation."
 
-build-app: ensure-ghostty embed-cli-debug # Build the macOS app (Debug)
-	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) 2>&1 | mise exec -- xcsift -qw --format toon'
+embed-docs: # Stage docs/ into Resources for bundling into the app (.app/Contents/Resources/docs)
+	@set -euo pipefail; \
+	src="$(CURRENT_MAKEFILE_DIR)/docs"; \
+	dst="$(CURRENT_MAKEFILE_DIR)/Resources/docs"; \
+	mkdir -p "$$dst"; \
+	rsync -a --delete --exclude '.sync-meta.json' "$$src/" "$$dst/"; \
+	echo "embedded docs at $$dst"
+
+build-app: ensure-ghostty embed-cli-debug embed-docs # Build the macOS app (Debug)
+	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon'
 
 sync-cli-version: # Sync app MARKETING_VERSION into ProwlCLIShared/ProwlVersion.swift
 	@version="$$(/usr/bin/awk -F' = ' '/MARKETING_VERSION = [0-9.]*;/{gsub(/;/,"",$$2);print $$2; exit}' \
 		"$(CURRENT_MAKEFILE_DIR)/supacode.xcodeproj/project.pbxproj")"; \
 	dst="$(CURRENT_MAKEFILE_DIR)/supacode/CLIService/Shared/ProwlVersion.swift"; \
-	printf '// Auto-generated by Makefile (sync-cli-version). Do not edit.\n\npublic enum ProwlVersion {\n  public static let current = "%s"\n}\n' "$$version" > "$$dst"
+	tmp="$$(mktemp)"; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	printf '// Auto-generated by Makefile (sync-cli-version). Do not edit.\n\npublic enum ProwlVersion {\n  public static let current = "%s"\n}\n' "$$version" > "$$tmp"; \
+	if [ ! -f "$$dst" ] || ! cmp -s "$$tmp" "$$dst"; then \
+		mv "$$tmp" "$$dst"; \
+		echo "synced CLI version $$version"; \
+	fi
 
 build-cli: sync-cli-version # Build Swift CLI binary (SPM)
 	swift build --product prowl
@@ -105,12 +129,19 @@ build-cli: sync-cli-version # Build Swift CLI binary (SPM)
 build-cli-release: sync-cli-version # Build universal CLI binary in release mode
 	swift build -c release --arch arm64 --arch x86_64 --product prowl
 
-embed-cli-debug: build-cli # Build debug CLI and copy into Resources for dev builds
+embed-cli-debug: $(CLI_DEBUG_RESOURCE_PATH) # Build debug CLI and copy into Resources for dev builds
+
+$(CLI_DEBUG_RESOURCE_PATH): $(CLI_SOURCE_INPUTS)
+	$(MAKE) build-cli
 	@set -euo pipefail; \
 	bin="$$(swift build --show-bin-path)/prowl"; \
 	dst="$(CURRENT_MAKEFILE_DIR)/Resources/prowl-cli"; \
 	mkdir -p "$$dst"; \
-	cp "$$bin" "$$dst/prowl"; \
+	if [ ! -f "$$dst/prowl" ] || ! cmp -s "$$bin" "$$dst/prowl"; then \
+		cp "$$bin" "$$dst/prowl"; \
+	else \
+		touch "$$dst/prowl"; \
+	fi; \
 	chmod +x "$$dst/prowl"; \
 	echo "embedded CLI binary at $$dst/prowl"
 
@@ -125,7 +156,14 @@ embed-cli: build-cli-release # Build release CLI and copy into Resources for dis
 
 run-app: build-app # Build then launch (Debug) with log streaming
 	@set -euo pipefail; \
-	settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+	cache="$(BUILD_SETTINGS_CACHE)"; \
+	pbxproj="$(PBXPROJ_PATH)"; \
+	if [ -f "$$cache" ] && [ "$$cache" -nt "$$pbxproj" ]; then \
+		settings="$$(cat "$$cache")"; \
+	else \
+		settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+		printf '%s' "$$settings" > "$$cache"; \
+	fi; \
 	build_dir="$$(echo "$$settings" | jq -er '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -er '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
 	exec_name="$$(echo "$$settings" | jq -r '.[0].buildSettings.EXECUTABLE_NAME')"; \
@@ -133,11 +171,19 @@ run-app: build-app # Build then launch (Debug) with log streaming
 		echo "error: failed to resolve app path from build settings"; \
 		exit 1; \
 	fi; \
-	"$$build_dir/$$product/Contents/MacOS/$$exec_name"
+	app_path="$$build_dir/$$product/Contents/MacOS/$$exec_name"; \
+	"$$app_path"
 
-install-dev-build: build-app # install dev build to /Applications
+install-dev-build: build-app # Build Debug and install to /Applications
 	@set -euo pipefail; \
-	settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+	cache="$(BUILD_SETTINGS_CACHE)"; \
+	pbxproj="$(PBXPROJ_PATH)"; \
+	if [ -f "$$cache" ] && [ "$$cache" -nt "$$pbxproj" ]; then \
+		settings="$$(cat "$$cache")"; \
+	else \
+		settings="$$(xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug -showBuildSettings -json 2>/dev/null)"; \
+		printf '%s' "$$settings" > "$$cache"; \
+	fi; \
 	build_dir="$$(echo "$$settings" | jq -er '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -er '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
 	if [ -z "$$build_dir" ] || [ -z "$$product" ] || [ "$$build_dir" = "null" ] || [ "$$product" = "null" ]; then \
@@ -269,19 +315,21 @@ install-release: build-ghostty-xcframework # Build Release, sign locally, instal
 	ditto "$$APP_PATH" "$$DST"; \
 	echo "installed $$DST (Release build, locally signed)"
 
-archive: build-ghostty-xcframework embed-cli # Archive Release build for distribution
+archive: build-ghostty-xcframework embed-cli embed-docs # Archive Release build for distribution
 	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Release -archivePath build/supacode.xcarchive archive CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$$APPLE_TEAM_ID" CODE_SIGN_IDENTITY="$$DEVELOPER_ID_IDENTITY_SHA" OTHER_CODE_SIGN_FLAGS="--timestamp" PROWL_SENTRY_DSN="$(PROWL_SENTRY_DSN)" PROWL_POSTHOG_API_KEY="$(PROWL_POSTHOG_API_KEY)" PROWL_POSTHOG_HOST="$(PROWL_POSTHOG_HOST)" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) $(XCODEBUILD_FLAGS) 2>&1 | mise exec -- xcsift -qw --format toon'
 
 export-archive: # Export xarchive
 	bash -o pipefail -c 'xcodebuild -exportArchive -archivePath build/supacode.xcarchive -exportPath build/export -exportOptionsPlist build/ExportOptions.plist 2>&1 | mise exec -- xcsift -qw --format toon'
 
-test: ensure-ghostty
+test: ensure-ghostty embed-cli-debug embed-docs test-app
+
+test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	@set -euo pipefail; \
 	result_bundle="$(CURRENT_MAKEFILE_DIR)/build/test-results/supacode-tests.xcresult"; \
 	mkdir -p "$$(dirname "$$result_bundle")"; \
 	rm -rf "$$result_bundle"; \
 	set +e; \
-	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) 2>&1 | mise exec -- xcsift -w --format toon; \
+	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon; \
 	xcodebuild_status=$${PIPESTATUS[0]}; \
 	set -e; \
 	if [ "$$xcodebuild_status" -ne 0 ]; then \
@@ -303,14 +351,31 @@ test-cli-smoke: build-cli # Smoke test CLI executable
 test-cli-integration: # Run CLI integration tests via SwiftPM
 	swift test --filter ProwlCLIIntegrationTests
 
-format: # Format code with swift-format (local only)
+format: # Format all Swift code with swift-format (full-tree cleanup)
 	swift-format -p --in-place --recursive --configuration ./.swift-format.json supacode supacodeTests
 
+format-changed: # Format Swift files changed from FORMAT_BASE_REF (default: origin/main)
+	@base="$$(git merge-base HEAD "$(FORMAT_BASE_REF)" 2>/dev/null || git rev-parse HEAD)"; \
+	mapfile -t files < <( \
+		{ \
+			git diff --name-only --diff-filter=ACMR "$$base" -- supacode supacodeTests; \
+			git ls-files --others --exclude-standard -- supacode supacodeTests; \
+		} | awk '/\.swift$$/' | sort -u \
+	); \
+	if [ "$${#files[@]}" -eq 0 ]; then \
+		echo "No changed Swift files to format."; \
+	else \
+		printf 'Formatting %s changed Swift file(s) from %s\n' "$${#files[@]}" "$$base"; \
+		swift-format -p --in-place --configuration ./.swift-format.json "$${files[@]}"; \
+	fi
+
+format-lint: # Check Swift formatting without rewriting files
+	swift-format lint --strict --recursive --configuration ./.swift-format.json supacode supacodeTests
+
 lint: # Lint code with swiftlint
-	mise exec -- swiftlint --fix --quiet
 	mise exec -- swiftlint lint --quiet --config .swiftlint.yml
 
-check: format lint # Format and lint
+check: format-changed format-lint lint # Format changed Swift files, then run swift-format lint and SwiftLint
 
 log-stream: # Stream logs from the app via log stream
 	log stream --predicate 'subsystem == "com.onevcat.prowl"' --style compact --color always

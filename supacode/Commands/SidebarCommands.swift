@@ -21,6 +21,29 @@ struct SidebarCommands: Commands {
       .help(helpText(title: "Reveal in Sidebar", commandID: AppShortcuts.CommandID.revealInSidebar))
       .disabled(revealInSidebarAction == nil)
       Divider()
+      Button("Active Agents") {
+        store.send(.repositories(.activeAgents(.togglePanelVisibility)))
+      }
+      .modifier(
+        KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.toggleActiveAgentsPanel))
+      )
+      .help(helpText(title: "Active Agents", commandID: AppShortcuts.CommandID.toggleActiveAgentsPanel))
+      Button("Select Next Agent") {
+        store.send(.repositories(.activeAgents(.selectNextEntry)))
+      }
+      .modifier(
+        KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.selectNextActiveAgent))
+      )
+      .help(helpText(title: "Select Next Agent", commandID: AppShortcuts.CommandID.selectNextActiveAgent))
+      Button("Select Previous Agent") {
+        store.send(.repositories(.activeAgents(.selectPreviousEntry)))
+      }
+      .modifier(
+        KeyboardShortcutModifier(
+          shortcut: keyboardShortcut(for: AppShortcuts.CommandID.selectPreviousActiveAgent)
+        )
+      )
+      .help(helpText(title: "Select Previous Agent", commandID: AppShortcuts.CommandID.selectPreviousActiveAgent))
       Button("Canvas") {
         store.send(.repositories(.toggleCanvas))
       }
@@ -48,16 +71,8 @@ struct SidebarCommands: Commands {
       )
       .help(helpText(title: "Select Previous Book", commandID: AppShortcuts.CommandID.selectPreviousShelfBook))
       shelfBookMenuButtons
-      Button("Show Diff") {
-        let repos = store.repositories
-        guard let worktreeID = repos.selectedWorktreeID,
-          let worktree = repos.worktree(for: worktreeID)
-        else { return }
-        DiffWindowManager.shared.show(
-          worktreeURL: worktree.workingDirectory,
-          branchName: worktree.name,
-          resolvedKeybindings: store.resolvedKeybindings
-        )
+      Button("Show Diff", systemImage: "plusminus.circle") {
+        store.send(.showSelectedWorktreeDiff)
       }
       .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.showDiff)))
       .help(helpText(title: "Show Diff", commandID: AppShortcuts.CommandID.showDiff))
@@ -90,20 +105,20 @@ struct SidebarCommands: Commands {
 }
 
 private struct ToggleLeftSidebarActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 private struct RevealInSidebarActionKey: FocusedValueKey {
-  typealias Value = () -> Void
+  typealias Value = FocusedAction<Void>
 }
 
 extension FocusedValues {
-  var toggleLeftSidebarAction: (() -> Void)? {
+  var toggleLeftSidebarAction: FocusedAction<Void>? {
     get { self[ToggleLeftSidebarActionKey.self] }
     set { self[ToggleLeftSidebarActionKey.self] = newValue }
   }
 
-  var revealInSidebarAction: (() -> Void)? {
+  var revealInSidebarAction: FocusedAction<Void>? {
     get { self[RevealInSidebarActionKey.self] }
     set { self[RevealInSidebarActionKey.self] = newValue }
   }

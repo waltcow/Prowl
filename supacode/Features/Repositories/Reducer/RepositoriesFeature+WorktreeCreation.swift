@@ -139,19 +139,27 @@ extension RepositoriesFeature {
         return .none
       }
       @Shared(.settingsFile) var settingsFile
+      @Shared(.repositorySettings(repository.rootURL)) var repositorySettings
+      let defaultWorktreeBaseDirectory = SupacodePaths.worktreeBaseDirectory(
+        for: repository.rootURL,
+        globalDefaultPath: settingsFile.global.defaultWorktreeBaseDirectoryPath,
+        repositoryOverridePath: repositorySettings.worktreeBaseDirectoryPath
+      )
       state.worktreeCreationPrompt = WorktreeCreationPromptFeature.State(
         repositoryID: repository.id,
+        repositoryRootURL: repository.rootURL,
         repositoryName: repository.name,
         automaticBaseRef: automaticBaseRef,
         baseRefOptions: baseRefOptions,
         branchName: "",
         selectedBaseRef: selectedBaseRef,
         fetchRemote: settingsFile.global.fetchOriginBeforeWorktreeCreation,
+        defaultWorktreeBaseDirectory: defaultWorktreeBaseDirectory.path(percentEncoded: false),
         validationMessage: nil
       )
       return .none
 
-    case .startPromptedWorktreeCreation(let repositoryID, let branchName, let baseRef):
+    case .startPromptedWorktreeCreation(let repositoryID, let branchName, let baseRef, let placement):
       guard let repository = state.repositories[id: repositoryID] else {
         state.worktreeCreationPrompt = nil
         state.alert = messageAlert(
@@ -186,6 +194,7 @@ extension RepositoriesFeature {
               branchName: branchName,
               baseRef: baseRef,
               fetchRemote: fetchRemote,
+              placement: placement,
               duplicateMessage: duplicateMessage
             )
           )
@@ -198,6 +207,7 @@ extension RepositoriesFeature {
       let branchName,
       let baseRef,
       let fetchRemote,
+      let placement,
       let duplicateMessage
     ):
       guard let prompt = state.worktreeCreationPrompt, prompt.repositoryID == repositoryID else {
@@ -215,12 +225,14 @@ extension RepositoriesFeature {
             repositoryID: repositoryID,
             nameSource: .explicit(branchName),
             baseRefSource: .explicit(baseRef),
-            fetchRemote: fetchRemote
+            fetchRemote: fetchRemote,
+            placement: placement
           )
         )
       )
 
-    case .createWorktreeInRepository(let repositoryID, let nameSource, let baseRefSource, let fetchRemote):
+    case .createWorktreeInRepository(
+      let repositoryID, let nameSource, let baseRefSource, let fetchRemote, let placement):
       guard let repository = state.repositories[id: repositoryID] else {
         state.alert = messageAlert(
           title: "Unable to create worktree",
@@ -257,7 +269,7 @@ extension RepositoriesFeature {
           progress: WorktreeCreationProgress(stage: .loadingLocalBranches)
         )
       )
-      setSingleWorktreeSelection(pendingID, state: &state)
+      setSingleWorktreeSelection(pendingID, state: &state, recordHistory: true)
       let existingNames = Set(repository.worktrees.map { $0.name.lowercased() })
       let createWorktreeStream = gitClient.createWorktreeStream
       let isValidBranchName = gitClient.isValidBranchName
@@ -448,13 +460,23 @@ extension RepositoriesFeature {
             copyIgnored ? ((try? await gitClient.ignoredFileCount(repository.rootURL)) ?? 0) : 0
           progress.untrackedFilesToCopyCount =
             copyUntracked ? ((try? await gitClient.untrackedFileCount(repository.rootURL)) ?? 0) : 0
+          // Resolve an explicit destination from the dialog's name / parent-folder
+          // overrides; nil keeps `wt`'s default `base/<branch>` placement.
+          let directoryOverride = SupacodePaths.resolvedWorktreeDirectory(
+            defaultBaseDirectory: worktreeBaseDirectory,
+            repositoryRootURL: repository.rootURL,
+            nameOverride: placement.name,
+            pathOverride: placement.path,
+            branchName: name
+          )
           progress.stage = .creatingWorktree
           progress.commandText = worktreeCreateCommand(
             baseDirectoryURL: worktreeBaseDirectory,
             name: name,
             copyIgnored: copyIgnored,
             copyUntracked: copyUntracked,
-            baseRef: resolvedBaseRef
+            baseRef: resolvedBaseRef,
+            directoryOverride: directoryOverride
           )
           await send(
             .worktreeCreation(
@@ -465,12 +487,14 @@ extension RepositoriesFeature {
             )
           )
           let stream = createWorktreeStream(
-            name,
-            repository.rootURL,
-            worktreeBaseDirectory,
-            copyIgnored,
-            copyUntracked,
-            resolvedBaseRef
+            GitWorktreeCreateRequest(
+              name: name,
+              repoRoot: repository.rootURL,
+              baseDirectory: worktreeBaseDirectory,
+              copyFiles: GitWorktreeCreateRequest.CopyFiles(ignored: copyIgnored, untracked: copyUntracked),
+              baseRef: resolvedBaseRef,
+              directoryOverride: directoryOverride
+            )
           )
           for try await event in stream {
             switch event {
@@ -556,9 +580,14 @@ extension RepositoriesFeature {
       analyticsClient.capture("worktree_created", [String: Any]?.none)
       state.pendingSetupScriptWorktreeIDs.insert(worktree.id)
       state.pendingTerminalFocusWorktreeIDs.insert(worktree.id)
+      state.$prowlCreatedWorktreeIDs.withLock {
+        if !$0.contains(worktree.id) {
+          $0.append(worktree.id)
+        }
+      }
       removePendingWorktree(pendingID, state: &state)
       if state.selection == .worktree(pendingID) {
-        setSingleWorktreeSelection(worktree.id, state: &state)
+        setSingleWorktreeSelection(worktree.id, state: &state, recordHistory: false)
       }
       insertWorktree(worktree, repositoryID: repositoryID, state: &state)
       return .merge(
@@ -621,7 +650,7 @@ extension RepositoriesFeature {
         let repositoryRootURL = cleanupWorktree.repositoryRootURL
         effects.append(
           .run { send in
-            _ = try? await gitClient.removeWorktree(cleanupWorktree, true)
+            _ = try? await gitClient.removeWorktree(cleanupWorktree, false)
             _ = try? await gitClient.pruneWorktrees(repositoryRootURL)
             await send(.reloadRepositories(animated: true))
           }

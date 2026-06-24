@@ -56,6 +56,19 @@ Or use the `/sync-upstream` command which automates these steps.
 
 If conflicts happen, resolve once, commit, and `rerere` will likely auto-apply next time.
 
+## Ghostty Submodule Sync
+
+Prowl carries a small Ghostty fork patch for embedded APIs. Before changing or upgrading `ThirdParty/ghostty`, read
+`doc-onevcat/fork-sync-ghostty.md`.
+
+The submodule should point at `onevcat/ghostty` patched branches named `release/v<UPSTREAM_TAG>-patched`. After moving
+the submodule pointer, run:
+
+```bash
+make sync-ghostty
+make build-app
+```
+
 ## Release Workflow
 
 ### Full Public Release

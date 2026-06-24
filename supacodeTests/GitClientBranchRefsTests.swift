@@ -39,17 +39,23 @@ struct GitClientBranchRefsTests {
     #expect(remote == nil)
   }
 
-  @Test func branchRefsIncludesLocalAndUpstreamRefs() async throws {
+  @Test func branchRefsIncludesLocalAndRemoteTrackingRefs() async throws {
     let store = ShellCallStore()
-    let output = """
-      feature\torigin/feature
-      main\t
-      bugfix\torigin/bugfix
-      """
     let shell = ShellClient(
       run: { _, arguments, _ in
         await store.record(arguments)
-        return ShellOutput(stdout: output, stderr: "", exitCode: 0)
+        if arguments.contains("refs/heads") {
+          return ShellOutput(
+            stdout: "refs/heads/feature\nrefs/heads/main\nrefs/heads/bugfix\n",
+            stderr: "",
+            exitCode: 0
+          )
+        }
+        return ShellOutput(
+          stdout: "refs/remotes/origin/feature\nrefs/remotes/origin/bugfix\n",
+          stderr: "",
+          exitCode: 0
+        )
       },
       runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
     )
@@ -61,30 +67,112 @@ struct GitClientBranchRefsTests {
     let expected = ["bugfix", "feature", "main", "origin/bugfix", "origin/feature"]
       .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     #expect(refs == expected)
+    let options = try await client.branchRefOptions(for: repoRoot)
+    #expect(options.contains(GitBranchRefOption(ref: "main", kind: .local)))
+    #expect(options.contains(GitBranchRefOption(ref: "origin/feature", kind: .remoteTracking)))
     let calls = await store.calls
-    #expect(calls.count == 1)
+    #expect(calls.count == 4)
     let args = calls[0]
     #expect(args.first == "git")
     #expect(args.contains("for-each-ref"))
     #expect(args.contains("refs/heads"))
-    #expect(args.contains("--format=%(refname:short)\t%(upstream:short)"))
+    #expect(args.contains("--format=%(refname)"))
+    #expect(calls[1].contains("refs/remotes"))
   }
 
-  @Test func branchRefsDropsOriginHead() async throws {
-    let output = """
-      head\torigin/HEAD
-      main\torigin/main
-      """
+  @Test func branchRefOptionsOmitsRemoteHeadPointer() async throws {
     let shell = ShellClient(
-      run: { _, _, _ in ShellOutput(stdout: output, stderr: "", exitCode: 0) },
+      run: { _, arguments, _ in
+        if arguments.contains("refs/heads") {
+          return ShellOutput(stdout: "refs/heads/main\n", stderr: "", exitCode: 0)
+        }
+        return ShellOutput(
+          stdout: "refs/remotes/origin/HEAD\nrefs/remotes/origin/main\n",
+          stderr: "",
+          exitCode: 0
+        )
+      },
       runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
     )
     let client = GitClient(shell: shell)
     let repoRoot = URL(fileURLWithPath: "/tmp/repo")
 
     let refs = try await client.branchRefs(for: repoRoot)
+    let options = try await client.branchRefOptions(for: repoRoot)
 
-    #expect(refs == ["head", "main", "origin/main"])
+    #expect(refs == ["main", "origin/main"])
+    // `<remote>/HEAD` pointers must be filtered so the remote-tracking checkout
+    // path never derives an invalid `HEAD` branch name.
+    #expect(!options.contains(GitBranchRefOption(ref: "origin/HEAD", kind: .remoteTracking)))
+    #expect(options.contains(GitBranchRefOption(ref: "origin/main", kind: .remoteTracking)))
+  }
+
+  @Test func branchRefOptionsPreservesLocalBranchNamedHEAD() async throws {
+    let shell = ShellClient(
+      run: { _, arguments, _ in
+        if arguments.contains("refs/heads") {
+          return ShellOutput(
+            stdout: "refs/heads/main\nrefs/heads/fix/HEAD\n",
+            stderr: "",
+            exitCode: 0
+          )
+        }
+        return ShellOutput(
+          stdout: "refs/remotes/origin/HEAD\nrefs/remotes/origin/main\n",
+          stderr: "",
+          exitCode: 0
+        )
+      },
+      runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
+    )
+    let client = GitClient(shell: shell)
+    let repoRoot = URL(fileURLWithPath: "/tmp/repo")
+
+    let options = try await client.branchRefOptions(for: repoRoot)
+
+    #expect(
+      options.contains(GitBranchRefOption(ref: "fix/HEAD", kind: .local)),
+      "Local branch fix/HEAD must not be filtered out"
+    )
+    #expect(
+      !options.contains(GitBranchRefOption(ref: "origin/HEAD", kind: .remoteTracking)),
+      "Remote HEAD pointer should still be filtered"
+    )
+  }
+
+  @Test func remoteBranchRefsParsesDefaultHeadAndBranches() async throws {
+    let output = """
+      ref: refs/heads/main\tHEAD
+      abc123\tHEAD
+      def456\trefs/heads/develop
+      abc123\trefs/heads/main
+      """
+    let shell = ShellClient(
+      run: { _, arguments, _ in
+        #expect(
+          arguments == [
+            "git",
+            "ls-remote",
+            "--symref",
+            "--end-of-options",
+            "git@github.com:onevcat/app.git",
+            "HEAD",
+            "refs/heads/*",
+          ])
+        return ShellOutput(stdout: output, stderr: "", exitCode: 0)
+      },
+      runLoginImpl: { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
+    )
+    let client = GitClient(shell: shell)
+
+    let refs = try await client.remoteBranchRefs(for: "git@github.com:onevcat/app.git")
+
+    #expect(refs.defaultBaseRef == "origin/main")
+    #expect(
+      refs.options == [
+        GitBranchRefOption(ref: "origin/develop", kind: .fetchedRemote),
+        GitBranchRefOption(ref: "origin/main", kind: .fetchedRemote),
+      ])
   }
 
   @Test func defaultRemoteBranchRefStripsPrefix() async throws {

@@ -5,6 +5,7 @@ struct GhosttySurfaceSearchOverlay: View {
   let surfaceView: GhosttySurfaceView
   @Bindable var state: GhosttySurfaceState
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts
+  @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
   @State private var searchText: String
   @State private var corner: GhosttySearchCorner = .topRight
@@ -32,7 +33,7 @@ struct GhosttySurfaceSearchOverlay: View {
               navigateSearch(isShifted ? .previous : .next)
             },
             onEscape: {
-              isSearchFieldFocused = false
+              closeSearch()
               surfaceView.requestFocus()
             }
           )
@@ -41,47 +42,51 @@ struct GhosttySurfaceSearchOverlay: View {
           .padding(.trailing, 50)
           .padding(.vertical, 6)
           .background(Color.primary.opacity(0.1))
-          .clipShape(.rect(cornerRadius: 6))
+          .clipShape(.capsule)
           .overlay(alignment: .trailing) {
             matchLabel
           }
-
-          Button {
-            navigateSearch(.next)
-          } label: {
-            SearchButtonLabel(
-              title: "Next",
-              shortcut: ghosttyShortcuts.display(for: "search:next"),
-              systemImage: "chevron.up"
-            )
-          }
-          .buttonStyle(GhosttySearchButtonStyle())
 
           Button {
             navigateSearch(.previous)
           } label: {
             SearchButtonLabel(
               title: "Previous",
-              shortcut: ghosttyShortcuts.display(for: "search:previous"),
+              shortcut: resolvedKeybindings.display(for: AppShortcuts.CommandID.findPrevious),
+              systemImage: "chevron.up"
+            )
+          }
+          .buttonStyle(GhosttySearchButtonStyle())
+          .help(searchButtonHelp("Find Previous", commandID: AppShortcuts.CommandID.findPrevious))
+
+          Button {
+            navigateSearch(.next)
+          } label: {
+            SearchButtonLabel(
+              title: "Next",
+              shortcut: resolvedKeybindings.display(for: AppShortcuts.CommandID.findNext),
               systemImage: "chevron.down"
             )
           }
           .buttonStyle(GhosttySearchButtonStyle())
+          .help(searchButtonHelp("Find Next", commandID: AppShortcuts.CommandID.findNext))
 
           Button {
             closeSearch()
+            surfaceView.requestFocus()
           } label: {
             SearchButtonLabel(
               title: "Close",
-              shortcut: ghosttyShortcuts.display(for: "end_search"),
+              shortcut: nil,
               systemImage: "xmark"
             )
           }
           .buttonStyle(GhosttySearchButtonStyle())
+          .help("Close Find Bar (Esc)")
         }
         .padding(8)
         .background(.background)
-        .clipShape(GhosttySearchOverlayShape())
+        .clipShape(.capsule)
         .shadow(radius: 4)
         .background(
           GeometryReader { barGeo in
@@ -127,6 +132,11 @@ struct GhosttySurfaceSearchOverlay: View {
           searchText = newValue
         }
       }
+      .onChange(of: state.searchTotal) { _, newValue in
+        if let total = newValue, total > 0, state.searchSelected == nil {
+          surfaceView.performBindingAction("navigate_search:next")
+        }
+      }
       .onChange(of: state.searchFocusCount) { _, _ in
         focusSearchField()
       }
@@ -139,9 +149,8 @@ struct GhosttySurfaceSearchOverlay: View {
 
   @ViewBuilder
   private var matchLabel: some View {
-    if let selected = state.searchSelected {
-      let totalLabel = state.searchTotal.map(String.init) ?? "?"
-      Text("\(selected + 1)/\(totalLabel)")
+    if let selected = state.searchSelected, let total = state.searchTotal {
+      Text("\(total - selected)/\(total)")
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.trailing, 8)
@@ -190,6 +199,13 @@ struct GhosttySurfaceSearchOverlay: View {
     searchTask.cancel()
     self.searchTask = nil
     emitSearch(searchText)
+  }
+
+  private func searchButtonHelp(_ title: String, commandID: String) -> String {
+    if let shortcut = resolvedKeybindings.display(for: commandID) {
+      return "\(title) (\(shortcut))"
+    }
+    return title
   }
 
   private func focusSearchField() {
@@ -249,10 +265,7 @@ private enum GhosttySearchCorner {
 
 private struct GhosttySearchOverlayShape: Shape {
   func path(in rect: CGRect) -> Path {
-    if #available(macOS 26.0, *) {
-      return ConcentricRectangle(corners: .concentric(minimum: 8), isUniform: true).path(in: rect)
-    }
-    return RoundedRectangle(cornerRadius: 8).path(in: rect)
+    ConcentricRectangle(corners: .concentric(minimum: 8), isUniform: true).path(in: rect)
   }
 }
 
@@ -262,16 +275,8 @@ private struct SearchButtonLabel: View {
   let systemImage: String
 
   var body: some View {
-    Label {
-      if let shortcut {
-        Text("\(title) \(Text("(\(shortcut))").foregroundColor(.secondary.opacity(0.7)))")
-      } else {
-        Text(title)
-      }
-    } icon: {
-      Image(systemName: systemImage)
-        .accessibilityHidden(true)
-    }
+    Image(systemName: systemImage)
+      .accessibilityHidden(true)
   }
 }
 
@@ -323,6 +328,25 @@ private struct GhosttySearchField: NSViewRepresentable {
       guard let field = obj.object as? NSTextField else { return }
       text = field.stringValue
     }
+
+    func control(
+      _ control: NSControl,
+      textView: NSTextView,
+      doCommandBy commandSelector: Selector
+    ) -> Bool {
+      guard let field = control as? SearchField else { return false }
+      switch commandSelector {
+      case #selector(NSResponder.insertNewline(_:)):
+        let isShifted = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+        field.onSubmit?(isShifted)
+        return true
+      case #selector(NSResponder.cancelOperation(_:)):
+        field.onEscape?()
+        return true
+      default:
+        return false
+      }
+    }
   }
 
   final class SearchField: NSTextField {
@@ -331,6 +355,20 @@ private struct GhosttySearchField: NSViewRepresentable {
 
     override func cancelOperation(_ sender: Any?) {
       onEscape?()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+      guard currentEditor() != nil,
+        event.type == .keyDown,
+        event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command]
+          || event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
+        event.charactersIgnoringModifiers?.lowercased() == "g"
+      else {
+        return super.performKeyEquivalent(with: event)
+      }
+      let isShifted = event.modifierFlags.contains(.shift)
+      onSubmit?(isShifted)
+      return true
     }
 
     override func keyDown(with event: NSEvent) {
@@ -352,10 +390,10 @@ private struct GhosttySearchButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .foregroundStyle(isHovered || configuration.isPressed ? .primary : .secondary)
-      .padding(.horizontal, 2)
+      .padding(.horizontal, 6)
       .frame(height: 26)
       .background(
-        RoundedRectangle(cornerRadius: 6)
+        Capsule()
           .fill(backgroundColor(isPressed: configuration.isPressed))
       )
       .onHover { hovering in

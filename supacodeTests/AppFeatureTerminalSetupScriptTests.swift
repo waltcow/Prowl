@@ -71,6 +71,7 @@ struct AppFeatureTerminalSetupScriptTests {
       pendingSetupScript: true,
       selected: true
     )
+    let watcherCommands = LockIsolated<[WorktreeInfoWatcherClient.Command]>([])
     let store = TestStore(
       initialState: AppFeature.State(
         repositories: repositoriesState,
@@ -78,6 +79,10 @@ struct AppFeatureTerminalSetupScriptTests {
       )
     ) {
       AppFeature()
+    } withDependencies: {
+      $0.worktreeInfoWatcher.send = { command in
+        watcherCommands.withValue { $0.append(command) }
+      }
     }
 
     await store.send(.terminalEvent(.tabCreated(worktreeID: worktree.id)))
@@ -86,6 +91,37 @@ struct AppFeatureTerminalSetupScriptTests {
     }
     #expect(store.state.repositories.pendingSetupScriptWorktreeIDs.contains(worktree.id))
     await store.finish()
+    #expect(watcherCommands.value == [.setOpenedWorktreeIDs([worktree.id])])
+  }
+
+  @Test(.dependencies) func tabClosedSyncsOpenedWorktreesToInfoWatcher() async {
+    let worktree = makeWorktree()
+    var repositoriesState = makeRepositoriesState(
+      worktree: worktree,
+      pendingSetupScript: false,
+      selected: true
+    )
+    repositoriesState.openedWorktreeIDs = [worktree.id]
+    let watcherCommands = LockIsolated<[WorktreeInfoWatcherClient.Command]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.worktreeInfoWatcher.send = { command in
+        watcherCommands.withValue { $0.append(command) }
+      }
+    }
+
+    await store.send(.terminalEvent(.tabClosed(worktreeID: worktree.id, remainingTabs: 0)))
+    await store.receive(\.repositories.markWorktreeClosed) {
+      $0.repositories.openedWorktreeIDs = []
+    }
+    await store.finish()
+    #expect(watcherCommands.value == [.setOpenedWorktreeIDs([])])
   }
 
   @Test(.dependencies) func setupScriptConsumedEventClearsPending() async {

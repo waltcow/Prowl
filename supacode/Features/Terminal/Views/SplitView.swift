@@ -10,7 +10,10 @@ struct SplitView<L: View, R: View>: View {
   let onEqualize: () -> Void
   let minSize: CGFloat = 10
   @Binding var split: CGFloat
-  private let splitterVisibleSize: CGFloat = 1
+  static var defaultVisibleSize: CGFloat { 1 }
+  // Visible thickness of the divider bar. The invisible hitbox stays constant
+  // so resize ergonomics don't depend on the visible thickness.
+  let splitterVisibleSize: CGFloat
   private let splitterInvisibleSize: CGFloat = 6
 
   var body: some View {
@@ -45,6 +48,7 @@ struct SplitView<L: View, R: View>: View {
     _ direction: Direction,
     _ split: Binding<CGFloat>,
     dividerColor: Color,
+    dividerVisibleSize: CGFloat = Self.defaultVisibleSize,
     resizeIncrements: CGSize = .init(width: 1, height: 1),
     @ViewBuilder left: (() -> L),
     @ViewBuilder right: (() -> R),
@@ -53,6 +57,7 @@ struct SplitView<L: View, R: View>: View {
     self.direction = direction
     self._split = split
     self.dividerColor = dividerColor
+    self.splitterVisibleSize = dividerVisibleSize
     self.resizeIncrements = resizeIncrements
     self.left = left()
     self.right = right()

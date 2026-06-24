@@ -68,8 +68,10 @@ fastlane/test_output
 Frameworks/GhosttyKit.xcframework
 Resources/ghostty
 Resources/terminfo
+Resources/docs
 .ghostty_hash
 .ghostty_build_stamp
+.build_settings_cache.json
 *.profraw
 .env
 build/
@@ -77,3 +79,4 @@ build/
 
 # Release-only credentials (analytics, crash reporting)
 Config/Secrets.env
+.build-benchmark/

@@ -24,7 +24,7 @@ struct UpdatesSettingsView: View {
         } footer: {
           Text(
             "When a new version is available, a small badge appears next to the notifications bell. "
-              + "Click it to review and install the update."
+              + "Click it to review, install, and choose future background downloads."
           )
           .font(.callout)
           .foregroundStyle(.secondary)

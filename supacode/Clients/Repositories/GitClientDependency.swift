@@ -8,6 +8,8 @@ struct GitClientDependency: Sendable {
   var localBranchNames: @Sendable (URL) async throws -> Set<String>
   var isValidBranchName: @Sendable (String, URL) async -> Bool
   var branchRefs: @Sendable (URL) async throws -> [String]
+  var branchRefOptions: @Sendable (URL) async throws -> [GitBranchRefOption]
+  var remoteBranchRefs: @Sendable (String) async throws -> GitRemoteBranchRefs
   var defaultRemoteBranchRef: @Sendable (URL) async throws -> String?
   var automaticWorktreeBaseRef: @Sendable (URL) async -> String?
   var ignoredFileCount: @Sendable (URL) async throws -> Int
@@ -22,21 +24,17 @@ struct GitClientDependency: Sendable {
       _ baseRef: String
     ) async throws
       -> Worktree
-  var createWorktreeStream:
-    @Sendable (
-      _ name: String,
-      _ repoRoot: URL,
-      _ baseDirectory: URL,
-      _ copyIgnored: Bool,
-      _ copyUntracked: Bool,
-      _ baseRef: String
-    ) -> AsyncThrowingStream<GitWorktreeCreateEvent, Error>
+  var createWorktreeStream: @Sendable (GitWorktreeCreateRequest) -> AsyncThrowingStream<GitWorktreeCreateEvent, Error>
   var removeWorktree: @Sendable (_ worktree: Worktree, _ deleteBranch: Bool) async throws -> URL
+  var deleteLocalBranch:
+    @Sendable (_ branchName: String, _ repoRoot: URL, _ force: Bool) async throws
+      -> LocalBranchDeletionOutcome
   var isBareRepository: @Sendable (_ repoRoot: URL) async throws -> Bool
   var branchName: @Sendable (URL) async -> String?
   var lineChanges: @Sendable (URL) async -> (added: Int, removed: Int)?
   var renameBranch: @Sendable (_ worktreeURL: URL, _ branchName: String) async throws -> Void
   var repositoryWebURL: @Sendable (_ repositoryRoot: URL) async -> URL?
+  var githubRemoteInfos: @Sendable (_ repositoryRoot: URL) async -> [GithubRemoteInfo]
   var remoteInfo: @Sendable (_ repositoryRoot: URL) async -> GithubRemoteInfo?
   var remoteNames: @Sendable (_ repoRoot: URL) async throws -> [String]
   var fetchRemote: @Sendable (_ remote: String, _ repoRoot: URL) async throws -> Void
@@ -52,6 +50,8 @@ extension GitClientDependency: DependencyKey {
       await GitClient().isValidBranchName(branchName, for: repoRoot)
     },
     branchRefs: { try await GitClient().branchRefs(for: $0) },
+    branchRefOptions: { try await GitClient().branchRefOptions(for: $0) },
+    remoteBranchRefs: { try await GitClient().remoteBranchRefs(for: $0) },
     defaultRemoteBranchRef: { try await GitClient().defaultRemoteBranchRef(for: $0) },
     automaticWorktreeBaseRef: { await GitClient().automaticWorktreeBaseRef(for: $0) },
     ignoredFileCount: { try await GitClient().ignoredFileCount(for: $0) },
@@ -65,17 +65,14 @@ extension GitClientDependency: DependencyKey {
         baseRef: baseRef
       )
     },
-    createWorktreeStream: { name, repoRoot, baseDirectory, copyIgnored, copyUntracked, baseRef in
-      GitClient().createWorktreeStream(
-        named: name,
-        in: repoRoot,
-        baseDirectory: baseDirectory,
-        copyFiles: (ignored: copyIgnored, untracked: copyUntracked),
-        baseRef: baseRef
-      )
+    createWorktreeStream: { request in
+      GitClient().createWorktreeStream(request)
     },
     removeWorktree: { worktree, deleteBranch in
       try await GitClient().removeWorktree(worktree, deleteBranch: deleteBranch)
+    },
+    deleteLocalBranch: { branchName, repoRoot, force in
+      try await GitClient().deleteLocalBranch(named: branchName, for: repoRoot, force: force)
     },
     isBareRepository: { repoRoot in
       try await GitClient().isBareRepository(for: repoRoot)
@@ -87,6 +84,9 @@ extension GitClientDependency: DependencyKey {
     },
     repositoryWebURL: { repositoryRoot in
       await GitClient().repositoryWebURL(for: repositoryRoot)
+    },
+    githubRemoteInfos: { repositoryRoot in
+      await GitClient().githubRemoteInfos(for: repositoryRoot)
     },
     remoteInfo: { repositoryRoot in
       await GitClient().remoteInfo(for: repositoryRoot)

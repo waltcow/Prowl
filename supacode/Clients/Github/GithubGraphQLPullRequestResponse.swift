@@ -16,10 +16,24 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
         continue
       }
       let upstreamCandidates = connection.nodes.filter { $0.matches(owner: normalizedOwner, repo: normalizedRepo) }
-      let candidates =
-        upstreamCandidates.isEmpty
-        ? connection.nodes.filter { $0.headRepository != nil }
-        : upstreamCandidates
+      let candidates: [PullRequestNode]
+      if !upstreamCandidates.isEmpty {
+        candidates = upstreamCandidates
+      } else {
+        // Without an upstream-repository match, same-name base branches are likely from unrelated
+        // fork workflows and can shadow the local worktree branch this app is trying to resolve.
+        let forkCandidates = connection.nodes.filter {
+          $0.headRepository != nil && $0.doesNotTargetSameBranch(branch)
+        }
+        candidates =
+          if !forkCandidates.isEmpty {
+            forkCandidates
+          } else {
+            connection.nodes.filter {
+              $0.headRepository == nil && $0.doesNotTargetSameBranch(branch)
+            }
+          }
+      }
       if let node = candidates.max(by: { left, right in
         let leftRank = left.stateRank
         let rightRank = right.stateRank
@@ -92,6 +106,7 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
     let commits: CommitConnection?
     let author: PullRequestAuthor?
     let statusCheckRollup: GithubPullRequestStatusCheckRollup?
+    let mergeQueueEntry: GithubMergeQueueEntry?
     let headRepository: HeadRepository?
 
     var pullRequest: GithubPullRequest {
@@ -111,7 +126,8 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
         baseRefName: baseRefName,
         commitsCount: commits?.totalCount,
         authorLogin: author?.login,
-        statusCheckRollup: statusCheckRollup
+        statusCheckRollup: statusCheckRollup,
+        mergeQueueEntry: mergeQueueEntry
       )
     }
 
@@ -132,6 +148,13 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
       }
       return headRepository.owner.login.lowercased() == owner
         && headRepository.name.lowercased() == repo
+    }
+
+    func doesNotTargetSameBranch(_ branch: String) -> Bool {
+      guard let baseRefName else {
+        return true
+      }
+      return baseRefName != branch
     }
   }
 

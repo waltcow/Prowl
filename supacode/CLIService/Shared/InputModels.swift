@@ -26,6 +26,10 @@ public struct ListInput: Codable, Sendable {
   public init() {}
 }
 
+public struct AgentsInput: Codable, Sendable {
+  public init() {}
+}
+
 public struct FocusInput: Codable, Sendable {
   public let selector: TargetSelector
 
@@ -108,9 +112,91 @@ public struct KeyInput: Codable, Sendable {
 public struct ReadInput: Codable, Sendable {
   public let selector: TargetSelector
   public let last: Int?
+  /// When true, the app re-reads the pane until its output stops changing before responding.
+  public let waitStable: Bool
+  /// Sampling interval in milliseconds while waiting for stable output (nil → app default).
+  public let stableIntervalMs: Int?
+  /// Output must stay unchanged for this many milliseconds to count as stable (nil → app default).
+  public let stablePeriodMs: Int?
+  /// Maximum seconds to keep waiting for stable output before returning the latest snapshot (nil → app default).
+  public let waitTimeoutSeconds: Int?
 
-  public init(selector: TargetSelector = .none, last: Int? = nil) {
+  public init(
+    selector: TargetSelector = .none,
+    last: Int? = nil,
+    waitStable: Bool = false,
+    stableIntervalMs: Int? = nil,
+    stablePeriodMs: Int? = nil,
+    waitTimeoutSeconds: Int? = nil
+  ) {
     self.selector = selector
     self.last = last
+    self.waitStable = waitStable
+    self.stableIntervalMs = stableIntervalMs
+    self.stablePeriodMs = stablePeriodMs
+    self.waitTimeoutSeconds = waitTimeoutSeconds
+  }
+}
+
+public enum TabAction: String, Codable, Sendable {
+  case create
+  case close
+}
+
+public struct TabInput: Codable, Sendable {
+  public let action: TabAction
+  public let selector: TargetSelector
+  public let path: String?
+  public let force: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case action
+    case selector
+    case path
+    case force
+  }
+
+  public init(action: TabAction, selector: TargetSelector = .none, path: String? = nil, force: Bool = false) {
+    self.action = action
+    self.selector = selector
+    self.path = path
+    self.force = force
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(TabAction.self, forKey: .action)
+    self.selector = try container.decode(TargetSelector.self, forKey: .selector)
+    self.path = try container.decodeIfPresent(String.self, forKey: .path)
+    self.force = try container.decodeIfPresent(Bool.self, forKey: .force) ?? false
+  }
+}
+
+public enum PaneAction: String, Codable, Sendable {
+  case close
+}
+
+public struct PaneInput: Codable, Sendable {
+  public let action: PaneAction
+  public let selector: TargetSelector
+  public let force: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case action
+    case selector
+    case force
+  }
+
+  public init(action: PaneAction, selector: TargetSelector = .none, force: Bool = false) {
+    self.action = action
+    self.selector = selector
+    self.force = force
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.action = try container.decode(PaneAction.self, forKey: .action)
+    self.selector = try container.decode(TargetSelector.self, forKey: .selector)
+    self.force = try container.decodeIfPresent(Bool.self, forKey: .force) ?? false
   }
 }

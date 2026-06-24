@@ -5,25 +5,48 @@ import Sparkle
 private let updaterLogger = SupaLogger("Updater")
 
 struct UpdaterClient {
-  var configure: @MainActor @Sendable (_ checks: Bool, _ downloads: Bool, _ checkInBackground: Bool) -> Void
+  var configure: @MainActor @Sendable (_ checks: Bool, _ checkInBackground: Bool) -> Void
   var setUpdateChannel: @MainActor @Sendable (UpdateChannel) -> Void
   var checkForUpdates: @MainActor @Sendable () -> Void
+  var installDownloadedUpdate: @MainActor @Sendable () -> Void
   var events: @MainActor @Sendable () -> AsyncStream<Event>
 }
 
 extension UpdaterClient {
   enum Event: Equatable, Sendable {
     case silentUpdateFound(version: String?)
+    case downloadedUpdateReadyToInstall(version: String?)
   }
 }
 
 @MainActor
 final class SparkleUpdateDelegate: NSObject, SPUUpdaterDelegate {
   var updateChannel: UpdateChannel = .stable
+  private var continuation: AsyncStream<UpdaterClient.Event>.Continuation?
+  private var immediateInstallHandler: (() -> Void)?
 
   nonisolated func allowedChannels(for updater: SPUUpdater) -> Set<String> {
     // Tip channel is no longer published separately; treat it the same as stable.
     []
+  }
+
+  func setContinuation(_ continuation: AsyncStream<UpdaterClient.Event>.Continuation) {
+    self.continuation?.finish()
+    self.continuation = continuation
+  }
+
+  func installDownloadedUpdate() {
+    immediateInstallHandler?()
+  }
+
+  func updater(
+    _ updater: SPUUpdater,
+    willInstallUpdateOnQuit item: SUAppcastItem,
+    immediateInstallationBlock immediateInstallHandler: @escaping () -> Void
+  ) -> Bool {
+    self.immediateInstallHandler = immediateInstallHandler
+    continuation?.yield(.downloadedUpdateReadyToInstall(version: item.displayVersionString))
+    return true
   }
 }
 
@@ -33,10 +56,15 @@ final class SparkleUpdateDelegate: NSObject, SPUUpdaterDelegate {
 final class SilentUpdateDriver: NSObject, SPUUserDriver {
   private let standard: SPUStandardUserDriver
   private var continuation: AsyncStream<UpdaterClient.Event>.Continuation?
+  private var automaticallyChecksForUpdates = GlobalSettings.default.updatesAutomaticallyCheckForUpdates
 
   init(hostBundle: Bundle) {
     self.standard = SPUStandardUserDriver(hostBundle: hostBundle, delegate: nil)
     super.init()
+  }
+
+  func setAutomaticUpdatePreferences(checks: Bool) {
+    automaticallyChecksForUpdates = checks
   }
 
   func setContinuation(_ continuation: AsyncStream<UpdaterClient.Event>.Continuation) {
@@ -44,139 +72,115 @@ final class SilentUpdateDriver: NSObject, SPUUserDriver {
     self.continuation = continuation
   }
 
-  nonisolated func show(
+  // `SPUUserDriver` is declared `NS_SWIFT_UI_ACTOR` (main-actor isolated) as of Sparkle 2.9,
+  // so these callbacks are guaranteed to arrive on the main thread. Implement them as plain
+  // `@MainActor` methods and let the compiler enforce isolation, rather than reaching for
+  // `MainActor.assumeIsolated`, which would crash on any future off-main delivery.
+  func show(
     _ request: SPUUpdatePermissionRequest,
     reply: @escaping @Sendable (SUUpdatePermissionResponse) -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.show(request, reply: reply)
-    }
+    reply(
+      SUUpdatePermissionResponse(
+        automaticUpdateChecks: automaticallyChecksForUpdates,
+        automaticUpdateDownloading: nil,
+        sendSystemProfile: false
+      )
+    )
   }
 
-  nonisolated func showUserInitiatedUpdateCheck(cancellation: @escaping @Sendable () -> Void) {
-    MainActor.assumeIsolated {
-      standard.showUserInitiatedUpdateCheck(cancellation: cancellation)
-    }
+  func showUserInitiatedUpdateCheck(cancellation: @escaping @Sendable () -> Void) {
+    standard.showUserInitiatedUpdateCheck(cancellation: cancellation)
   }
 
-  nonisolated func showUpdateFound(
+  func showUpdateFound(
     with appcastItem: SUAppcastItem,
     state: SPUUserUpdateState,
     reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void
   ) {
-    MainActor.assumeIsolated {
-      if state.userInitiated {
-        if shouldConfirmInstallAndRelaunchImmediately(for: state.stage) {
-          reply(confirmInstallAndRelaunchChoice())
-          return
-        }
-        standard.showUpdateFound(with: appcastItem, state: state, reply: reply)
+    if state.userInitiated {
+      if shouldConfirmInstallAndRelaunchImmediately(for: state.stage) {
+        reply(confirmInstallAndRelaunchChoice())
         return
       }
-      // Background check: surface the availability silently, then defer so Sparkle
-      // will re-offer the same update on the next (user-initiated) check.
-      continuation?.yield(.silentUpdateFound(version: appcastItem.displayVersionString))
-      reply(silentBackgroundUpdateChoice(for: state.stage))
+      standard.showUpdateFound(with: appcastItem, state: state, reply: reply)
+      return
     }
+    // Background check: surface the availability silently, then defer so Sparkle
+    // will re-offer the same update on the next (user-initiated) check.
+    continuation?.yield(.silentUpdateFound(version: appcastItem.displayVersionString))
+    reply(silentBackgroundUpdateChoice(for: state.stage))
   }
 
-  nonisolated func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
-    MainActor.assumeIsolated {
-      standard.showUpdateReleaseNotes(with: downloadData)
-    }
+  func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
+    standard.showUpdateReleaseNotes(with: downloadData)
   }
 
-  nonisolated func showUpdateReleaseNotesFailedToDownloadWithError(_ error: any Error) {
-    MainActor.assumeIsolated {
-      standard.showUpdateReleaseNotesFailedToDownloadWithError(error)
-    }
+  func showUpdateReleaseNotesFailedToDownloadWithError(_ error: any Error) {
+    standard.showUpdateReleaseNotesFailedToDownloadWithError(error)
   }
 
-  nonisolated func showUpdateNotFoundWithError(
+  func showUpdateNotFoundWithError(
     _ error: any Error,
     acknowledgement: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
-    }
+    standard.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
   }
 
-  nonisolated func showUpdaterError(
+  func showUpdaterError(
     _ error: any Error,
     acknowledgement: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showUpdaterError(error, acknowledgement: acknowledgement)
-    }
+    standard.showUpdaterError(error, acknowledgement: acknowledgement)
   }
 
-  nonisolated func showDownloadInitiated(cancellation: @escaping @Sendable () -> Void) {
-    MainActor.assumeIsolated {
-      standard.showDownloadInitiated(cancellation: cancellation)
-    }
+  func showDownloadInitiated(cancellation: @escaping @Sendable () -> Void) {
+    standard.showDownloadInitiated(cancellation: cancellation)
   }
 
-  nonisolated func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
-    MainActor.assumeIsolated {
-      standard.showDownloadDidReceiveExpectedContentLength(expectedContentLength)
-    }
+  func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+    standard.showDownloadDidReceiveExpectedContentLength(expectedContentLength)
   }
 
-  nonisolated func showDownloadDidReceiveData(ofLength length: UInt64) {
-    MainActor.assumeIsolated {
-      standard.showDownloadDidReceiveData(ofLength: length)
-    }
+  func showDownloadDidReceiveData(ofLength length: UInt64) {
+    standard.showDownloadDidReceiveData(ofLength: length)
   }
 
-  nonisolated func showDownloadDidStartExtractingUpdate() {
-    MainActor.assumeIsolated {
-      standard.showDownloadDidStartExtractingUpdate()
-    }
+  func showDownloadDidStartExtractingUpdate() {
+    standard.showDownloadDidStartExtractingUpdate()
   }
 
-  nonisolated func showExtractionReceivedProgress(_ progress: Double) {
-    MainActor.assumeIsolated {
-      standard.showExtractionReceivedProgress(progress)
-    }
+  func showExtractionReceivedProgress(_ progress: Double) {
+    standard.showExtractionReceivedProgress(progress)
   }
 
-  nonisolated func showReady(toInstallAndRelaunch reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void) {
-    MainActor.assumeIsolated {
-      reply(confirmInstallAndRelaunchChoice())
-    }
+  func showReady(toInstallAndRelaunch reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void) {
+    reply(confirmInstallAndRelaunchChoice())
   }
 
-  nonisolated func showInstallingUpdate(
+  func showInstallingUpdate(
     withApplicationTerminated applicationTerminated: Bool,
     retryTerminatingApplication: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showInstallingUpdate(
-        withApplicationTerminated: applicationTerminated,
-        retryTerminatingApplication: retryTerminatingApplication
-      )
-    }
+    standard.showInstallingUpdate(
+      withApplicationTerminated: applicationTerminated,
+      retryTerminatingApplication: retryTerminatingApplication
+    )
   }
 
-  nonisolated func showUpdateInstalledAndRelaunched(
+  func showUpdateInstalledAndRelaunched(
     _ relaunched: Bool,
     acknowledgement: @escaping @Sendable () -> Void
   ) {
-    MainActor.assumeIsolated {
-      standard.showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)
-    }
+    standard.showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)
   }
 
-  nonisolated func showUpdateInFocus() {
-    MainActor.assumeIsolated {
-      standard.showUpdateInFocus()
-    }
+  func showUpdateInFocus() {
+    standard.showUpdateInFocus()
   }
 
-  nonisolated func dismissUpdateInstallation() {
-    MainActor.assumeIsolated {
-      standard.dismissUpdateInstallation()
-    }
+  func dismissUpdateInstallation() {
+    standard.dismissUpdateInstallation()
   }
 }
 
@@ -226,12 +230,9 @@ extension UpdaterClient: DependencyKey {
       updaterLogger.warning("SPUUpdater start failed: \(String(describing: error))")
     }
     return UpdaterClient(
-      configure: { checks, _, checkInBackground in
+      configure: { checks, checkInBackground in
+        driver.setAutomaticUpdatePreferences(checks: checks)
         updater.automaticallyChecksForUpdates = checks
-        // Silent update flow requires Sparkle to always prompt us via `showUpdateFound`
-        // so we can decide whether to surface the toolbar button. Auto-download would
-        // bypass that callback, so we force it off regardless of user preference.
-        updater.automaticallyDownloadsUpdates = false
         if checkInBackground, checks {
           updater.checkForUpdatesInBackground()
         }
@@ -246,18 +247,23 @@ extension UpdaterClient: DependencyKey {
       checkForUpdates: {
         updater.checkForUpdates()
       },
+      installDownloadedUpdate: {
+        delegate.installDownloadedUpdate()
+      },
       events: {
         let (stream, continuation) = AsyncStream.makeStream(of: Event.self)
         driver.setContinuation(continuation)
+        delegate.setContinuation(continuation)
         return stream
       }
     )
   }()
 
   static let testValue = UpdaterClient(
-    configure: { _, _, _ in },
+    configure: { _, _ in },
     setUpdateChannel: { _ in },
     checkForUpdates: {},
+    installDownloadedUpdate: {},
     events: { AsyncStream { _ in } }
   )
 }

@@ -4,20 +4,18 @@ import SwiftUI
 struct EmptyStateView: View {
   let store: StoreOf<RepositoriesFeature>
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
+  @State private var isAddChoicePresented = false
 
   var body: some View {
-    let shortcutDisplay = AppShortcuts.display(for: AppShortcuts.CommandID.openRepository, in: resolvedKeybindings)
-    VStack {
-      Image(systemName: "tray")
-        .font(.title2)
-        .accessibilityHidden(true)
-      Text("Open a repository or folder")
-        .font(.headline)
+    let shortcutDisplay = AppShortcuts.display(
+      for: AppShortcuts.CommandID.openRepository, in: resolvedKeybindings)
+    ContentUnavailableView {
+      Label("Open a repository or folder", systemImage: "folder.badge.plus")
+    } description: {
       Text(promptText(shortcutDisplay: shortcutDisplay))
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-      Button("Open Repository...") {
-        store.send(.setOpenPanelPresented(true))
+    } actions: {
+      Button("Add...") {
+        isAddChoicePresented = true
       }
       .modifier(
         KeyboardShortcutModifier(
@@ -26,20 +24,38 @@ struct EmptyStateView: View {
       )
       .help(
         AppShortcuts.helpText(
-          title: "Open Repository",
+          title: "Add Repository",
           commandID: AppShortcuts.CommandID.openRepository,
           in: resolvedKeybindings
         ))
     }
+    .confirmationDialog(
+      "Add to Prowl",
+      isPresented: $isAddChoicePresented,
+      titleVisibility: .visible
+    ) {
+      Button("Add Local Repository/Folder") {
+        store.send(.setOpenPanelPresented(true))
+      }
+      Button("Add Workspace") {
+        store.send(.workspaceCreation(.promptRequested))
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "A local repository or folder opens one project root. "
+          + "A workspace creates one shared task folder "
+          + "containing multiple repositories for one agent to work across."
+      )
+    }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(nsColor: .windowBackgroundColor))
-    .multilineTextAlignment(.center)
   }
 
   private func promptText(shortcutDisplay: String?) -> String {
     if let shortcutDisplay {
-      return "Press \(shortcutDisplay) or click Open Repository to choose a folder."
+      return "Press \(shortcutDisplay) or click Add to add one."
     }
-    return "Click Open Repository to choose a folder."
+    return "Click Add to add one."
   }
 }

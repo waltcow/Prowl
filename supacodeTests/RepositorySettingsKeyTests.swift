@@ -136,6 +136,38 @@ struct RepositorySettingsKeyTests {
     #expect(decoded.pullRequestMergeStrategy == .merge)
   }
 
+  @Test func decodeMissingObservationOverridesDefaultsToEnabled() throws {
+    let data = Data(
+      """
+      {
+        "setupScript": "",
+        "archiveScript": "",
+        "runScript": "echo run",
+        "openActionID": "automatic"
+      }
+      """.utf8
+    )
+    let settings = try JSONDecoder().decode(RepositorySettings.self, from: data)
+
+    #expect(settings.observeLineDiffsAutomatically == nil)
+    #expect(settings.fetchPullRequestState == nil)
+    #expect(settings.observesLineDiffsAutomatically)
+    #expect(settings.fetchesPullRequestState)
+  }
+
+  @Test func decodePreservesExplicitObservationOverrides() throws {
+    var settings = RepositorySettings.default
+    settings.observeLineDiffsAutomatically = false
+    settings.fetchPullRequestState = false
+
+    let decoded = try JSONDecoder().decode(RepositorySettings.self, from: encode(settings))
+
+    #expect(decoded.observeLineDiffsAutomatically == false)
+    #expect(decoded.fetchPullRequestState == false)
+    #expect(!decoded.observesLineDiffsAutomatically)
+    #expect(!decoded.fetchesPullRequestState)
+  }
+
   @Test(.dependencies) func loadPrefersLocalSupacodeJSONOverGlobalEntry() throws {
     let globalStorage = SettingsTestStorage()
     let localStorage = RepositoryLocalSettingsTestStorage()

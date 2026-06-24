@@ -1,0 +1,4 @@
+interface:
+  display_name: "Self Verify Prowl"
+  short_description: "Bootstrap-verify Prowl with its CLI"
+  default_prompt: "Use $self-verify-prowl to validate this Prowl change against a debug app instance."

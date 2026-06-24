@@ -3,24 +3,24 @@ import Testing
 @testable import supacode
 
 struct GhosttySearchNavigatorTests {
-  @Test func nextWrapsFromLastToFirst() {
+  @Test func nextWrapsAtNewestToOldest() {
     let actions = GhosttySearchNavigator.bindingActions(
       direction: .next,
-      selected: 4,
-      total: 5
-    )
-
-    #expect(actions == Array(repeating: "navigate_search:previous", count: 4))
-  }
-
-  @Test func previousWrapsFromFirstToLast() {
-    let actions = GhosttySearchNavigator.bindingActions(
-      direction: .previous,
       selected: 0,
       total: 5
     )
 
     #expect(actions == Array(repeating: "navigate_search:next", count: 4))
+  }
+
+  @Test func previousWrapsAtOldestToNewest() {
+    let actions = GhosttySearchNavigator.bindingActions(
+      direction: .previous,
+      selected: 4,
+      total: 5
+    )
+
+    #expect(actions == Array(repeating: "navigate_search:previous", count: 4))
   }
 
   @Test func nonBoundaryUsesDirectAction() {
@@ -30,7 +30,7 @@ struct GhosttySearchNavigatorTests {
       total: 5
     )
 
-    #expect(actions == ["navigate_search:next"])
+    #expect(actions == ["navigate_search:previous"])
   }
 
   @Test func unknownSelectionUsesDirectAction() {
@@ -40,6 +40,6 @@ struct GhosttySearchNavigatorTests {
       total: 5
     )
 
-    #expect(actions == ["navigate_search:next"])
+    #expect(actions == ["navigate_search:previous"])
   }
 }

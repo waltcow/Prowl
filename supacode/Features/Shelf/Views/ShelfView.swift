@@ -1,4 +1,6 @@
+import AppKit
 import ComposableArchitecture
+import Sharing
 import SwiftUI
 
 private let shelfLogger = SupaLogger("Shelf")
@@ -22,6 +24,10 @@ struct ShelfView: View {
   /// stamping an opaque layer behind every child — including the
   /// terminal surface and empty-state area.
   @Environment(\.surfaceBackgroundOpacity) private var surfaceBackgroundOpacity
+  @Shared(.repositoryAppearances) private var repositoryAppearances
+  /// Drives the chrome tint mode / custom color and the Shelf spine tint
+  /// preferences.
+  @Shared(.settingsFile) private var settingsFile
 
   var body: some View {
     // Body-invocation counter. The @ViewBuilder getter rules out a
@@ -31,25 +37,71 @@ struct ShelfView: View {
     // sanity-checking how often the root re-renders during animation.
     let _ = shelfLogger.event("ShelfView.body")
     let state = store.state
-    let books = state.orderedShelfBooks()
-    let openBookID = state.openShelfBookID
-    let openIndex = openBookID.flatMap { id in
-      books.firstIndex(where: { $0.id == id })
+    let books = state.orderedShelfBooks(customTitles: state.repositoryCustomTitles)
+    let openBook = state.openShelfBook(in: books)
+    let openBookID = openBook?.id
+    let openIndex = openBook.flatMap { book in
+      books.firstIndex(where: { $0.id == book.id })
     }
+    let activeAgentEntriesByWorktreeID =
+      settingsFile.global.showActiveAgentStatusInShelf
+      ? Dictionary(grouping: state.activeAgents.entries) { entry in entry.worktreeID }
+      : [:]
+    // Color identity of the open book's repo (nil ⇒ neutral surface). Shared
+    // by the spine fill and the toolbar band so they read as one "L".
+    let openColor = openBook.flatMap { repositoryAppearances[$0.repositoryID]?.color }
+    // Chrome band fill for the toolbar (top) and nav (leading), honoring the
+    // user's window tint mode. Only shown when a book is open; an empty
+    // shelf keeps its bare chrome.
+    let chromeFill =
+      openBook == nil
+      ? nil
+      : WindowChromeTint.fill(
+        mode: settingsFile.global.windowTintMode,
+        customColor: settingsFile.global.windowTintCustomColor.color,
+        repositoryColor: openColor
+      )
 
     HStack(spacing: 0) {
       ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
-        spine(book: book, index: index, openIndex: openIndex)
+        spine(
+          book: book,
+          index: index,
+          openIndex: openIndex,
+          activeAgentEntries: activeAgentEntriesByWorktreeID[book.id] ?? []
+        )
         if book.id == openBookID {
           openBookArea(for: book, state: state)
         }
       }
-      if openBookID == nil {
+      if openBook == nil {
         emptyOpenArea()
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(nsColor: .windowBackgroundColor).opacity(surfaceBackgroundOpacity))
+    // Tint the toolbar (top) and nav (leading) chrome. The bands bleed up
+    // under the titlebar and left under the floating glass sidebar, so once
+    // the glass blends the leading band in, the nav panel, the open spine,
+    // and the toolbar all read as one continuous color.
+    .windowChromeTint(chromeFill, edges: [.top, .leading])
+    .overlay {
+      ShelfSwipeEventMonitor(isEnabled: !books.isEmpty) { action in
+        switch action {
+        case .nextBook:
+          store.send(.selectNextShelfBook)
+        case .previousBook:
+          store.send(.selectPreviousShelfBook)
+        case .nextTab:
+          store.send(.selectNextWorktree)
+        case .previousTab:
+          store.send(.selectPreviousWorktree)
+        }
+      }
+      .accessibilityHidden(true)
+      .allowsHitTesting(false)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
     // Animate on every openBookID change — covers both Shelf-originated
     // book switches (which also set their own TCA animation) and
     // left-nav-originated switches, so the spine flow is consistent
@@ -58,7 +110,12 @@ struct ShelfView: View {
   }
 
   @ViewBuilder
-  private func spine(book: ShelfBook, index: Int, openIndex: Int?) -> some View {
+  private func spine(
+    book: ShelfBook,
+    index: Int,
+    openIndex: Int?,
+    activeAgentEntries: [ActiveAgentEntry]
+  ) -> some View {
     let distance = openIndex.map { abs(index - $0) }
     let open = index == openIndex
     ShelfSpineView(
@@ -66,8 +123,14 @@ struct ShelfView: View {
       isOpen: open,
       distanceFromOpen: distance,
       terminalState: terminalManager.stateIfExists(for: book.id),
+      activeAgentEntries: activeAgentEntries,
+      tintFallback: settingsFile.global.shelfSpineTintFallback,
+      followsRepositoryColor: settingsFile.global.shelfSpineTintFollowsRepositoryColor,
       onOpenBook: { openBook(book, selectingTab: nil) },
       onSelectTab: { tabID in openBook(book, selectingTab: tabID) },
+      onSelectAgent: { agentID in
+        store.send(.activeAgents(.entryTapped(agentID)))
+      },
       onNewTab: {
         // On a closed spine, `+` doubles as "pull this book out and
         // start a fresh tab". Sequencing is fine because TCA runs
@@ -165,17 +228,11 @@ struct ShelfView: View {
 
   @ViewBuilder
   private func emptyOpenArea() -> some View {
-    VStack(spacing: 10) {
-      Image(systemName: "books.vertical")
-        .font(.system(size: 40))
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-      Text("No worktree selected")
-        .font(.headline)
-      Text("Click a worktree to open it.")
-        .font(.callout)
-        .foregroundStyle(.secondary)
-    }
+    ContentUnavailableView(
+      "No worktree selected",
+      systemImage: "books.vertical",
+      description: Text("Click a worktree to open it.")
+    )
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
@@ -205,6 +262,151 @@ struct ShelfView: View {
       // if the user has opened it before. For first-time opens the tab
       // manager seeds a default tab which we won't override.
       terminalManager.stateIfExists(for: book.id)?.tabManager.selectTab(tabID)
+    }
+  }
+}
+
+enum ShelfSwipeNavigationAction: Equatable {
+  case nextBook
+  case previousBook
+  case nextTab
+  case previousTab
+}
+
+struct ShelfSwipeGestureClassifier {
+  static let swipeThreshold: CGFloat = 80
+  static let axisDominanceRatio: CGFloat = 1.6
+
+  static func action(
+    accumulatedDeltaX: CGFloat,
+    accumulatedDeltaY: CGFloat
+  ) -> ShelfSwipeNavigationAction? {
+    let absX = abs(accumulatedDeltaX)
+    let absY = abs(accumulatedDeltaY)
+    if absX >= swipeThreshold, absX > absY * axisDominanceRatio {
+      return accumulatedDeltaX > 0 ? .previousBook : .nextBook
+    }
+    if absY >= swipeThreshold, absY > absX * axisDominanceRatio {
+      return accumulatedDeltaY > 0 ? .previousTab : .nextTab
+    }
+    return nil
+  }
+}
+
+private struct ShelfSwipeEventMonitor: NSViewRepresentable {
+  let isEnabled: Bool
+  let onSwipe: (ShelfSwipeNavigationAction) -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView()
+    context.coordinator.view = view
+    context.coordinator.installIfNeeded()
+    return view
+  }
+
+  func updateNSView(_ nsView: NSView, context: Context) {
+    context.coordinator.view = nsView
+    context.coordinator.isEnabled = isEnabled
+    context.coordinator.onSwipe = onSwipe
+    context.coordinator.installIfNeeded()
+  }
+
+  static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+    coordinator.removeMonitor()
+  }
+
+  final class Coordinator {
+    weak var view: NSView?
+    var isEnabled = false
+    var onSwipe: (ShelfSwipeNavigationAction) -> Void = { _ in }
+
+    private var monitor: Any?
+    private var accumulatedDeltaX: CGFloat = 0
+    private var accumulatedDeltaY: CGFloat = 0
+    private var lastEventTimestamp: TimeInterval = 0
+    private var didTriggerCurrentGesture = false
+
+    private let eventGapResetInterval: TimeInterval = 0.25
+
+    func installIfNeeded() {
+      guard monitor == nil else { return }
+      monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+        self?.handle(event) ?? event
+      }
+    }
+
+    func removeMonitor() {
+      guard let monitor else { return }
+      NSEvent.removeMonitor(monitor)
+      self.monitor = nil
+    }
+
+    private func handle(_ event: NSEvent) -> NSEvent? {
+      guard isEnabled,
+        let view,
+        let window = view.window,
+        event.window === window,
+        view.bounds.contains(view.convert(event.locationInWindow, from: nil))
+      else {
+        resetGesture()
+        return event
+      }
+
+      guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) else {
+        resetGesture()
+        return event
+      }
+
+      if event.phase.contains(.began)
+        || event.timestamp - lastEventTimestamp > eventGapResetInterval
+      {
+        resetGesture()
+      }
+      lastEventTimestamp = event.timestamp
+
+      if didTriggerCurrentGesture {
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled)
+          || event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
+        {
+          resetGesture()
+        }
+        return nil
+      }
+
+      guard event.momentumPhase.isEmpty else {
+        return nil
+      }
+
+      accumulatedDeltaX += event.scrollingDeltaX
+      accumulatedDeltaY += event.scrollingDeltaY
+
+      guard
+        let action = ShelfSwipeGestureClassifier.action(
+          accumulatedDeltaX: accumulatedDeltaX,
+          accumulatedDeltaY: accumulatedDeltaY
+        )
+      else {
+        return nil
+      }
+
+      resetAccumulatedDeltas()
+      didTriggerCurrentGesture = true
+      onSwipe(action)
+      return nil
+    }
+
+    private func resetGesture() {
+      resetAccumulatedDeltas()
+      didTriggerCurrentGesture = false
+    }
+
+    private func resetAccumulatedDeltas() {
+      accumulatedDeltaX = 0
+      accumulatedDeltaY = 0
     }
   }
 }

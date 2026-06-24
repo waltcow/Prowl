@@ -14,19 +14,332 @@ struct CommandPaletteFeatureTests {
       "global.check-for-updates",
       "global.open-settings",
       "global.open-repository",
+      "global.new-workspace",
       "global.new-worktree",
       "global.refresh-worktrees",
+      "global.jump-to-latest-unread",
       "global.view-archived-worktrees",
       "global.install-cli",
+      "global.toggle-left-sidebar",
+      "global.toggle-active-agents-panel",
+      "global.toggle-canvas",
+      "global.toggle-shelf",
     ]
     #if DEBUG
       expectedIDs.append(contentsOf: [
         "debug.toast.inProgress",
         "debug.toast.success",
         "debug.update.simulate-found",
+        "debug.dock.notification-dot",
       ])
     #endif
     expectNoDifference(items.map(\.id), expectedIDs)
+  }
+
+  @Test func commandPaletteItems_includesShowDiffWhenWorktreeSelected() {
+    let rootPath = "/tmp/repo-diff"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    #expect(items.contains { $0.id == "global.show-diff" })
+  }
+
+  @Test func commandPaletteItems_includesCanvasCommandsInCanvasMode() {
+    var state = RepositoriesFeature.State()
+    state.selection = .canvas
+
+    let ids = CommandPaletteFeature.commandPaletteItems(from: state).map(\.id)
+    #expect(ids.contains("global.expand-canvas-card"))
+    #expect(ids.contains("global.arrange-canvas-cards"))
+    #expect(ids.contains("global.organize-canvas-cards"))
+    #expect(ids.contains("global.select-all-canvas-cards"))
+  }
+
+  @Test func commandPaletteItems_omitsCanvasCommandsOutsideCanvas() {
+    let ids = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State()).map(\.id)
+    #expect(!ids.contains("global.expand-canvas-card"))
+    #expect(!ids.contains("global.arrange-canvas-cards"))
+    #expect(!ids.contains("global.organize-canvas-cards"))
+    #expect(!ids.contains("global.select-all-canvas-cards"))
+  }
+
+  @Test func commandPaletteItems_omitsShowDiffWithoutSelectedWorktree() {
+    let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
+    #expect(!items.contains { $0.id == "global.show-diff" })
+  }
+
+  @Test func commandPaletteItems_includesWorktreeNavigationWhenWorktreeSelected() {
+    let rootPath = "/tmp/repo-nav"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let ids = Set(items.map(\.id))
+    #expect(ids.contains("global.reveal-in-finder"))
+    #expect(ids.contains("global.copy-path"))
+    #expect(ids.contains("global.reveal-in-sidebar"))
+  }
+
+  @Test func commandPaletteItems_omitsWorktreeNavigationWithoutSelectedWorktree() {
+    let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
+    let ids = Set(items.map(\.id))
+    #expect(!ids.contains("global.reveal-in-finder"))
+    #expect(!ids.contains("global.copy-path"))
+    #expect(!ids.contains("global.reveal-in-sidebar"))
+  }
+
+  @Test func commandPaletteItems_includesRunScriptWhenIdle() {
+    let rootPath = "/tmp/repo-run"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let ids = Set(items.map(\.id))
+    #expect(ids.contains("global.run-script"))
+    #expect(!ids.contains("global.stop-run-script"))
+  }
+
+  @Test func commandPaletteItems_includesRunScriptForCanvasActionTarget() {
+    let rootPath = "/tmp/repo-canvas-run"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .canvas
+
+    let items = CommandPaletteFeature.commandPaletteItems(
+      from: state,
+      actionTargetWorktreeID: worktree.id
+    )
+    let ids = Set(items.map(\.id))
+    #expect(ids.contains("global.run-script"))
+    #expect(!ids.contains("global.rename-branch"))
+    #expect(!ids.contains("global.toggle-pin-worktree"))
+  }
+
+  @Test func commandPaletteItems_includesStopScriptWhenRunning() {
+    let rootPath = "/tmp/repo-run"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(
+      from: state,
+      runScriptStatusByWorktreeID: [worktree.id: true]
+    )
+    let ids = Set(items.map(\.id))
+    #expect(ids.contains("global.stop-run-script"))
+    #expect(!ids.contains("global.run-script"))
+  }
+
+  @Test func commandPaletteItems_includesPinForNonPinnedWorktree() {
+    let rootPath = "/tmp/repo-pin"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let pinItem = items.first { $0.id == "global.toggle-pin-worktree" }
+    #expect(pinItem?.title == "Pin Worktree")
+    #expect(pinItem?.kind == .togglePinWorktree(worktree.id, isCurrentlyPinned: false))
+  }
+
+  @Test func commandPaletteItems_includesUnpinForPinnedWorktree() {
+    let rootPath = "/tmp/repo-pin"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+    state.pinnedWorktreeIDs = [worktree.id]
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let pinItem = items.first { $0.id == "global.toggle-pin-worktree" }
+    #expect(pinItem?.title == "Unpin Worktree")
+    #expect(pinItem?.kind == .togglePinWorktree(worktree.id, isCurrentlyPinned: true))
+  }
+
+  @Test func commandPaletteItems_includesRenameBranchForNonMainWorktree() {
+    let rootPath = "/tmp/repo-rename"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let renameItem = items.first { $0.id == "global.rename-branch" }
+    #expect(renameItem?.title == "Rename Branch")
+    #expect(renameItem?.kind == .renameBranch)
+    #expect(renameItem?.appShortcutCommandID == AppShortcuts.CommandID.renameBranch)
+  }
+
+  @Test func commandPaletteItems_omitsPinAndDeleteForMainWorktree() {
+    let rootPath = "/tmp/repo-main"
+    // Main worktree: workingDirectory == repositoryRootURL → Worktree.isMain == true
+    let main = makeWorktree(
+      id: rootPath,
+      name: "main",
+      repoRoot: rootPath,
+      workingDirectory: rootPath
+    )
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [main])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(main.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let ids = Set(items.map(\.id))
+    #expect(!ids.contains("global.toggle-pin-worktree"))
+    #expect(!ids.contains("global.delete-worktree"))
+    // Rename Branch is still available on the main worktree — `git branch -m`
+    // works on the main branch the same as any other.
+    #expect(ids.contains("global.rename-branch"))
+  }
+
+  @Test func commandPaletteItems_includesDeleteWorktreeForNonMain() {
+    let rootPath = "/tmp/repo-delete"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let deleteItem = items.first { $0.id == "global.delete-worktree" }
+    #expect(deleteItem?.title == "Delete Worktree")
+    #expect(deleteItem?.defaultSuggestion == false)
+  }
+
+  @Test func commandPaletteItems_includesCustomCommands() {
+    let buildCmd = UserCustomCommand(
+      id: "cmd-build",
+      title: "Build",
+      systemImage: "hammer",
+      command: "make build",
+      execution: .shellScript,
+      shortcut: nil
+    )
+    let emptyCmd = UserCustomCommand(
+      id: "cmd-empty",
+      title: "Empty",
+      systemImage: "terminal",
+      command: "   ",
+      execution: .shellScript,
+      shortcut: nil
+    )
+
+    let items = CommandPaletteFeature.commandPaletteItems(
+      from: RepositoriesFeature.State(),
+      customCommands: [buildCmd, emptyCmd]
+    )
+    let ids = Set(items.map(\.id))
+    #expect(ids.contains("custom-command.cmd-build"))
+    // Commands with empty body are filtered out.
+    #expect(!ids.contains("custom-command.cmd-empty"))
+
+    let buildItem = items.first { $0.id == "custom-command.cmd-build" }
+    #expect(buildItem?.title == "Build")
+    #expect(buildItem?.subtitle == "Custom command in this repo · Opens in a new tab")
+    #expect(buildItem?.defaultSuggestion == false)
+    #expect(
+      buildItem?.kind
+        == .runCustomCommand(index: 0, commandID: "cmd-build", systemImage: "hammer")
+    )
+  }
+
+  @Test func commandPaletteItems_includesRepoSettingsForSelectedWorktree() {
+    let rootPath = "/tmp/repo-settings"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .worktree(worktree.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    let item = items.first { $0.id == "repo.\(repository.id).open-settings" }
+    #expect(item?.title == "Repo Settings")
+    #expect(item?.subtitle == "Repo")
+    #expect(item?.kind == .openRepositorySettings(repository.id))
+    #expect(item?.category == .app)
+  }
+
+  @Test func commandPaletteItems_includesRepoSettingsForSelectedRepository() {
+    let rootPath = "/tmp/repo-settings-direct"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "RepoDirect", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .repository(repository.id)
+
+    let items = CommandPaletteFeature.commandPaletteItems(from: state)
+    #expect(items.contains { $0.id == "repo.\(repository.id).open-settings" })
+  }
+
+  @Test func commandPaletteItems_omitsRepoSettingsWithoutSelection() {
+    let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
+    #expect(!items.contains { $0.id.hasPrefix("repo.") })
+  }
+
+  @Test func commandPaletteItems_customCommandSubtitleVariants() {
+    let shellCmd = UserCustomCommand(
+      id: "cmd-shell",
+      title: "Shell",
+      systemImage: "terminal",
+      command: "make",
+      execution: .shellScript,
+      shortcut: nil
+    )
+    let inlineCmd = UserCustomCommand(
+      id: "cmd-inline",
+      title: "Inline",
+      systemImage: "terminal",
+      command: "ls",
+      execution: .terminalInput,
+      shortcut: nil
+    )
+    let splitCmd = UserCustomCommand(
+      id: "cmd-split",
+      title: "Split",
+      systemImage: "terminal",
+      command: "watch",
+      execution: .split,
+      splitDirection: .down,
+      closeOnSuccess: false,
+      shortcut: nil
+    )
+
+    let items = CommandPaletteFeature.commandPaletteItems(
+      from: RepositoriesFeature.State(),
+      customCommands: [shellCmd, inlineCmd, splitCmd]
+    )
+
+    #expect(
+      items.first { $0.id == "custom-command.cmd-shell" }?.subtitle
+        == "Custom command in this repo · Opens in a new tab"
+    )
+    #expect(
+      items.first { $0.id == "custom-command.cmd-inline" }?.subtitle
+        == "Custom command in this repo · Runs in the focused terminal"
+    )
+    #expect(
+      items.first { $0.id == "custom-command.cmd-split" }?.subtitle
+        == "Custom command in this repo · Opens in a new split (down)"
+    )
+  }
+
+  @Test func commandPaletteItems_includeJumpToLatestUnreadAction() {
+    let items = CommandPaletteFeature.commandPaletteItems(from: RepositoriesFeature.State())
+    let item = items.first { $0.id == "global.jump-to-latest-unread" }
+
+    #expect(item?.title == "Jump to Latest Unread")
+    #expect(item?.kind == .jumpToLatestUnread)
+    #expect(item?.appShortcutCommandID == AppShortcuts.CommandID.jumpToLatestUnread)
+
+    let filtered = CommandPaletteFeature.filterItems(items: items, query: "jump unread")
+    #expect(filtered.first?.id == "global.jump-to-latest-unread")
   }
 
   @Test func commandPaletteItems_skipsPendingAndDeletingWorktrees() {
@@ -89,6 +402,37 @@ struct CommandPaletteFeatureTests {
 
     #expect(ghosttyItem?.title == "Focus Split Right")
     #expect(ghosttyItem?.subtitle == "Focus the split to the right.")
+  }
+
+  @Test func commandPaletteItems_includeGhosttyCommandsForCanvasActionTarget() {
+    let rootPath = "/tmp/repo-canvas-new-tab"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "wt-1", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .canvas
+
+    let items = CommandPaletteFeature.commandPaletteItems(
+      from: state,
+      actionTargetWorktreeID: worktree.id,
+      ghosttyCommands: [
+        GhosttyCommand(
+          title: "New Tab",
+          description: "Open a new tab.",
+          action: "new_tab",
+          actionKey: "new_tab"
+        )
+      ]
+    )
+
+    let ghosttyItem = items.first {
+      if case .ghosttyCommand(let action) = $0.kind {
+        return action == "new_tab"
+      }
+      return false
+    }
+
+    #expect(ghosttyItem?.title == "New Tab")
+    #expect(ghosttyItem?.subtitle == "Open a new tab.")
   }
 
   @Test func commandPaletteItems_filtersUnsupportedGhosttyCommands() {
@@ -234,14 +578,252 @@ struct CommandPaletteFeatureTests {
     #expect(searchedItems.contains(where: { $0.id == changeIconItem?.id }))
   }
 
+  @Test func keywordOnlyMatchSurfacesItem() {
+    // "preferences" cannot fuzzy-match "Open Settings" (no p/r/f) so a match
+    // only succeeds if keywords participate.
+    let openSettings = makeItem(
+      id: "global.open-settings",
+      title: "Open Settings",
+      subtitle: nil,
+      kind: .openSettings,
+      keywords: ["preferences"]
+    )
+
+    let result = CommandPaletteFeature.filterItems(items: [openSettings], query: "preferences")
+    expectNoDifference(result.map(\.id), [openSettings.id])
+  }
+
+  @Test func keywordMatchRanksBelowDirectTitleMatch() {
+    let openSettings = makeItem(
+      id: "global.open-settings",
+      title: "Open Settings",
+      subtitle: nil,
+      kind: .openSettings,
+      keywords: ["preferences"]
+    )
+    let prefBranch = makeItem(
+      id: "worktree.preferences.select",
+      title: "preferences",
+      subtitle: nil,
+      kind: .worktreeSelect("wt-pref")
+    )
+
+    let result = CommandPaletteFeature.filterItems(items: [openSettings, prefBranch], query: "preferences")
+    #expect(result.first?.id == prefBranch.id)
+  }
+
+  @Test func keywordMatchSurvivesMultiPieceQuery() {
+    // "preferences" has to match via the keyword; "settings" matches the title.
+    let openSettings = makeItem(
+      id: "global.open-settings",
+      title: "Open Settings",
+      subtitle: nil,
+      kind: .openSettings,
+      keywords: ["preferences"]
+    )
+
+    let result = CommandPaletteFeature.filterItems(items: [openSettings], query: "preferences settings")
+    expectNoDifference(result.map(\.id), [openSettings.id])
+  }
+
+  @Test func keywordMatchDoesNotIntroduceLabelHighlightsOutsideTitle() {
+    let openSettings = makeItem(
+      id: "global.open-settings",
+      title: "Open Settings",
+      subtitle: nil,
+      kind: .openSettings,
+      keywords: ["preferences"]
+    )
+
+    let result = CommandPaletteFeature.filterItems(items: [openSettings], query: "preferences")
+    #expect(result.count == 1)
+    // Sanity: the returned item is unchanged — no synthetic match positions leaked into the item.
+    #expect(result.first?.title == openSettings.title)
+  }
+
+  // MARK: - suggestions()
+
+  @Test func suggestionsEmptyInputReturnsEmptySections() {
+    let result = CommandPaletteFeature.suggestions(items: [], recencyByID: [:], now: .now)
+    #expect(result.recent.isEmpty)
+    #expect(result.suggested.isEmpty)
+  }
+
+  @Test func suggestionsOnlyDefaultSuggestionItemsAppearWhenNoRecency() {
+    let suggested = makeItem(
+      id: "s",
+      title: "Suggested",
+      subtitle: nil,
+      kind: .openSettings
+    )
+    let hidden = makeItem(
+      id: "h",
+      title: "Hidden",
+      subtitle: nil,
+      kind: .ghosttyCommand("focus_split")
+    )
+    let suggestedWithFlag = CommandPaletteItem(
+      id: suggested.id,
+      title: suggested.title,
+      subtitle: suggested.subtitle,
+      kind: suggested.kind,
+      category: suggested.category,
+      defaultSuggestion: true
+    )
+
+    let result = CommandPaletteFeature.suggestions(
+      items: [suggestedWithFlag, hidden],
+      recencyByID: [:],
+      now: .now
+    )
+    #expect(result.recent.isEmpty)
+    expectNoDifference(result.suggested.map(\.id), [suggestedWithFlag.id])
+  }
+
+  @Test func suggestionsRecentIncludesNonSuggestionItemsWithRecency() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let worktree = makeItem(
+      id: "worktree.fox.select",
+      title: "Repo / fox",
+      subtitle: nil,
+      kind: .worktreeSelect("wt-fox")
+    )
+
+    let result = CommandPaletteFeature.suggestions(
+      items: [worktree],
+      recencyByID: [worktree.id: now.timeIntervalSince1970 - 86_400],
+      now: now
+    )
+    expectNoDifference(result.recent.map(\.id), [worktree.id])
+    #expect(result.suggested.isEmpty)
+  }
+
+  @Test func suggestionsRecentSortedByRecencyDesc() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let recent = makeItem(id: "recent", title: "Recent", subtitle: nil, kind: .openSettings)
+    let older = makeItem(id: "older", title: "Older", subtitle: nil, kind: .openRepository)
+
+    let result = CommandPaletteFeature.suggestions(
+      items: [older, recent],
+      recencyByID: [
+        recent.id: now.timeIntervalSince1970 - 86_400,
+        older.id: now.timeIntervalSince1970 - 10 * 86_400,
+      ],
+      now: now
+    )
+    expectNoDifference(result.recent.map(\.id), [recent.id, older.id])
+  }
+
+  @Test func suggestionsDedupesRecentFromSuggested() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let appLevel = CommandPaletteItem(
+      id: "global.open-settings",
+      title: "Open Settings",
+      subtitle: nil,
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: true
+    )
+
+    let result = CommandPaletteFeature.suggestions(
+      items: [appLevel],
+      recencyByID: [appLevel.id: now.timeIntervalSince1970 - 86_400],
+      now: now
+    )
+    expectNoDifference(result.recent.map(\.id), [appLevel.id])
+    #expect(result.suggested.isEmpty)
+  }
+
+  @Test func suggestionsCapsTotalAt8() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let items = (0..<12).map { index in
+      makeItem(
+        id: "item-\(index)",
+        title: "Item \(index)",
+        subtitle: nil,
+        kind: .worktreeSelect("wt-\(index)")
+      )
+    }
+    let recency = Dictionary(
+      uniqueKeysWithValues: items.enumerated().map { idx, item in
+        (item.id, now.timeIntervalSince1970 - TimeInterval(idx + 1) * 3600)
+      }
+    )
+
+    let result = CommandPaletteFeature.suggestions(items: items, recencyByID: recency, now: now)
+    #expect(result.recent.count + result.suggested.count == CommandPaletteSuggestions.maxItems)
+  }
+
+  @Test func suggestionsSuggestedSortsByPriorityTierThenDeclarationOrder() {
+    let lowPriority = CommandPaletteItem(
+      id: "low",
+      title: "Low",
+      subtitle: nil,
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: true,
+      priorityTier: 0
+    )
+    let defaultPriorityFirst = CommandPaletteItem(
+      id: "default-first",
+      title: "Default First",
+      subtitle: nil,
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: true,
+      priorityTier: CommandPaletteItem.defaultPriorityTier
+    )
+    let defaultPrioritySecond = CommandPaletteItem(
+      id: "default-second",
+      title: "Default Second",
+      subtitle: nil,
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: true,
+      priorityTier: CommandPaletteItem.defaultPriorityTier
+    )
+
+    let result = CommandPaletteFeature.suggestions(
+      items: [defaultPriorityFirst, defaultPrioritySecond, lowPriority],
+      recencyByID: [:],
+      now: .now
+    )
+    expectNoDifference(
+      result.suggested.map(\.id),
+      [lowPriority.id, defaultPriorityFirst.id, defaultPrioritySecond.id]
+    )
+  }
+
+  @Test func filterItemsEmptyQueryHonorsDefaultSuggestionFlagOnly() {
+    let suggested = CommandPaletteItem(
+      id: "suggested",
+      title: "Suggested",
+      subtitle: nil,
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: true
+    )
+    let hidden = CommandPaletteItem(
+      id: "hidden",
+      title: "Hidden",
+      subtitle: nil,
+      kind: .openSettings,
+      category: .app,
+      defaultSuggestion: false
+    )
+
+    let result = CommandPaletteFeature.filterItems(items: [suggested, hidden], query: "")
+    expectNoDifference(result.map(\.id), [suggested.id])
+  }
+
   @Test func emptyQueryHidesGhosttyCommands() {
-    let ghosttyItem = CommandPaletteItem(
+    let ghosttyItem = makeItem(
       id: "ghostty.goto_split:right|Focus Split Right",
       title: "Focus Split Right",
       subtitle: nil,
       kind: .ghosttyCommand("goto_split:right")
     )
-    let prAction = CommandPaletteItem(
+    let prAction = makeItem(
       id: "pr.open",
       title: "Open PR on GitHub",
       subtitle: "PR title",
@@ -273,66 +855,12 @@ struct CommandPaletteFeatureTests {
     )
 
     #expect(
-      items.contains {
-        if case .removeWorktree = $0.kind {
-          return true
-        }
-        return false
-      } == false
-    )
-    #expect(
-      items.contains {
-        if case .archiveWorktree = $0.kind {
-          return true
-        }
-        return false
-      } == false
-    )
-    #expect(
       items.filter {
         if case .worktreeSelect = $0.kind {
           return true
         }
         return false
       }.count == 1
-    )
-  }
-
-  @Test func commandPaletteItems_omitsSubActionsForNonMainWorktree() {
-    let rootPath = "/tmp/repo"
-    let main = makeWorktree(
-      id: rootPath,
-      name: "repo",
-      detail: "main",
-      repoRoot: rootPath,
-      workingDirectory: rootPath
-    )
-    let feature = makeWorktree(
-      id: "\(rootPath)/wt-feature",
-      name: "feature",
-      detail: "feature",
-      repoRoot: rootPath
-    )
-    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [main, feature])
-    let items = CommandPaletteFeature.commandPaletteItems(
-      from: RepositoriesFeature.State(repositories: [repository])
-    )
-
-    #expect(
-      items.contains {
-        if case .removeWorktree = $0.kind {
-          return true
-        }
-        return false
-      } == false
-    )
-    #expect(
-      items.contains {
-        if case .archiveWorktree = $0.kind {
-          return true
-        }
-        return false
-      } == false
     )
   }
 
@@ -453,44 +981,42 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func showsGlobalItemsWhenQueryEmpty() {
-    let openSettings = CommandPaletteItem(
+    let openSettings = makeItem(
       id: "global.open-settings",
       title: "Open Settings",
       subtitle: nil,
       kind: .openSettings
     )
-    let newWorktree = CommandPaletteItem(
+    let newWorktree = makeItem(
       id: "global.new-worktree",
       title: "New Worktree",
       subtitle: nil,
       kind: .newWorktree
     )
-    let selectFox = CommandPaletteItem(
+    let selectFox = makeItem(
       id: "worktree.fox.select",
       title: "Repo / fox",
       subtitle: "main",
       kind: .worktreeSelect("wt-fox")
     )
-    let archiveFox = CommandPaletteItem(
-      id: "worktree.fox.archive",
-      title: "Repo / fox",
-      subtitle: "Archive Worktree - main",
-      kind: .archiveWorktree("wt-fox", "repo-fox")
+    let deleteFox = makeItem(
+      id: "worktree.fox.delete",
+      title: "Delete Worktree",
+      subtitle: "fox",
+      kind: .deleteWorktree("wt-fox", "repo-fox")
     )
-    let removeFox = CommandPaletteItem(
-      id: "worktree.fox.remove",
-      title: "Repo / fox",
-      subtitle: "Remove Worktree - main",
-      kind: .removeWorktree("wt-fox", "repo-fox")
+    let changeFoxIcon = makeItem(
+      id: "worktree.fox.change-icon",
+      title: "Change Tab Icon...",
+      subtitle: "fox",
+      kind: .changeFocusedTabIcon("wt-fox")
     )
 
-    expectNoDifference(
-      CommandPaletteFeature.filterItems(
-        items: [openSettings, newWorktree, selectFox, archiveFox, removeFox],
-        query: ""
-      ),
-      []
+    let result = CommandPaletteFeature.filterItems(
+      items: [openSettings, newWorktree, selectFox, deleteFox, changeFoxIcon],
+      query: ""
     )
+    expectNoDifference(result.map(\.id), [openSettings.id, newWorktree.id])
   }
 
   @Test func queryKeepsSelectionWhenEmpty() async {
@@ -508,13 +1034,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func queryRanksByFuzzyScoreAcrossAllItems() {
-    let openSettings = CommandPaletteItem(
+    let openSettings = makeItem(
       id: "global.open-settings",
       title: "Open Settings",
       subtitle: nil,
       kind: .openSettings
     )
-    let selectSettings = CommandPaletteItem(
+    let selectSettings = makeItem(
       id: "worktree.settings.select",
       title: "Repo / settings",
       subtitle: "main",
@@ -528,13 +1054,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func fuzzyRanksPrefixAndShorterLabelFirst() {
-    let short = CommandPaletteItem(
+    let short = makeItem(
       id: "worktree.set.select",
       title: "Set",
       subtitle: nil,
       kind: .worktreeSelect("wt-set")
     )
-    let long = CommandPaletteItem(
+    let long = makeItem(
       id: "worktree.settings.select",
       title: "Settings",
       subtitle: nil,
@@ -548,7 +1074,7 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func fuzzyMatchesSubtitleWhenLabelDoesNot() {
-    let item = CommandPaletteItem(
+    let item = makeItem(
       id: "worktree.fox.select",
       title: "Repo / fox",
       subtitle: "main",
@@ -562,7 +1088,7 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func fuzzyMatchesMultiplePieces() {
-    let item = CommandPaletteItem(
+    let item = makeItem(
       id: "worktree.fox.select",
       title: "Repo / fox",
       subtitle: "main",
@@ -717,13 +1243,13 @@ struct CommandPaletteFeatureTests {
 
   @Test func recencyBreaksFuzzyTiesWithinGroup() {
     let now = Date(timeIntervalSince1970: 1_000_000)
-    let recent = CommandPaletteItem(
+    let recent = makeItem(
       id: "global.recent",
       title: "Open",
       subtitle: nil,
       kind: .openRepository
     )
-    let older = CommandPaletteItem(
+    let older = makeItem(
       id: "global.older",
       title: "Open",
       subtitle: nil,
@@ -746,13 +1272,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func supacodeItemsBeatGhosttyItemsWhenScoresTie() {
-    let supacodeItem = CommandPaletteItem(
+    let supacodeItem = makeItem(
       id: "global.open-settings",
       title: "Open Settings",
       subtitle: nil,
       kind: .openSettings
     )
-    let ghosttyItem = CommandPaletteItem(
+    let ghosttyItem = makeItem(
       id: "ghostty.open-settings|Open Settings",
       title: "Open Settings",
       subtitle: nil,
@@ -772,13 +1298,13 @@ struct CommandPaletteFeatureTests {
   // MARK: - Unified Ranking Tests
 
   @Test func worktreeOutranksGlobalWhenBetterMatch() {
-    let checkForUpdates = CommandPaletteItem(
+    let checkForUpdates = makeItem(
       id: "global.check-for-updates",
       title: "Check for Updates",
       subtitle: nil,
       kind: .checkForUpdates
     )
-    let worktreeFox = CommandPaletteItem(
+    let worktreeFox = makeItem(
       id: "worktree.fox.select",
       title: "Repo / fox",
       subtitle: nil,
@@ -792,13 +1318,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func worktreeExactPrefixOutranksGlobalSubstringMatch() {
-    let openSettings = CommandPaletteItem(
+    let openSettings = makeItem(
       id: "global.open-settings",
       title: "Open Settings",
       subtitle: nil,
       kind: .openSettings
     )
-    let worktreeOpen = CommandPaletteItem(
+    let worktreeOpen = makeItem(
       id: "worktree.open.select",
       title: "open",
       subtitle: nil,
@@ -813,19 +1339,19 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func globalAndWorktreeItemsInterleavedByScore() {
-    let openRepo = CommandPaletteItem(
+    let openRepo = makeItem(
       id: "global.open-repository",
       title: "Open Repository",
       subtitle: nil,
       kind: .openRepository
     )
-    let worktreeRepo = CommandPaletteItem(
+    let worktreeRepo = makeItem(
       id: "worktree.repo.select",
       title: "repo",
       subtitle: nil,
       kind: .worktreeSelect("wt-repo")
     )
-    let refreshWorktrees = CommandPaletteItem(
+    let refreshWorktrees = makeItem(
       id: "global.refresh-worktrees",
       title: "Refresh Worktrees",
       subtitle: nil,
@@ -843,13 +1369,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func nonMatchingItemsExcludedRegardlessOfType() {
-    let checkForUpdates = CommandPaletteItem(
+    let checkForUpdates = makeItem(
       id: "global.check-for-updates",
       title: "Check for Updates",
       subtitle: nil,
       kind: .checkForUpdates
     )
-    let worktreeFox = CommandPaletteItem(
+    let worktreeFox = makeItem(
       id: "worktree.fox.select",
       title: "Repo / fox",
       subtitle: nil,
@@ -863,19 +1389,19 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func multipleWorktreesCanAppearBeforeGlobalItems() {
-    let openSettings = CommandPaletteItem(
+    let openSettings = makeItem(
       id: "global.open-settings",
       title: "Open Settings",
       subtitle: nil,
       kind: .openSettings
     )
-    let worktreeAlpha = CommandPaletteItem(
+    let worktreeAlpha = makeItem(
       id: "worktree.alpha.select",
       title: "set",
       subtitle: nil,
       kind: .worktreeSelect("wt-alpha")
     )
-    let worktreeBeta = CommandPaletteItem(
+    let worktreeBeta = makeItem(
       id: "worktree.beta.select",
       title: "sett",
       subtitle: nil,
@@ -893,14 +1419,14 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func priorityTierBreaksTiesAcrossItemTypes() {
-    let prAction = CommandPaletteItem(
+    let prAction = makeItem(
       id: "pr.merge",
       title: "Merge PR",
       subtitle: "Ready",
       kind: .mergePullRequest("wt-1"),
       priorityTier: 0
     )
-    let worktreeMerge = CommandPaletteItem(
+    let worktreeMerge = makeItem(
       id: "worktree.merge.select",
       title: "Merge",
       subtitle: nil,
@@ -920,13 +1446,13 @@ struct CommandPaletteFeatureTests {
 
   @Test func recencyBreaksTiesAcrossItemTypes() {
     let now = Date(timeIntervalSince1970: 1_000_000)
-    let globalItem = CommandPaletteItem(
+    let globalItem = makeItem(
       id: "global.open-settings",
       title: "Open Settings",
       subtitle: nil,
       kind: .openSettings
     )
-    let worktreeItem = CommandPaletteItem(
+    let worktreeItem = makeItem(
       id: "worktree.settings.select",
       title: "Repo / settings",
       subtitle: nil,
@@ -948,13 +1474,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func worktreeWithLabelMatchOutranksGlobalWithDescriptionMatch() {
-    let globalItem = CommandPaletteItem(
+    let globalItem = makeItem(
       id: "global.pr.open",
       title: "Open PR on GitHub",
       subtitle: "deploy-fixes",
       kind: .openPullRequest("wt-1")
     )
-    let worktreeItem = CommandPaletteItem(
+    let worktreeItem = makeItem(
       id: "worktree.deploy.select",
       title: "Repo / deploy-fixes",
       subtitle: nil,
@@ -970,13 +1496,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func shorterWorktreeLabelWinsOverLongerGlobalLabel() {
-    let globalItem = CommandPaletteItem(
+    let globalItem = makeItem(
       id: "global.new-worktree",
       title: "New Worktree",
       subtitle: nil,
       kind: .newWorktree
     )
-    let worktreeItem = CommandPaletteItem(
+    let worktreeItem = makeItem(
       id: "worktree.new.select",
       title: "new",
       subtitle: nil,
@@ -991,20 +1517,20 @@ struct CommandPaletteFeatureTests {
     #expect(result.first?.id == worktreeItem.id)
   }
 
-  @Test func emptyQueryStillHidesRootActionsAndWorktrees() {
-    let checkForUpdates = CommandPaletteItem(
+  @Test func emptyQueryShowsSuggestionItemsAndHidesContextualOnes() {
+    let checkForUpdates = makeItem(
       id: "global.check-for-updates",
       title: "Check for Updates",
       subtitle: nil,
       kind: .checkForUpdates
     )
-    let worktreeFox = CommandPaletteItem(
+    let worktreeFox = makeItem(
       id: "worktree.fox.select",
       title: "Repo / fox",
       subtitle: nil,
       kind: .worktreeSelect("wt-fox")
     )
-    let prAction = CommandPaletteItem(
+    let prAction = makeItem(
       id: "pr.open",
       title: "Open PR on GitHub",
       subtitle: "PR title",
@@ -1017,19 +1543,19 @@ struct CommandPaletteFeatureTests {
       query: ""
     )
 
-    #expect(!result.contains { $0.id == checkForUpdates.id })
+    #expect(result.contains { $0.id == checkForUpdates.id })
     #expect(!result.contains { $0.id == worktreeFox.id })
     #expect(result.contains { $0.id == prAction.id })
   }
 
   @Test func whitespaceOnlyQueryTreatedAsEmpty() {
-    let checkForUpdates = CommandPaletteItem(
+    let checkForUpdates = makeItem(
       id: "global.check-for-updates",
       title: "Check for Updates",
       subtitle: nil,
       kind: .checkForUpdates
     )
-    let worktreeFox = CommandPaletteItem(
+    let worktreeFox = makeItem(
       id: "worktree.fox.select",
       title: "Repo / fox",
       subtitle: nil,
@@ -1049,13 +1575,13 @@ struct CommandPaletteFeatureTests {
   }
 
   @Test func inputOrderDoesNotAffectScoreBasedRanking() {
-    let globalItem = CommandPaletteItem(
+    let globalItem = makeItem(
       id: "global.open-settings",
       title: "Open Settings",
       subtitle: nil,
       kind: .openSettings
     )
-    let worktreeItem = CommandPaletteItem(
+    let worktreeItem = makeItem(
       id: "worktree.open.select",
       title: "open",
       subtitle: nil,
@@ -1079,7 +1605,7 @@ struct CommandPaletteFeatureTests {
     state.isPresented = true
     state.query = "bear"
     state.selectedIndex = 1
-    let item = CommandPaletteItem(
+    let item = makeItem(
       id: "global.open-repository",
       title: "Open Repository",
       subtitle: nil,
@@ -1102,7 +1628,7 @@ struct CommandPaletteFeatureTests {
 
   @Test func activateGhosttyCommandDispatchesDelegate() async {
     let now = Date(timeIntervalSince1970: 7_654_321)
-    let item = CommandPaletteItem(
+    let item = makeItem(
       id: "ghostty.goto_split:right|Focus Split Right",
       title: "Focus Split Right",
       subtitle: nil,
@@ -1155,6 +1681,79 @@ private func makeRepository(
     kind: kind,
     worktrees: IdentifiedArray(uniqueElements: worktrees)
   )
+}
+
+private func makeItem(
+  id: String,
+  title: String,
+  subtitle: String?,
+  kind: CommandPaletteItem.Kind,
+  keywords: [String] = [],
+  priorityTier: Int = CommandPaletteItem.defaultPriorityTier
+) -> CommandPaletteItem {
+  CommandPaletteItem(
+    id: id,
+    title: title,
+    subtitle: subtitle,
+    kind: kind,
+    category: testCategory(for: kind),
+    defaultSuggestion: testDefaultSuggestion(for: kind),
+    keywords: keywords,
+    priorityTier: priorityTier
+  )
+}
+
+private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteItem.Category {
+  switch kind {
+  case .checkForUpdates, .openSettings, .openRepository, .newWorkspace, .installCLI,
+    .openRepositorySettings:
+    return .app
+  case .newWorktree, .refreshWorktrees, .viewArchivedWorktrees,
+    .changeFocusedTabIcon,
+    .runScript, .stopRunScript, .togglePinWorktree,
+    .renameBranch, .deleteWorktree, .runCustomCommand:
+    return .worktree
+  case .jumpToLatestUnread, .worktreeSelect, .revealInFinder, .copyPath, .revealInSidebar:
+    return .navigation
+  case .openPullRequest, .openRepositoryOnCodeHost, .markPullRequestReady,
+    .mergePullRequest, .closePullRequest, .copyFailingJobURL, .copyCiFailureLogs,
+    .rerunFailedJobs, .openFailingCheckDetails:
+    return .pullRequest
+  case .ghosttyCommand:
+    return .terminal
+  case .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
+    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+    .toggleShelf, .showDiff:
+    return .view
+  #if DEBUG
+    case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:
+      return .debug
+  #endif
+  }
+}
+
+private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
+  switch kind {
+  case .checkForUpdates, .openSettings, .openRepository, .newWorkspace, .installCLI,
+    .newWorktree, .refreshWorktrees, .viewArchivedWorktrees, .jumpToLatestUnread,
+    .openPullRequest, .markPullRequestReady, .mergePullRequest, .closePullRequest,
+    .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails,
+    .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
+    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+    .toggleShelf, .showDiff,
+    .revealInFinder, .copyPath, .revealInSidebar,
+    .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
+    .openRepositorySettings:
+    return true
+  case .worktreeSelect, .changeFocusedTabIcon,
+    .ghosttyCommand, .openRepositoryOnCodeHost,
+    .deleteWorktree, .runCustomCommand:
+    return false
+  #if DEBUG
+    case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:
+      return true
+  #endif
+  }
 }
 
 private func makePullRequest(

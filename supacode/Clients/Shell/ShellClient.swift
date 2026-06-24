@@ -168,7 +168,12 @@ nonisolated private func runProcessStream(
   currentDirectoryURL: URL?
 ) -> AsyncThrowingStream<ShellStreamEvent, Error> {
   AsyncThrowingStream { continuation in
-    Task.detached {
+    // Stored so onTermination can SIGTERM the process when the consumer of the
+    // stream goes away (Task cancellation, for-await throw, explicit finish).
+    // Without this hook structured-concurrency timeouts that wrap a ShellClient
+    // call would have to wait for the process to exit on its own.
+    let processBox = LockIsolated<Process?>(nil)
+    let workerTask = Task {
       let outputAccumulator = ShellOutputAccumulator()
       let process = Process()
       process.executableURL = executableURL
@@ -184,33 +189,24 @@ nonisolated private func runProcessStream(
       let command = ([executableURL.path(percentEncoded: false)] + arguments).joined(separator: " ")
       do {
         try process.run()
-        let stdoutTask = Task.detached {
+        processBox.withValue { $0 = process }
+        let stdoutTask = Task {
           for await line in lineStream(from: outputHandle) {
             await outputAccumulator.append(line, source: .stdout)
-            continuation.yield(
-              .line(
-                ShellStreamLine(
-                  source: .stdout,
-                  text: line
-                )
-              )
-            )
+            continuation.yield(.line(ShellStreamLine(source: .stdout, text: line)))
           }
         }
-        let stderrTask = Task.detached {
+        let stderrTask = Task {
           for await line in lineStream(from: errorHandle) {
             await outputAccumulator.append(line, source: .stderr)
-            continuation.yield(
-              .line(
-                ShellStreamLine(
-                  source: .stderr,
-                  text: line
-                )
-              )
-            )
+            continuation.yield(.line(ShellStreamLine(source: .stderr, text: line)))
           }
         }
-        process.waitUntilExit()
+        await withTaskCancellationHandler {
+          await waitForExit(of: process)
+        } onCancel: {
+          process.terminate()
+        }
         await stdoutTask.value
         await stderrTask.value
         let output = await outputAccumulator.output(exitCode: process.terminationStatus)
@@ -230,6 +226,35 @@ nonisolated private func runProcessStream(
       } catch {
         continuation.finish(throwing: error)
       }
+    }
+    continuation.onTermination = { _ in
+      processBox.withValue { $0?.terminate() }
+      workerTask.cancel()
+    }
+  }
+}
+
+/// Waits asynchronously for `process` to exit using `terminationHandler`
+/// instead of `process.waitUntilExit()` so the caller's Task cancellation
+/// can be honoured. The handler is paired with a synchronous `isRunning`
+/// check to cover the race where the process exits before the handler is
+/// installed.
+nonisolated private func waitForExit(of process: Process) async {
+  await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    let resumed = LockIsolated(false)
+    let resumeOnce: @Sendable () -> Void = {
+      let shouldResume = resumed.withValue { (value: inout Bool) -> Bool in
+        guard !value else { return false }
+        value = true
+        return true
+      }
+      if shouldResume {
+        continuation.resume()
+      }
+    }
+    process.terminationHandler = { _ in resumeOnce() }
+    if !process.isRunning {
+      resumeOnce()
     }
   }
 }
@@ -336,7 +361,9 @@ nonisolated private func lineStream(from handle: FileHandle) -> AsyncStream<Stri
         data.append(chunk)
         return consumeLines(from: &data)
       }
-      lines.forEach { continuation.yield($0) }
+      for line in lines {
+        continuation.yield(line)
+      }
     }
     continuation.onTermination = { _ in
       handle.readabilityHandler = nil

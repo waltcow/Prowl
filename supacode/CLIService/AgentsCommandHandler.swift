@@ -1,0 +1,151 @@
+import Foundation
+
+struct AgentsRuntimeSnapshot {
+  let repositoriesState: RepositoriesFeature.State
+  let listSnapshot: ListRuntimeSnapshot
+}
+
+final class AgentsCommandHandler: CommandHandler {
+  typealias SnapshotProvider = @MainActor () throws -> AgentsRuntimeSnapshot
+
+  private struct TerminalAgentContext {
+    let worktree: ListRuntimeSnapshot.Worktree
+    let tab: ListRuntimeSnapshot.Tab
+    let pane: ListRuntimeSnapshot.Pane
+    let focused: Bool
+  }
+
+  private let snapshotProvider: SnapshotProvider
+  private let dateFormatter: ISO8601DateFormatter
+
+  init(snapshotProvider: @escaping SnapshotProvider) {
+    self.snapshotProvider = snapshotProvider
+    self.dateFormatter = ISO8601DateFormatter()
+    self.dateFormatter.formatOptions = [.withInternetDateTime]
+    self.dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+  }
+
+  // swiftlint:disable:next async_without_await
+  func handle(envelope _: CommandEnvelope) async -> CommandResponse {
+    do {
+      let snapshot = try snapshotProvider()
+      let payload = makePayload(from: snapshot)
+      return try CommandResponse(
+        ok: true,
+        command: "agents",
+        schemaVersion: "prowl.cli.agents.v1",
+        data: RawJSON(encoding: payload)
+      )
+    } catch {
+      return CommandResponse(
+        ok: false,
+        command: "agents",
+        schemaVersion: "prowl.cli.agents.v1",
+        error: CommandError(
+          code: CLIErrorCode.agentsFailed,
+          message: "Failed to list agents."
+        )
+      )
+    }
+  }
+
+  private func makePayload(from snapshot: AgentsRuntimeSnapshot) -> AgentsCommandPayload {
+    let repositoriesState = snapshot.repositoriesState
+    let metadata = SidebarListView.activeAgentWorktreeMetadata(
+      repositories: repositoriesState.repositories,
+      customTitles: repositoriesState.repositoryCustomTitles
+    )
+    let terminalContexts = makeTerminalContexts(from: snapshot.listSnapshot)
+    let worktreeContexts = Dictionary(
+      uniqueKeysWithValues:
+        ListRuntimeSnapshotBuilder
+        .orderedWorktreeContexts(from: repositoriesState)
+        .map { ($0.id, $0) }
+    )
+
+    let agents = repositoriesState.activeAgents.entries.compactMap { entry -> AgentsCommandAgent? in
+      guard let terminalContext = terminalContexts[entry.surfaceID] else {
+        return nil
+      }
+      let display = SidebarListView.activeAgentRowDisplay(
+        for: entry,
+        repositories: repositoriesState.repositories,
+        metadata: metadata
+      )
+      let projectPath = projectPath(
+        for: entry, repositoriesState: repositoriesState, worktreeContexts: worktreeContexts)
+
+      return AgentsCommandAgent(
+        id: entry.surfaceID.uuidString,
+        type: entry.agent.rawValue,
+        name: entry.displayName,
+        status: AgentsCommandStatus(rawValue: entry.displayState.rawValue) ?? .idle,
+        rawState: entry.rawState.rawValue,
+        lastChangedAt: dateFormatter.string(from: entry.lastChangedAt),
+        project: AgentsCommandProject(
+          name: display.repositoryName,
+          branch: display.branchName,
+          path: projectPath
+        ),
+        worktree: AgentsCommandWorktree(
+          id: terminalContext.worktree.id,
+          name: terminalContext.worktree.name,
+          path: terminalContext.worktree.path,
+          rootPath: terminalContext.worktree.rootPath,
+          kind: terminalContext.worktree.kind.rawValue
+        ),
+        tab: AgentsCommandTab(
+          id: terminalContext.tab.id.uuidString,
+          title: terminalContext.tab.title,
+          selected: terminalContext.tab.selected
+        ),
+        pane: AgentsCommandPane(
+          id: terminalContext.pane.id.uuidString,
+          index: entry.paneIndex,
+          title: terminalContext.pane.title,
+          cwd: terminalContext.pane.cwd,
+          focused: terminalContext.focused
+        )
+      )
+    }
+
+    return AgentsCommandPayload(count: agents.count, agents: agents)
+  }
+
+  private func makeTerminalContexts(from snapshot: ListRuntimeSnapshot) -> [UUID: TerminalAgentContext] {
+    var contexts: [UUID: TerminalAgentContext] = [:]
+    for worktree in snapshot.worktrees {
+      for tab in worktree.tabs {
+        for pane in tab.panes {
+          contexts[pane.id] = TerminalAgentContext(
+            worktree: worktree,
+            tab: tab,
+            pane: pane,
+            focused: worktree.id == snapshot.focusedWorktreeID && tab.selected && tab.focusedPaneID == pane.id
+          )
+        }
+      }
+    }
+    return contexts
+  }
+
+  private func projectPath(
+    for entry: ActiveAgentEntry,
+    repositoriesState: RepositoriesFeature.State,
+    worktreeContexts: [Worktree.ID: ListRuntimeSnapshotBuilder.WorktreeContext]
+  ) -> String {
+    if let workingDirectory = entry.workingDirectory,
+      let key = SidebarListView.resolveWorktreeID(
+        forWorkingDirectory: workingDirectory,
+        in: repositoriesState.repositories
+      ),
+      let context = worktreeContexts[key]
+    {
+      return context.path
+    }
+    if let workingDirectory = entry.workingDirectory {
+      return workingDirectory.path(percentEncoded: false)
+    }
+    return worktreeContexts[entry.worktreeID]?.path ?? entry.worktreeName
+  }
+}

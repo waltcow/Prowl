@@ -7,8 +7,9 @@ struct TerminalTabBarBackground: View {
   private var surfaceTopChromeBackgroundOpacity
 
   var body: some View {
-    Rectangle()
+    Capsule()
       .fill(TerminalTabBarColors.barBackground.opacity(chromeBackgroundOpacity))
+      .padding(.horizontal, TerminalTabBarMetrics.barPadding)
   }
 
   private var chromeBackgroundOpacity: Double {

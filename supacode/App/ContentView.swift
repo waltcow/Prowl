@@ -15,7 +15,6 @@ struct ContentView: View {
   let terminalManager: WorktreeTerminalManager
   @Environment(\.scenePhase) private var scenePhase
   @Environment(GhosttyShortcutManager.self) private var ghosttyShortcuts
-  @State private var leftSidebarVisibility: NavigationSplitViewVisibility = .all
 
   init(store: StoreOf<AppFeature>, terminalManager: WorktreeTerminalManager) {
     self.store = store
@@ -32,15 +31,25 @@ struct ContentView: View {
       get: { store.runScriptDraft },
       set: { store.send(.runScriptDraftChanged($0)) }
     )
+    let deleteWorktreeConfirmationPresented = Binding(
+      get: { repositoriesStore.deleteWorktreeConfirmation != nil },
+      set: { isPresented in
+        if !isPresented {
+          repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptDismissed))
+        }
+      }
+    )
+    let removeWorkspaceConfirmationPresented = Binding(
+      get: { repositoriesStore.removeWorkspaceConfirmation != nil },
+      set: { isPresented in
+        if !isPresented {
+          repositoriesStore.send(.repositoryManagement(.removeWorkspacePromptDismissed))
+        }
+      }
+    )
     Group {
       if store.repositories.isInitialLoadComplete {
-        NavigationSplitView(columnVisibility: $leftSidebarVisibility) {
-          SidebarView(store: repositoriesStore, terminalManager: terminalManager)
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-        } detail: {
-          WorktreeDetailView(store: store, terminalManager: terminalManager)
-        }
-        .navigationSplitViewStyle(.automatic)
+        mainSplitView
       } else {
         AppLoadingView()
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -48,6 +57,9 @@ struct ContentView: View {
       }
     }
     .environment(\.surfaceBackgroundOpacity, terminalManager.surfaceBackgroundOpacity())
+    .task {
+      store.send(.scenePhaseChanged(scenePhase))
+    }
     .onChange(of: scenePhase) { _, newValue in
       store.send(.scenePhaseChanged(newValue))
     }
@@ -70,11 +82,50 @@ struct ContentView: View {
         )
       }
     }
-    .alert(store: repositoriesStore.scope(state: \.$alert, action: \.alert))
-    .alert(store: store.scope(state: \.$alert, action: \.alert))
-    .sheet(store: repositoriesStore.scope(state: \.$worktreeCreationPrompt, action: \.worktreeCreationPrompt)) {
+    .alert($repositoriesStore.scope(state: \.alert, action: \.alert))
+    .alert($store.scope(state: \.alert, action: \.alert))
+    .sheet(item: $repositoriesStore.scope(state: \.worktreeCreationPrompt, action: \.worktreeCreationPrompt)) {
       promptStore in
       WorktreeCreationPromptView(store: promptStore)
+    }
+    .sheet(item: $repositoriesStore.scope(state: \.workspaceCreationPrompt, action: \.workspaceCreationPrompt)) {
+      promptStore in
+      WorkspaceCreationPromptView(store: promptStore)
+    }
+    .sheet(isPresented: deleteWorktreeConfirmationPresented) {
+      if let confirmation = repositoriesStore.deleteWorktreeConfirmation {
+        DeleteWorktreeConfirmationView(
+          confirmation: confirmation,
+          onDeleteBranchChanged: {
+            repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptDeleteBranchChanged($0)))
+          },
+          onCancel: {
+            repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptDismissed))
+          },
+          onDelete: {
+            repositoriesStore.send(.worktreeLifecycle(.deleteWorktreePromptConfirmed))
+          }
+        )
+      }
+    }
+    .sheet(isPresented: removeWorkspaceConfirmationPresented) {
+      if let confirmation = repositoriesStore.removeWorkspaceConfirmation {
+        RemoveWorkspaceConfirmationView(
+          confirmation: confirmation,
+          onDeleteFilesChanged: {
+            repositoriesStore.send(.repositoryManagement(.removeWorkspaceDeleteFilesChanged($0)))
+          },
+          onDeleteBranchChanged: {
+            repositoriesStore.send(.repositoryManagement(.removeWorkspaceDeleteBranchChanged($0, $1)))
+          },
+          onCancel: {
+            repositoriesStore.send(.repositoryManagement(.removeWorkspacePromptDismissed))
+          },
+          onRemove: {
+            repositoriesStore.send(.repositoryManagement(.removeWorkspacePromptConfirmed))
+          }
+        )
+      }
     }
     .sheet(isPresented: isRunScriptPromptPresented) {
       RunScriptPromptView(
@@ -87,13 +138,20 @@ struct ContentView: View {
         }
       )
     }
-    .focusedSceneValue(\.toggleLeftSidebarAction, toggleLeftSidebar)
-    .focusedSceneValue(\.revealInSidebarAction, revealInSidebarAction)
+    .focusedSceneAction(\.toggleLeftSidebarAction, enabled: true) {
+      toggleLeftSidebar()
+    }
+    .focusedSceneValue(\.revealInSidebarAction, revealInSidebarAction.asFocusedAction())
     .overlay {
       CommandPaletteOverlayView(
         store: store.scope(state: \.commandPalette, action: \.commandPalette),
         items: CommandPaletteFeature.commandPaletteItems(
           from: store.repositories,
+          customCommands: store.selectedCustomCommands,
+          runScriptStatusByWorktreeID: store.runScriptStatusByWorktreeID,
+          actionTargetWorktreeID: store.repositories.isShowingCanvas
+            ? terminalManager.canvasFocusedWorktreeID
+            : nil,
           ghosttyCommands: ghosttyShortcuts.commandPaletteEntries
         ),
         resolvedKeybindings: store.resolvedKeybindings
@@ -102,18 +160,29 @@ struct ContentView: View {
     .background(WindowTabbingDisabler())
   }
 
-  private func toggleLeftSidebar() {
-    withAnimation(.easeOut(duration: 0.2)) {
-      leftSidebarVisibility = leftSidebarVisibility == .detailOnly ? .all : .detailOnly
+  private var mainSplitView: some View {
+    let visibility = Binding<NavigationSplitViewVisibility>(
+      get: { store.leftSidebarVisibility },
+      set: { store.send(.setLeftSidebarVisibility($0)) }
+    )
+    return NavigationSplitView(columnVisibility: visibility) {
+      SidebarView(store: repositoriesStore, terminalManager: terminalManager)
+        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+    } detail: {
+      WorktreeDetailView(store: store, terminalManager: terminalManager)
     }
+    .navigationSplitViewStyle(.automatic)
+    .animation(.easeOut(duration: 0.2), value: store.leftSidebarVisibility)
+  }
+
+  private func toggleLeftSidebar() {
+    store.send(.toggleLeftSidebar)
   }
 
   private var revealInSidebarAction: (() -> Void)? {
     guard store.repositories.selectedWorktreeID != nil else { return nil }
     return {
-      withAnimation(.easeOut(duration: 0.2)) {
-        leftSidebarVisibility = .all
-      }
+      store.send(.showLeftSidebar)
       store.send(.repositories(.revealSelectedWorktreeInSidebar))
     }
   }

@@ -12,6 +12,7 @@ struct RepositorySettingsFeature {
     /// callers (AppFeature) always pass the canonical `repository.id`.
     var repositoryID: Repository.ID = ""
     var repositoryKind: Repository.Kind
+    var workspace: ProjectWorkspace?
     var settings: RepositorySettings
     var userSettings: UserRepositorySettings
     var appearance: RepositoryAppearance = .empty
@@ -39,8 +40,16 @@ struct RepositorySettingsFeature {
       capabilities.supportsWorktrees
     }
 
+    var showsDiffSettings: Bool {
+      capabilities.supportsDiff
+    }
+
     var showsPullRequestSettings: Bool {
       capabilities.supportsPullRequests
+    }
+
+    var showsDiffsAndPullRequestSettings: Bool {
+      showsDiffSettings || showsPullRequestSettings
     }
 
     var showsSetupScriptSettings: Bool {
@@ -275,6 +284,12 @@ struct RepositorySettingsFeature {
           normalizedSettings.worktreeBaseDirectoryPath,
           repositoryRootURL: rootURL
         )
+        let trimmedCustomTitle =
+          normalizedSettings.customTitle?
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        normalizedSettings.customTitle =
+          (trimmedCustomTitle?.isEmpty ?? true) ? nil : trimmedCustomTitle
+        normalizedSettings.githubAccountOverride = normalizedSettings.githubAccountOverride?.normalized
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
         $repositorySettings.withLock { $0 = normalizedSettings }

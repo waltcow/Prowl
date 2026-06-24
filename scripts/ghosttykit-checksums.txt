@@ -1,0 +1,4 @@
+# Pinned GhosttyKit artifact checksums keyed by the Ghostty submodule gitlink.
+# Release tags use: xcframework-<ghostty_sha>-prowl-v1
+# Format: <ghostty_sha> <GhosttyKit.xcframework.tar.gz sha256> <GhosttyKit-resources.tar.gz sha256>
+48365577c1ae8e422c0dd90489921f07b9f79171 69c2c06ed0f90c1e1fd86c607641f31239b374ea57d6cb59c61f543ac4528cd5 bfd2645d742670aa42e6bfab97f62d99f73a51fb8d922a091e51ba38ef5bd4d2

@@ -378,6 +378,48 @@ struct ShelfFeatureTests {
     await store.finish()
   }
 
+  @Test(.dependencies) func selectPreviousShelfBookWrapsAround() async {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo")
+    let wt1 = Worktree(
+      id: "/tmp/repo",
+      name: "main",
+      detail: "",
+      workingDirectory: rootURL,
+      repositoryRootURL: rootURL
+    )
+    let wt2 = Worktree(
+      id: "/tmp/repo/feature",
+      name: "feature",
+      detail: "",
+      workingDirectory: URL(fileURLWithPath: "/tmp/repo/feature"),
+      repositoryRootURL: rootURL
+    )
+    let repo = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: "repo",
+      worktrees: IdentifiedArray(uniqueElements: [wt1, wt2])
+    )
+    var state = RepositoriesFeature.State(repositories: [repo])
+    state.repositoryRoots = [rootURL]
+    state.repositoryOrderIDs = [repo.id]
+    state.selection = .worktree(wt1.id)  // Currently on the first book.
+    state.openedWorktreeIDs = [wt1.id, wt2.id]
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.selectPreviousShelfBook)
+    // Wrapping: previous-before-first lands on the last book.
+    await store.receive(\.selectWorktree) {
+      $0.selection = .worktree(wt2.id)
+      $0.sidebarSelectedWorktreeIDs = [wt2.id]
+      $0.pendingTerminalFocusWorktreeIDs = [wt2.id]
+    }
+    await store.receive(\.delegate.selectedWorktreeChanged)
+    await store.finish()
+  }
+
   @Test(.dependencies) func selectNextWorktreeRoutesToTabNavigationInShelf() async {
     let rootURL = URL(fileURLWithPath: "/tmp/repo")
     let wt1 = Worktree(
@@ -442,6 +484,62 @@ struct ShelfFeatureTests {
     #expect(sentCommands.value == [.performBindingAction(wt1, action: "previous_tab")])
   }
 
+  @Test func shelfSwipeGestureClassifierMapsAxesToShelfNavigation() {
+    #expect(
+      ShelfSwipeGestureClassifier.action(accumulatedDeltaX: -90, accumulatedDeltaY: 10) == .nextBook
+    )
+    #expect(
+      ShelfSwipeGestureClassifier.action(accumulatedDeltaX: 90, accumulatedDeltaY: 10) == .previousBook
+    )
+    #expect(
+      ShelfSwipeGestureClassifier.action(accumulatedDeltaX: 10, accumulatedDeltaY: -90) == .nextTab
+    )
+    #expect(
+      ShelfSwipeGestureClassifier.action(accumulatedDeltaX: 10, accumulatedDeltaY: 90) == .previousTab
+    )
+  }
+
+  @Test func shelfSwipeGestureClassifierIgnoresSmallOrAmbiguousScrolls() {
+    #expect(ShelfSwipeGestureClassifier.action(accumulatedDeltaX: -79, accumulatedDeltaY: 0) == nil)
+    #expect(ShelfSwipeGestureClassifier.action(accumulatedDeltaX: 60, accumulatedDeltaY: 60) == nil)
+    #expect(ShelfSwipeGestureClassifier.action(accumulatedDeltaX: 90, accumulatedDeltaY: 70) == nil)
+  }
+
+  @Test(.dependencies) func worktreeHistoryIsUnavailableWhileShelfIsActive() async {
+    let fixture = threeWorktreeFixture()
+    var state = RepositoriesFeature.State(repositories: [fixture.repo])
+    state.selection = .worktree(fixture.worktrees[1].id)
+    state.isShelfActive = true
+    state.worktreeHistoryBackStack = [fixture.worktrees[0].id]
+    state.worktreeHistoryForwardStack = [fixture.worktrees[2].id]
+    #expect(!state.canNavigateWorktreeHistoryBackward)
+    #expect(!state.canNavigateWorktreeHistoryForward)
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.worktreeHistoryBack)
+    await store.send(.worktreeHistoryForward)
+    await store.finish()
+  }
+
+  @Test(.dependencies) func worktreeHistoryIsUnavailableWhileCanvasIsActive() async {
+    let fixture = threeWorktreeFixture()
+    var state = RepositoriesFeature.State(repositories: [fixture.repo])
+    state.selection = .canvas
+    state.worktreeHistoryBackStack = [fixture.worktrees[0].id]
+    state.worktreeHistoryForwardStack = [fixture.worktrees[2].id]
+    #expect(!state.canNavigateWorktreeHistoryBackward)
+    #expect(!state.canNavigateWorktreeHistoryForward)
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.worktreeHistoryBack)
+    await store.send(.worktreeHistoryForward)
+    await store.finish()
+  }
+
   @Test(.dependencies) func selectNextWorktreeOutsideShelfStillCyclesWorktrees() async {
     let rootURL = URL(fileURLWithPath: "/tmp/repo")
     let wt1 = Worktree(
@@ -477,6 +575,8 @@ struct ShelfFeatureTests {
       $0.selection = .worktree(wt2.id)
       $0.sidebarSelectedWorktreeIDs = [wt2.id]
       $0.openedWorktreeIDs = [wt2.id]
+      $0.worktreeHistoryBackStack = [wt1.id]
+      $0.pendingTerminalFocusWorktreeIDs = [wt2.id]
     }
     await store.receive(\.delegate.selectedWorktreeChanged)
     await store.finish()
@@ -765,72 +865,11 @@ struct ShelfFeatureTests {
 
     await store.send(.selectArchivedWorktrees) {
       $0.isShelfActive = false
+      $0.worktreeHistoryBackStack = [worktree.id]
       $0.selection = .archivedWorktrees
       $0.sidebarSelectedWorktreeIDs = []
     }
     await store.receive(\.delegate.selectedWorktreeChanged)
-    await store.finish()
-  }
-
-  @Test(.dependencies) func defaultViewShelfPreferenceDispatchesToggleAfterSnapshot() async {
-    let repoRoot = "/tmp/default-shelf-repo"
-    let rootURL = URL(fileURLWithPath: repoRoot)
-    let worktree = Worktree(
-      id: "\(repoRoot)/main",
-      name: "main",
-      detail: "",
-      workingDirectory: URL(fileURLWithPath: "\(repoRoot)/main"),
-      repositoryRootURL: rootURL
-    )
-    let repository = Repository(
-      id: repoRoot,
-      rootURL: rootURL,
-      name: "repo",
-      worktrees: IdentifiedArray(uniqueElements: [worktree])
-    )
-
-    @Shared(.settingsFile) var settingsFile
-    $settingsFile.withLock {
-      var updated = $0.global
-      updated.defaultViewMode = .shelf
-      $0.global = updated
-    }
-    // Restore settings after the test so `@Shared` state doesn't leak
-    // across parallel test runs in the same process.
-    defer {
-      $settingsFile.withLock {
-        var updated = $0.global
-        updated.defaultViewMode = .normal
-        $0.global = updated
-      }
-    }
-
-    // Drive only the reducer action under test, not the full `.task`
-    // flow — the launch pipeline is covered elsewhere. This isolates
-    // the new "default view shelf" hook from unrelated effects and
-    // keeps the assertion surface minimal.
-    var initialState = RepositoriesFeature.State()
-    initialState.lastFocusedWorktreeID = worktree.id
-    initialState.shouldRestoreLastFocusedWorktree = true
-    initialState.snapshotPersistencePhase = .restoring
-    let store = TestStore(initialState: initialState) {
-      RepositoriesFeature()
-    }
-
-    await store.send(.repositorySnapshotLoaded([repository])) {
-      $0.repositories = [repository]
-      $0.repositoryRoots = [rootURL]
-      $0.selection = .worktree(worktree.id)
-      $0.shouldRestoreLastFocusedWorktree = false
-      $0.isInitialLoadComplete = true
-    }
-    await store.receive(\.delegate.repositoriesChanged)
-    await store.receive(\.delegate.selectedWorktreeChanged)
-    await store.receive(\.toggleShelf) {
-      $0.isShelfActive = true
-      $0.openedWorktreeIDs = [worktree.id]
-      $0.pendingTerminalFocusWorktreeIDs = [worktree.id]
-    }
     await store.finish()
   }
 
@@ -891,5 +930,88 @@ struct ShelfFeatureTests {
     await store.receive(\.delegate.selectedWorktreeChanged)
     // No `.toggleShelf` here — the Layout Restore path is responsible.
     await store.finish()
+  }
+
+  @Test(.dependencies) func defaultViewCanvasDefersDuringLayoutRestore() async {
+    // Mirrors the Shelf deferral: during Layout Restore the snapshot-load
+    // hook stays quiet and the AppFeature `.layoutRestored` path takes over.
+    let repoRoot = "/tmp/default-canvas-restore-repo"
+    let rootURL = URL(fileURLWithPath: repoRoot)
+    let worktree = Worktree(
+      id: "\(repoRoot)/main",
+      name: "main",
+      detail: "",
+      workingDirectory: URL(fileURLWithPath: "\(repoRoot)/main"),
+      repositoryRootURL: rootURL
+    )
+    let repository = Repository(
+      id: repoRoot,
+      rootURL: rootURL,
+      name: "repo",
+      worktrees: IdentifiedArray(uniqueElements: [worktree])
+    )
+
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock {
+      var updated = $0.global
+      updated.defaultViewMode = .canvas
+      $0.global = updated
+    }
+    defer {
+      $settingsFile.withLock {
+        var updated = $0.global
+        updated.defaultViewMode = .normal
+        $0.global = updated
+      }
+    }
+
+    var initialState = RepositoriesFeature.State()
+    initialState.lastFocusedWorktreeID = worktree.id
+    initialState.shouldRestoreLastFocusedWorktree = true
+    initialState.snapshotPersistencePhase = .restoring
+    initialState.launchRestoreMode = .restoreLayout
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.repositorySnapshotLoaded([repository])) {
+      $0.repositories = [repository]
+      $0.repositoryRoots = [rootURL]
+      $0.selection = .worktree(worktree.id)
+      $0.shouldRestoreLastFocusedWorktree = false
+      $0.isInitialLoadComplete = true
+    }
+    await store.receive(\.delegate.repositoriesChanged)
+    await store.receive(\.delegate.selectedWorktreeChanged)
+    // No `.toggleCanvas` here — the Layout Restore path is responsible.
+    await store.finish()
+  }
+
+  @Test func isShowingShelfRequiresAtLeastOneRepository() {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo")
+    let repository = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: "repo",
+      worktrees: []
+    )
+
+    // Active shelf with zero repositories falls back to Normal — covers the
+    // zero-repo launch race where `isShelfActive` is flipped on (from the
+    // repository snapshot) before the empty entries file reconciles repos
+    // back to empty.
+    var empty = RepositoriesFeature.State()
+    empty.isShelfActive = true
+    #expect(empty.repositories.isEmpty)
+    #expect(empty.isShowingShelf == false)
+
+    // With a repository present, the active shelf renders.
+    var withRepo = RepositoriesFeature.State(repositories: [repository])
+    withRepo.isShelfActive = true
+    #expect(withRepo.isShowingShelf == true)
+
+    // Inactive shelf is never showing.
+    withRepo.isShelfActive = false
+    #expect(withRepo.isShowingShelf == false)
   }
 }

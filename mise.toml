@@ -1,4 +1,5 @@
 [tools]
+node = "22.21.1"
 zig = "0.15.2"
 swiftlint = "latest"
 "github:ldomaradzki/xcsift" = "latest"

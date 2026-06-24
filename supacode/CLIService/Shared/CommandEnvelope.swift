@@ -16,19 +16,25 @@ public struct CommandEnvelope: Codable, Sendable {
 public enum Command: Codable, Sendable {
   case open(OpenInput)
   case list(ListInput)
+  case agents(AgentsInput)
   case focus(FocusInput)
   case send(SendInput)
   case key(KeyInput)
   case read(ReadInput)
+  case tab(TabInput)
+  case pane(PaneInput)
 
   public var name: String {
     switch self {
     case .open: "open"
     case .list: "list"
+    case .agents: "agents"
     case .focus: "focus"
     case .send: "send"
     case .key: "key"
     case .read: "read"
+    case .tab: "tab"
+    case .pane: "pane"
     }
   }
 }

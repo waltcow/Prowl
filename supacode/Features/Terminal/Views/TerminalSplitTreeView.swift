@@ -1,10 +1,15 @@
 import AppKit
+import Sharing
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct TerminalSplitTreeView: View {
   let tree: SplitTree<GhosttySurfaceView>
   var pinnedSize: CGSize?
+  var activeSurfaceID: UUID?
+  var unfocusedSplitOverlay: (fill: Color?, opacity: Double)
+  var splitDivider: (color: Color?, width: CGFloat?) = (nil, nil)
+  let hasNotification: (UUID) -> Bool
   let action: (Operation) -> Void
 
   private static let dragType = UTType(exportedAs: "com.onevcat.prowl.ghosttySurfaceId")
@@ -23,8 +28,18 @@ struct TerminalSplitTreeView: View {
 
   var body: some View {
     if let node = tree.visibleNode {
-      SubtreeView(node: node, isRoot: node == tree.root, pinnedSize: pinnedSize, action: action)
-        .id(node.structuralIdentity)
+      SubtreeView(
+        node: node,
+        isRoot: node == tree.root,
+        zoomedNode: tree.zoomed,
+        pinnedSize: pinnedSize,
+        activeSurfaceID: activeSurfaceID,
+        unfocusedSplitOverlay: unfocusedSplitOverlay,
+        splitDivider: splitDivider,
+        hasNotification: hasNotification,
+        action: action
+      )
+      .id(node.structuralIdentity)
     }
   }
 
@@ -32,18 +47,33 @@ struct TerminalSplitTreeView: View {
     case resize(node: SplitTree<GhosttySurfaceView>.Node, ratio: Double)
     case drop(payloadId: UUID, destinationId: UUID, zone: DropZone)
     case equalize
+    case toggleZoom(surfaceId: UUID)
   }
 
   struct SubtreeView: View {
     let node: SplitTree<GhosttySurfaceView>.Node
     var isRoot: Bool = false
+    var zoomedNode: SplitTree<GhosttySurfaceView>.Node?
     var pinnedSize: CGSize?
+    var activeSurfaceID: UUID?
+    var unfocusedSplitOverlay: (fill: Color?, opacity: Double)
+    var splitDivider: (color: Color?, width: CGFloat?) = (nil, nil)
+    let hasNotification: (UUID) -> Bool
     let action: (Operation) -> Void
 
     var body: some View {
       switch node {
       case .leaf(let leafView):
-        LeafView(surfaceView: leafView, isSplit: !isRoot, pinnedSize: pinnedSize, action: action)
+        LeafView(
+          surfaceView: leafView,
+          isSplit: !isRoot,
+          isZoomed: zoomedNode == node,
+          isFocused: leafView.id == activeSurfaceID,
+          unfocusedSplitOverlay: unfocusedSplitOverlay,
+          hasNotification: hasNotification(leafView.id),
+          pinnedSize: pinnedSize,
+          action: action
+        )
       case .split(let split):
         let splitViewDirection: SplitView<SubtreeView, SubtreeView>.Direction =
           switch split.direction {
@@ -63,13 +93,32 @@ struct TerminalSplitTreeView: View {
             set: {
               action(.resize(node: node, ratio: Double($0)))
             }),
-          dividerColor: .secondary,
+          dividerColor: splitDivider.color ?? Color(nsColor: .separatorColor),
+          dividerVisibleSize: splitDivider.width ?? SplitView<SubtreeView, SubtreeView>.defaultVisibleSize,
           resizeIncrements: .init(width: 1, height: 1),
           left: {
-            SubtreeView(node: split.left, pinnedSize: leftPinned, action: action)
+            SubtreeView(
+              node: split.left,
+              zoomedNode: zoomedNode,
+              pinnedSize: leftPinned,
+              activeSurfaceID: activeSurfaceID,
+              unfocusedSplitOverlay: unfocusedSplitOverlay,
+              splitDivider: splitDivider,
+              hasNotification: hasNotification,
+              action: action
+            )
           },
           right: {
-            SubtreeView(node: split.right, pinnedSize: rightPinned, action: action)
+            SubtreeView(
+              node: split.right,
+              zoomedNode: zoomedNode,
+              pinnedSize: rightPinned,
+              activeSurfaceID: activeSurfaceID,
+              unfocusedSplitOverlay: unfocusedSplitOverlay,
+              splitDivider: splitDivider,
+              hasNotification: hasNotification,
+              action: action
+            )
           },
           onEqualize: {
             action(.equalize)
@@ -93,15 +142,36 @@ struct TerminalSplitTreeView: View {
   struct LeafView: View {
     let surfaceView: GhosttySurfaceView
     let isSplit: Bool
+    var isZoomed: Bool = false
+    var isFocused: Bool = true
+    var unfocusedSplitOverlay: (fill: Color?, opacity: Double)
+    let hasNotification: Bool
     var pinnedSize: CGSize?
     let action: (Operation) -> Void
 
     @State private var dropState: DropState = .idle
+    @State private var isHandleHovering = false
+    @State private var isZoomButtonHovering = false
+    @Shared(.settingsFile) private var settingsFile: SettingsFile
+
+    private var shouldDim: Bool {
+      isSplit
+        && !isFocused
+        && settingsFile.global.dimUnfocusedSplits
+        && unfocusedSplitOverlay.fill != nil
+        && unfocusedSplitOverlay.opacity > 0
+    }
 
     var body: some View {
       GeometryReader { geometry in
         GhosttyTerminalView(surfaceView: surfaceView, pinnedSize: pinnedSize)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .overlay {
+            unfocusedSplitOverlay.fill
+              .opacity(shouldDim ? unfocusedSplitOverlay.opacity : 0)
+              .allowsHitTesting(false)
+              .animation(.easeOut(duration: 0.12), value: shouldDim)
+          }
           .overlay(alignment: .top) {
             GhosttySurfaceProgressOverlay(state: surfaceView.bridge.state)
           }
@@ -110,9 +180,29 @@ struct TerminalSplitTreeView: View {
               GhosttySurfaceSearchOverlay(surfaceView: surfaceView)
             }
           }
+          .overlay(alignment: .topTrailing) {
+            SurfaceNotificationDot()
+              .padding(6)
+              .opacity(hasNotification ? 1 : 0)
+              .allowsHitTesting(false)
+              .animation(.easeInOut(duration: 0.2), value: hasNotification)
+          }
           .overlay(alignment: .top) {
             if isSplit {
-              DragHandle(surfaceView: surfaceView)
+              DragHandle(surfaceView: surfaceView, isHovering: $isHandleHovering)
+            }
+          }
+          .overlay(alignment: .topTrailing) {
+            // The zoomed pane keeps a persistent exit button; other panes only
+            // reveal the zoom affordance while the drag handle (or the button
+            // itself, to survive the cursor hand-off) is hovered.
+            if isSplit, isZoomed || isHandleHovering || isZoomButtonHovering {
+              SplitZoomButton(isZoomed: isZoomed) {
+                action(.toggleZoom(surfaceId: surfaceView.id))
+              }
+              .onHover { isZoomButtonHovering = $0 }
+              .onDisappear { isZoomButtonHovering = false }
+              .padding(6)
             }
           }
           .background {
@@ -138,10 +228,39 @@ struct TerminalSplitTreeView: View {
 
   }
 
+  struct SplitZoomButton: View {
+    let isZoomed: Bool
+    let action: () -> Void
+    @Environment(\.resolvedKeybindings) private var resolvedKeybindings
+
+    var body: some View {
+      Button(action: action) {
+        Image(
+          systemName: isZoomed
+            ? "arrow.down.right.and.arrow.up.left"
+            : "arrow.up.left.and.arrow.down.right"
+        )
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(.primary)
+        .padding(5)
+        .background(.regularMaterial, in: .rect(cornerRadius: 6))
+      }
+      .buttonStyle(.plain)
+      .help(
+        AppShortcuts.helpText(
+          title: isZoomed ? "Exit Split Zoom" : "Zoom Split",
+          commandID: AppShortcuts.CommandID.toggleSplitZoom,
+          in: resolvedKeybindings
+        )
+      )
+      .accessibilityLabel(isZoomed ? "Exit split zoom" : "Zoom split")
+    }
+  }
+
   struct DragHandle: View {
     let surfaceView: GhosttySurfaceView
+    @Binding var isHovering: Bool
     private let handleHeight: CGFloat = 10
-    @State private var isHovering = false
 
     var body: some View {
       Rectangle()
@@ -293,12 +412,28 @@ struct TerminalSplitTreeView: View {
   }
 }
 
+private struct SurfaceNotificationDot: View {
+  var body: some View {
+    Circle()
+      .fill(.orange)
+      .frame(width: 8, height: 8)
+      .overlay {
+        Circle().stroke(.background, lineWidth: 1)
+      }
+      .accessibilityLabel("Unread notifications")
+  }
+}
+
 // MARK: - Accessibility Container
 
 /// Wraps the SwiftUI split tree in an AppKit view so we can expose an ordered
 /// list of terminal panes to assistive technologies.
 struct TerminalSplitTreeAXContainer: NSViewRepresentable {
   let tree: SplitTree<GhosttySurfaceView>
+  var activeSurfaceID: UUID?
+  var unfocusedSplitOverlay: (fill: Color?, opacity: Double)
+  var splitDivider: (color: Color?, width: CGFloat?) = (nil, nil)
+  let hasNotification: (UUID) -> Bool
   let action: (TerminalSplitTreeView.Operation) -> Void
 
   func makeNSView(context: Context) -> TerminalSplitAXContainerView {
@@ -307,7 +442,18 @@ struct TerminalSplitTreeAXContainer: NSViewRepresentable {
 
   func updateNSView(_ nsView: TerminalSplitAXContainerView, context: Context) {
     nsView.update(
-      rootView: AnyView(TerminalSplitTreeView(tree: tree, action: action)),
+      // Concrete type (not `AnyView`): erasing the type defeats SwiftUI's
+      // diffing, forcing a full re-render of the split tree on every assignment
+      // — e.g. once per terminal notification. The concrete root lets the host
+      // skip unchanged content.
+      rootView: TerminalSplitTreeView(
+        tree: tree,
+        activeSurfaceID: activeSurfaceID,
+        unfocusedSplitOverlay: unfocusedSplitOverlay,
+        splitDivider: splitDivider,
+        hasNotification: hasNotification,
+        action: action
+      ),
       panes: tree.visibleLeaves()
     )
   }
@@ -315,12 +461,12 @@ struct TerminalSplitTreeAXContainer: NSViewRepresentable {
 
 @MainActor
 final class TerminalSplitAXContainerView: NSView {
-  private var hostingView: NSHostingView<AnyView>?
+  private var hostingView: NSHostingView<TerminalSplitTreeView>?
   private var panes: [GhosttySurfaceView] = []
   private var panesLabel: String = "Terminal split: 0 panes"
   private var lastPaneIDs: [UUID] = []
 
-  func update(rootView: AnyView, panes: [GhosttySurfaceView]) {
+  func update(rootView: TerminalSplitTreeView, panes: [GhosttySurfaceView]) {
     if let hostingView {
       hostingView.rootView = rootView
     } else {

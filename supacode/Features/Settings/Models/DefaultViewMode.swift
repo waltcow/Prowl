@@ -1,10 +1,12 @@
 /// Which presentation the app enters on launch. `normal` keeps the
 /// historical behavior (sidebar + terminal detail); `shelf` boots
-/// straight into Shelf so power users who live in Shelf don't have to
-/// toggle it every time they open Prowl.
+/// straight into Shelf and `canvas` boots straight into Canvas, so
+/// power users who live in those views don't have to toggle them
+/// every time they open Prowl.
 enum DefaultViewMode: String, CaseIterable, Identifiable, Codable, Sendable {
   case normal
   case shelf
+  case canvas
 
   var id: String { rawValue }
 
@@ -14,6 +16,8 @@ enum DefaultViewMode: String, CaseIterable, Identifiable, Codable, Sendable {
       return "Normal View"
     case .shelf:
       return "Shelf View"
+    case .canvas:
+      return "Canvas View"
     }
   }
 }

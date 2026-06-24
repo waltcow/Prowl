@@ -1,10 +1,17 @@
+import Foundation
 import Observation
 
 @MainActor
 @Observable
 final class TerminalTabManager {
-  var tabs: [TerminalTabItem] = []
+  var tabs: [TerminalTabItem] = [] {
+    didSet {
+      guard let editingTabID, !tabs.contains(where: { $0.id == editingTabID }) else { return }
+      self.editingTabID = nil
+    }
+  }
   var selectedTabId: TerminalTabID?
+  private(set) var editingTabID: TerminalTabID?
 
   func createTab(title: String, icon: String?, isTitleLocked: Bool = false) -> TerminalTabID {
     let tab = TerminalTabItem(title: title, icon: icon, isTitleLocked: isTitleLocked)
@@ -24,21 +31,40 @@ final class TerminalTabManager {
     selectedTabId = id
   }
 
-  func updateTitle(_ id: TerminalTabID, title: String) {
-    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-    guard !tabs[index].isTitleLocked else { return }
+  /// Updates the live shell title. Returns `true` when the visible
+  /// `displayTitle` actually changed (a custom title masks live updates),
+  /// so callers can refresh derived UI like the Active Agents subtitle.
+  @discardableResult
+  func updateTitle(_ id: TerminalTabID, title: String) -> Bool {
+    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
+    guard !tabs[index].isTitleLocked else { return false }
+    // A TUI re-emits the same title constantly; skip the no-op write so it
+    // doesn't invalidate the tab bar while an agent streams output.
+    guard tabs[index].title != title else { return false }
+    let previousDisplayTitle = tabs[index].displayTitle
     tabs[index].title = title
+    return tabs[index].displayTitle != previousDisplayTitle
   }
 
-  func overrideTitle(_ id: TerminalTabID, title: String) {
-    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-    tabs[index].title = title
-    tabs[index].isTitleLocked = true
+  /// Sets (or clears, when blank) the user-defined title. Returns `true` when
+  /// the visible `displayTitle` actually changed.
+  @discardableResult
+  func setCustomTitle(_ id: TerminalTabID, title: String) -> Bool {
+    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
+    guard !tabs[index].isTitleLocked else { return false }
+    let previousDisplayTitle = tabs[index].displayTitle
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    tabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
+    return tabs[index].displayTitle != previousDisplayTitle
   }
 
-  func clearTitleOverride(_ id: TerminalTabID) {
-    guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-    tabs[index].isTitleLocked = false
+  func beginTabRename(_ id: TerminalTabID) {
+    guard tabs.contains(where: { $0.id == id && !$0.isTitleLocked }) else { return }
+    editingTabID = id
+  }
+
+  func endTabRename() {
+    editingTabID = nil
   }
 
   /// Auto-detection write path (e.g. `CommandIconMap`). Only applies
@@ -75,6 +101,9 @@ final class TerminalTabManager {
 
   func updateDirty(_ id: TerminalTabID, isDirty: Bool) {
     guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+    // OSC-9 drives this on every progress tick; skip the no-op write so an
+    // unchanged dirty flag doesn't re-render the tab bar during agent activity.
+    guard tabs[index].isDirty != isDirty else { return }
     tabs[index].isDirty = isDirty
   }
 

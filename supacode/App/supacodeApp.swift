@@ -14,6 +14,11 @@ import Sentry
 import Sharing
 import SwiftUI
 
+@MainActor
+private final class SupacodeAppStoreBox {
+  weak var store: StoreOf<AppFeature>?
+}
+
 private enum GhosttyCLI {
   static func argv(resolvedKeybindings: ResolvedKeybindingMap) -> [UnsafeMutablePointer<CChar>?] {
     var args: [UnsafeMutablePointer<CChar>?] = []
@@ -29,11 +34,22 @@ private enum GhosttyCLI {
 
 @MainActor
 final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
-  var appStore: StoreOf<AppFeature>?
+  var appStore: StoreOf<AppFeature>? {
+    didSet {
+      guard let appStore else { return }
+      setSystemNotificationTapHandler { [weak appStore] worktreeID, surfaceID in
+        appStore?.send(.systemNotificationTapped(worktreeID: worktreeID, surfaceID: surfaceID))
+      }
+    }
+  }
   var terminalManager: WorktreeTerminalManager?
   var cliSocketServer: CLISocketServer?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    WindowLifecycleDiagnostics.startMainThreadHeartbeat()
+    WindowLifecycleDiagnostics.logWithWindows("applicationDidFinishLaunching")
+    WindowLifecycleDiagnostics.noteWindowlessIfNoMainWindow("launch")
+    WindowLifecycleDiagnostics.applyLaunchStallIfConfigured()
     // Disable press-and-hold accent menu so that key repeat works in the terminal.
     UserDefaults.standard.register(defaults: [
       "ApplePressAndHoldEnabled": false
@@ -43,16 +59,28 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidBecomeActive(_ notification: Notification) {
     let app = NSApplication.shared
-    guard !app.windows.contains(where: \.isVisible) else { return }
-    _ = showMainWindow(from: app)
+    let hasVisibleMainWindow = MainWindowSurface.hasVisibleMainWindow(in: app.windows)
+    WindowLifecycleDiagnostics.logWithWindows(
+      "applicationDidBecomeActive hasVisibleMainWindow=\(hasVisibleMainWindow)"
+    )
+    guard !hasVisibleMainWindow else { return }
+    WindowLifecycleDiagnostics.log("applicationDidBecomeActive -> surfaceMainWindow()")
+    app.surfaceMainWindow()
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-    if flag { return true }
-    return showMainWindow(from: sender) ? false : true
+    WindowLifecycleDiagnostics.logWithWindows("applicationShouldHandleReopen hasVisibleWindows=\(flag)")
+    if flag, MainWindowSurface.hasVisibleMainWindow(in: sender.windows) {
+      WindowLifecycleDiagnostics.noteMainWindowAppeared()
+      return true
+    }
+    let surfaced = sender.surfaceMainWindow()
+    WindowLifecycleDiagnostics.log("applicationShouldHandleReopen surfaced=\(surfaced) -> handled=\(!surfaced)")
+    return !surfaced
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    WindowLifecycleDiagnostics.logWithWindows("applicationWillTerminate")
     defer { cliSocketServer?.stop() }
     guard appStore?.state.settings.restoreTerminalLayoutOnLaunch == true else { return }
     guard appStore?.state.suppressLayoutSaveUntilRelaunch != true else { return }
@@ -63,25 +91,6 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
     false
   }
 
-  private func mainWindow(from sender: NSApplication) -> NSWindow? {
-    if let window = sender.windows.first(where: { $0.identifier?.rawValue == "main" }) {
-      return window
-    }
-    if let window = sender.windows.first(where: { $0.identifier?.rawValue != "settings" }) {
-      return window
-    }
-    return sender.windows.first
-  }
-
-  private func showMainWindow(from sender: NSApplication) -> Bool {
-    guard let window = mainWindow(from: sender) else { return false }
-    if window.isMiniaturized {
-      window.deminiaturize(nil)
-    }
-    sender.activate(ignoringOtherApps: true)
-    window.makeKeyAndOrderFront(nil)
-    return true
-  }
 }
 
 @main
@@ -92,10 +101,12 @@ struct SupacodeApp: App {
   @State private var ghosttyShortcuts: GhosttyShortcutManager
   @State private var terminalManager: WorktreeTerminalManager
   @State private var worktreeInfoWatcher: WorktreeInfoWatcherManager
+  @State private var pullRequestRefreshCoordinator: PullRequestRefreshCoordinator
   @State private var commandKeyObserver: CommandKeyObserver
   @State private var cliSocketServer: CLISocketServer
   @State private var store: StoreOf<AppFeature>
   @State private var memoryWatchdog: MemoryWatchdog
+  @State private var askAgentHelp = AskAgentHelpPresenter()
 
   private static func cliLaunchOpenPath() -> String? {
     let args = ProcessInfo.processInfo.arguments
@@ -130,7 +141,16 @@ struct SupacodeApp: App {
           if let releaseName { options.releaseName = releaseName }
           options.tracesSampleRate = 0.05
           options.enableAppHangTracking = false
+          // Don't report failed HTTP requests. The SDK swizzles URLSession to
+          // turn any 5xx response into an HTTPClientError, but every request we
+          // make goes to servers we don't own (e.g. Sparkle fetching the
+          // appcast from GitHub), so their 502s are noise, not our bugs.
+          options.enableCaptureFailedRequests = false
         }
+        // Match the Sentry user id to the PostHog distinct id so an event in
+        // one system can be traced to the same install in the other.
+        let sentryUser = Sentry.User(userId: InstallIdentifier.current)
+        SentrySDK.setUser(sentryUser)
       }
       if initialSettings.analyticsEnabled,
         let apiKey = infoPlistSecret(infoDictionary, key: "ProwlPostHogAPIKey"),
@@ -179,6 +199,9 @@ struct SupacodeApp: App {
     _terminalManager = State(initialValue: terminalManager)
     let worktreeInfoWatcher = WorktreeInfoWatcherManager()
     _worktreeInfoWatcher = State(initialValue: worktreeInfoWatcher)
+    let storeBox = SupacodeAppStoreBox()
+    let coordinator = Self.makePullRequestRefreshCoordinator(storeBox: storeBox)
+    _pullRequestRefreshCoordinator = State(initialValue: coordinator)
     let keyObserver = CommandKeyObserver()
     _commandKeyObserver = State(initialValue: keyObserver)
     var initialAppState = AppFeature.State(settings: SettingsFeature.State(settings: initialSettings))
@@ -191,17 +214,7 @@ struct SupacodeApp: App {
       AppFeature()
         .logActions()
     } withDependencies: { values in
-      values.terminalClient = TerminalClient(
-        send: { command in
-          terminalManager.handleCommand(command)
-        },
-        events: {
-          terminalManager.eventStream()
-        },
-        canvasFocusedWorktreeID: {
-          terminalManager.canvasFocusedWorktreeID
-        }
-      )
+      values.terminalClient = Self.makeTerminalClient(terminalManager: terminalManager)
       values.worktreeInfoWatcher = WorktreeInfoWatcherClient(
         send: { command in
           worktreeInfoWatcher.handleCommand(command)
@@ -210,23 +223,17 @@ struct SupacodeApp: App {
           worktreeInfoWatcher.eventStream()
         }
       )
+      values.pullRequestRefreshCoordinator = Self.makePullRequestRefreshCoordinatorClient(
+        coordinator: coordinator
+      )
     }
     _store = State(initialValue: appStore)
+    storeBox.store = appStore
 
     let cliServer = Self.makeCLISocketServer(appStore: appStore, terminalManager: terminalManager)
     _cliSocketServer = State(initialValue: cliServer)
 
-    let watchdog = MemoryWatchdog(
-      analyticsCapture: AnalyticsClient.liveValue.capture,
-      contextProvider: { [appStore, terminalManager] in
-        let state = appStore.state
-        return MemoryWatchdog.Context(
-          repositoryCount: state.repositories.repositories.count,
-          openedWorktreeCount: state.repositories.repositories.flatMap(\.worktrees).count,
-          terminalTabCount: terminalManager.activeWorktreeStates.flatMap(\.tabManager.tabs).count
-        )
-      }
-    )
+    let watchdog = Self.makeMemoryWatchdog(appStore: appStore, terminalManager: terminalManager)
     #if !DEBUG
       watchdog.start()
     #endif
@@ -246,6 +253,96 @@ struct SupacodeApp: App {
     #if DEBUG
       DebugWindowManager.shared.configure(store: appStore)
     #endif
+  }
+
+  @MainActor
+  private static func makePullRequestRefreshCoordinator(
+    storeBox: SupacodeAppStoreBox
+  ) -> PullRequestRefreshCoordinator {
+    PullRequestRefreshCoordinator(
+      githubCLI: .liveValue,
+      clock: ContinuousClock()
+    ) { outcome in
+      storeBox.store?.send(
+        .repositories(.githubIntegration(.pullRequestRefreshBatchOutcome(outcome)))
+      )
+    }
+  }
+
+  private static func makePullRequestRefreshCoordinatorClient(
+    coordinator: PullRequestRefreshCoordinator
+  ) -> PullRequestRefreshCoordinatorClient {
+    PullRequestRefreshCoordinatorClient(
+      enqueue: { request in
+        Task { @MainActor in
+          coordinator.enqueue(request)
+        }
+      },
+      cancelHost: { host in
+        Task { @MainActor in
+          coordinator.cancelHost(host)
+        }
+      },
+      reset: {
+        Task { @MainActor in
+          coordinator.reset()
+        }
+      }
+    )
+  }
+
+  private static func makeMemoryWatchdog(
+    appStore: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager
+  ) -> MemoryWatchdog {
+    MemoryWatchdog(
+      analyticsCapture: AnalyticsClient.liveValue.capture,
+      contextProvider: { [appStore, terminalManager] in
+        let repositoriesState = appStore.state.repositories
+        let repositories = repositoriesState.repositories
+        let repositoryCount = repositories.count
+        let openedWorktreeCount = repositories.reduce(0) { $0 + $1.worktrees.count }
+        let activeStates = terminalManager.activeWorktreeStates
+        let terminalTabCount = activeStates.reduce(0) { $0 + $1.tabManager.tabs.count }
+        return MemoryWatchdog.Context(
+          repositoryCount: repositoryCount,
+          openedWorktreeCount: openedWorktreeCount,
+          terminalTabCount: terminalTabCount
+        )
+      }
+    )
+  }
+
+  private static func makeTerminalClient(terminalManager: WorktreeTerminalManager) -> TerminalClient {
+    TerminalClient(
+      send: { command in
+        terminalManager.handleCommand(command)
+      },
+      events: {
+        terminalManager.eventStream()
+      },
+      canvasFocusedWorktreeID: {
+        terminalManager.canvasFocusedWorktreeID
+      },
+      selectedSurfaceID: { worktreeID in
+        guard let state = terminalManager.stateIfExists(for: worktreeID),
+          let tabID = state.tabManager.selectedTabId
+        else { return nil }
+        return state.activeSurfaceID(for: tabID)
+      },
+      latestUnreadNotification: {
+        terminalManager.latestUnreadNotificationLocation()
+      },
+      focusSurface: { worktreeID, surfaceID in
+        terminalManager.focusSurface(worktreeID: worktreeID, surfaceID: surfaceID)
+      },
+      markNotificationRead: { worktreeID, notificationID in
+        terminalManager.markNotificationRead(worktreeID: worktreeID, notificationID: notificationID)
+      },
+      markNotificationsReadForSurface: { worktreeID, surfaceID in
+        terminalManager.markNotificationsRead(worktreeID: worktreeID, surfaceID: surfaceID)
+      }
+    )
   }
 
   private static func makeTargetResolver(
@@ -269,6 +366,15 @@ struct SupacodeApp: App {
       ListRuntimeSnapshotBuilder.makeSnapshot(
         repositoriesState: appStore.state.repositories,
         terminalManager: terminalManager
+      )
+    }
+    let agentsHandler = AgentsCommandHandler {
+      AgentsRuntimeSnapshot(
+        repositoriesState: appStore.state.repositories,
+        listSnapshot: ListRuntimeSnapshotBuilder.makeSnapshot(
+          repositoriesState: appStore.state.repositories,
+          terminalManager: terminalManager
+        )
       )
     }
     let sendHandler = SendCommandHandler(
@@ -379,13 +485,83 @@ struct SupacodeApp: App {
         return KeyDeliveryResult(attempted: repeatCount, delivered: delivered)
       }
     )
+    let tabHandler = TabCommandHandler(
+      resolveProvider: { selector in
+        let resolver = TargetResolver {
+          TargetResolutionSnapshotBuilder.makeSnapshot(
+            repositoriesState: appStore.state.repositories,
+            terminalManager: terminalManager
+          )
+        }
+        return resolver.resolve(selector).map { TabResolvedTarget(from: $0) }
+      },
+      createTab: { target, path in
+        let repositories = Array(appStore.state.repositories.repositories)
+        guard let worktree = resolveCLITerminalWorktree(id: target.worktreeID, repositories: repositories) else {
+          return nil
+        }
+        selectCLIWorktreeContext(
+          worktreeID: target.worktreeID,
+          appStore: appStore,
+          terminalManager: terminalManager
+        )
+        let state = terminalManager.state(for: worktree)
+        let directory = path.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        guard let tabID = state.createTab(workingDirectoryOverride: directory) else {
+          return nil
+        }
+        let resolver = makeTargetResolver(appStore: appStore, terminalManager: terminalManager)
+        switch resolver.resolve(.tab(tabID.rawValue.uuidString)) {
+        case .success(let resolved):
+          return TabResolvedTarget(from: resolved)
+        case .failure:
+          return nil
+        }
+      },
+      closeTab: { target, force in
+        guard let tabUUID = UUID(uuidString: target.tabID),
+          let state = terminalManager.stateIfExists(for: target.worktreeID)
+        else {
+          return false
+        }
+        return state.closeTab(
+          TerminalTabID(rawValue: tabUUID),
+          confirmation: force ? .skip : .prompt(.tab)
+        )
+      }
+    )
+    let paneHandler = PaneCommandHandler(
+      resolveProvider: { selector in
+        let resolver = TargetResolver {
+          TargetResolutionSnapshotBuilder.makeSnapshot(
+            repositoriesState: appStore.state.repositories,
+            terminalManager: terminalManager
+          )
+        }
+        return resolver.resolve(selector).map { TabResolvedTarget(from: $0) }
+      },
+      closePane: { target, force in
+        guard let paneID = UUID(uuidString: target.paneID),
+          let state = terminalManager.stateIfExists(for: target.worktreeID)
+        else {
+          return false
+        }
+        return state.closeSurface(
+          id: paneID,
+          confirmation: force ? .skip : .prompt(.pane)
+        )
+      }
+    )
     return CLICommandRouter(
       openHandler: openHandler,
       listHandler: listHandler,
+      agentsHandler: agentsHandler,
       focusHandler: focusHandler,
       sendHandler: sendHandler,
       keyHandler: keyHandler,
-      readHandler: readHandler
+      readHandler: readHandler,
+      tabHandler: tabHandler,
+      paneHandler: paneHandler
     )
   }
 
@@ -582,30 +758,11 @@ struct SupacodeApp: App {
   }
 
   private static func bringMainWindowToFront() -> Bool {
-    let app = NSApplication.shared
-    guard let window = mainWindow(from: app) else {
-      return false
-    }
-    if window.isMiniaturized {
-      window.deminiaturize(nil)
-    }
-    app.activate(ignoringOtherApps: true)
-    window.makeKeyAndOrderFront(nil)
-    return true
-  }
-
-  private static func mainWindow(from app: NSApplication) -> NSWindow? {
-    if let window = app.windows.first(where: { $0.identifier?.rawValue == "main" }) {
-      return window
-    }
-    if let window = app.windows.first(where: { $0.identifier?.rawValue != "settings" }) {
-      return window
-    }
-    return app.windows.first
+    NSApplication.shared.surfaceMainWindow()
   }
 
   var body: some Scene {
-    Window("Prowl", id: "main") {
+    Window("Prowl", id: WindowID.main) {
       GhosttyColorSchemeSyncView(
         ghostty: ghostty,
         preferredColorScheme: store.settings.appearanceMode.colorScheme
@@ -614,9 +771,24 @@ struct SupacodeApp: App {
           .environment(ghosttyShortcuts)
           .environment(commandKeyObserver)
           .environment(\.resolvedKeybindings, store.resolvedKeybindings)
+          .environment(askAgentHelp)
+          .sheet(
+            isPresented: Binding(
+              get: { askAgentHelp.isPresented },
+              set: { askAgentHelp.isPresented = $0 }
+            )
+          ) {
+            AskAgentHelpView { askAgentHelp.dismiss() }
+          }
       }
+      .registersMainWindowOpener()
       .onAppear {
+        WindowLifecycleDiagnostics.logWithWindows("mainWindow content onAppear")
+        WindowLifecycleDiagnostics.noteMainWindowAppeared()
         syncGhosttyManagedShortcuts(with: store.resolvedKeybindings)
+      }
+      .onDisappear {
+        WindowLifecycleDiagnostics.logWithWindows("mainWindow content onDisappear")
       }
       .onChange(of: store.resolvedKeybindings) { _, newValue in
         syncGhosttyManagedShortcuts(with: newValue)
@@ -631,10 +803,16 @@ struct SupacodeApp: App {
       Group {
         WorktreeCommands(store: store)
         SidebarCommands(store: store)
-        TerminalCommands(ghosttyShortcuts: ghosttyShortcuts)
-        WindowCommands(
+        TerminalCommands(
           ghosttyShortcuts: ghosttyShortcuts,
           resolvedKeybindings: store.resolvedKeybindings
+        )
+        WindowCommands(
+          store: store,
+          terminalManager: terminalManager,
+          ghosttyShortcuts: ghosttyShortcuts,
+          resolvedKeybindings: store.resolvedKeybindings,
+          settingsWindowManager: SettingsWindowManager.shared
         )
       }
       CommandGroup(after: .textEditing) {
@@ -678,6 +856,11 @@ struct SupacodeApp: App {
         }
       #endif
       CommandGroup(replacing: .help) {
+        Button("Ask Agent About Prowl…", systemImage: "sparkles") {
+          askAgentHelp.present()
+        }
+        .help("Copy a prompt that points your AI agent at Prowl's bundled docs")
+        Divider()
         Button("Homepage", systemImage: "house") {
           if let url = URL(string: "https://prowl.onev.cat/") {
             NSWorkspace.shared.open(url)

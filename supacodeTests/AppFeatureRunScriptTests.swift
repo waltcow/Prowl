@@ -98,6 +98,56 @@ struct AppFeatureRunScriptTests {
     #expect(store.state.isRunScriptPromptPresented)
   }
 
+  @Test(.dependencies) func runScriptUsesCanvasFocusedWorktree() async {
+    let worktree = makeWorktree()
+    var repositories = makeRepositoriesState(worktree: worktree)
+    repositories.selection = .canvas
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+    var state = AppFeature.State(
+      repositories: repositories,
+      settings: SettingsFeature.State()
+    )
+    state.selectedRunScript = "npm test"
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.canvasFocusedWorktreeID = { worktree.id }
+      $0.terminalClient.send = { command in
+        sent.withValue { $0.append(command) }
+      }
+    }
+
+    await store.send(.runScript)
+    await store.finish()
+
+    #expect(sent.value == [.runScript(worktree, script: "npm test")])
+  }
+
+  @Test(.dependencies) func newTerminalUsesCanvasFocusedWorktree() async {
+    let worktree = makeWorktree()
+    var repositories = makeRepositoriesState(worktree: worktree)
+    repositories.selection = .canvas
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositories,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.canvasFocusedWorktreeID = { worktree.id }
+      $0.terminalClient.send = { command in
+        sent.withValue { $0.append(command) }
+      }
+    }
+
+    await store.send(.newTerminal)
+    await store.finish()
+
+    #expect(sent.value == [.createTab(worktree, runSetupScriptIfNew: false)])
+  }
+
   private func makeWorktree() -> Worktree {
     Worktree(
       id: "/tmp/repo/wt-1",

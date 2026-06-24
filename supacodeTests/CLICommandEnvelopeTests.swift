@@ -56,6 +56,21 @@ struct CLICommandEnvelopeTests {
     }
   }
 
+  @Test func envelopeAgentsRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .agents(AgentsInput())
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+    #expect(decoded.output == .json)
+    if case .agents = decoded.command {
+      // expected
+    } else {
+      Issue.record("Expected .agents command")
+    }
+  }
+
   @Test func envelopeSendWithSelectorRoundTrips() throws {
     let envelope = CommandEnvelope(
       output: .json,
@@ -128,16 +143,116 @@ struct CLICommandEnvelopeTests {
     }
   }
 
+  @Test func envelopeTabCreateRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .tab(TabInput(action: .create, selector: .worktree("wt-main"), path: "/Projects/App"))
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+    if case .tab(let input) = decoded.command {
+      #expect(input.action == .create)
+      #expect(input.selector == .worktree("wt-main"))
+      #expect(input.path == "/Projects/App")
+      #expect(input.force == false)
+    } else {
+      Issue.record("Expected .tab command")
+    }
+  }
+
+  @Test func envelopeTabCloseForceRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .tab(TabInput(action: .close, selector: .tab("tab-1"), force: true))
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+    if case .tab(let input) = decoded.command {
+      #expect(input.action == .close)
+      #expect(input.selector == .tab("tab-1"))
+      #expect(input.force == true)
+    } else {
+      Issue.record("Expected .tab command")
+    }
+  }
+
+  @Test func envelopeTabInputDecodesMissingForceAsFalse() throws {
+    let json = """
+      {
+        "output": "json",
+        "command": {
+          "tab": {
+            "_0": {
+              "action": "close",
+              "selector": { "tab": { "_0": "tab-1" } }
+            }
+          }
+        }
+      }
+      """
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: Data(json.utf8))
+    if case .tab(let input) = decoded.command {
+      #expect(input.action == .close)
+      #expect(input.selector == .tab("tab-1"))
+      #expect(input.force == false)
+    } else {
+      Issue.record("Expected .tab command")
+    }
+  }
+
+  @Test func envelopePaneCloseRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .text,
+      command: .pane(PaneInput(action: .close, selector: .pane("pane-1"), force: true))
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+    if case .pane(let input) = decoded.command {
+      #expect(input.action == .close)
+      #expect(input.selector == .pane("pane-1"))
+      #expect(input.force == true)
+    } else {
+      Issue.record("Expected .pane command")
+    }
+  }
+
+  @Test func envelopePaneInputDecodesMissingForceAsFalse() throws {
+    let json = """
+      {
+        "output": "json",
+        "command": {
+          "pane": {
+            "_0": {
+              "action": "close",
+              "selector": { "pane": { "_0": "pane-1" } }
+            }
+          }
+        }
+      }
+      """
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: Data(json.utf8))
+    if case .pane(let input) = decoded.command {
+      #expect(input.action == .close)
+      #expect(input.selector == .pane("pane-1"))
+      #expect(input.force == false)
+    } else {
+      Issue.record("Expected .pane command")
+    }
+  }
+
   // MARK: - Command name
 
   @Test func commandNameReturnsCorrectStrings() {
     let commands: [(Command, String)] = [
       (.open(OpenInput(path: nil)), "open"),
       (.list(ListInput()), "list"),
+      (.agents(AgentsInput()), "agents"),
       (.focus(FocusInput()), "focus"),
       (.send(SendInput(text: "x")), "send"),
       (.key(KeyInput(rawToken: "tab", token: "tab")), "key"),
       (.read(ReadInput()), "read"),
+      (.tab(TabInput(action: .create)), "tab"),
+      (.pane(PaneInput(action: .close)), "pane"),
     ]
     for (command, expected) in commands {
       #expect(command.name == expected)
@@ -150,10 +265,13 @@ struct CLICommandEnvelopeTests {
     let commands: [Command] = [
       .open(OpenInput(path: "/tmp")),
       .list(ListInput()),
+      .agents(AgentsInput()),
       .focus(FocusInput()),
       .send(SendInput(text: "test")),
       .key(KeyInput(rawToken: "enter", token: "enter")),
       .read(ReadInput()),
+      .tab(TabInput(action: .create)),
+      .pane(PaneInput(action: .close)),
     ]
     for cmd in commands {
       let envelope = CommandEnvelope(output: .json, command: cmd)

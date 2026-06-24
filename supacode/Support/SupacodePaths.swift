@@ -32,8 +32,33 @@ nonisolated enum SupacodePaths {
     appSupportDirectory.appending(path: "cache", directoryHint: .isDirectory)
   }
 
+  /// The agent-facing documentation set bundled inside the app
+  /// (`Prowl.app/Contents/Resources/docs`). Shipped so users and their
+  /// AI agents can read the manual straight from the installed app.
+  static var bundledDocsURL: URL? {
+    Bundle.main.resourceURL?.appending(path: "docs", directoryHint: .isDirectory)
+  }
+
+  /// On-disk path to the bundled docs index (`docs/README.md`), e.g.
+  /// `/Applications/Prowl.app/Contents/Resources/docs/README.md`. `nil` only
+  /// if the bundle has no resource directory (should not happen at runtime).
+  static var bundledDocsReadmePath: String? {
+    bundledDocsURL?
+      .appending(path: "README.md", directoryHint: .notDirectory)
+      .path(percentEncoded: false)
+  }
+
+  /// On-disk path to the bundled docs directory itself.
+  static var bundledDocsDirectoryPath: String? {
+    bundledDocsURL?.path(percentEncoded: false)
+  }
+
   static var reposDirectory: URL {
     baseDirectory.appending(path: "repos", directoryHint: .isDirectory)
+  }
+
+  static var workspacesDirectory: URL {
+    baseDirectory.appending(path: "workspaces", directoryHint: .isDirectory)
   }
 
   static func repositoryDirectory(for rootURL: URL) -> URL {
@@ -53,6 +78,80 @@ nonisolated enum SupacodePaths {
       relativeTo: repositoryRootURL,
       resolvingSymlinks: false
     )
+  }
+
+  /// Resolves an explicit worktree directory from the dialog's optional name /
+  /// path overrides. Returns `nil` when neither is set so callers keep `wt`'s
+  /// default `base/<branch>` placement. The path override sets the parent
+  /// directory (default: the resolved base); the name override sets the leaf
+  /// folder (default: the branch name).
+  static func resolvedWorktreeDirectory(
+    defaultBaseDirectory: URL,
+    repositoryRootURL: URL,
+    nameOverride: String?,
+    pathOverride: String?,
+    branchName: String
+  ) -> URL? {
+    let trimmedName = nameOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let trimmedPath = pathOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !trimmedName.isEmpty || !trimmedPath.isEmpty else {
+      return nil
+    }
+    return worktreePlacement(
+      defaultBaseDirectory: defaultBaseDirectory,
+      repositoryRootURL: repositoryRootURL,
+      trimmedName: trimmedName,
+      trimmedPath: trimmedPath,
+      branchName: branchName
+    )
+  }
+
+  /// Always-concrete counterpart to `resolvedWorktreeDirectory` for the dialog's
+  /// live destination preview. Falls back to the default base and branch name
+  /// when the overrides are empty.
+  static func previewWorktreeDirectory(
+    defaultBaseDirectory: URL,
+    repositoryRootURL: URL,
+    nameOverride: String?,
+    pathOverride: String?,
+    branchName: String
+  ) -> URL {
+    worktreePlacement(
+      defaultBaseDirectory: defaultBaseDirectory,
+      repositoryRootURL: repositoryRootURL,
+      trimmedName: nameOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+      trimmedPath: pathOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+      branchName: branchName
+    )
+  }
+
+  /// Shared base + leaf join for both resolvers. `trimmedName` / `trimmedPath`
+  /// are expected pre-trimmed by callers; only the branch-name fallback is
+  /// re-trimmed defensively.
+  private static func worktreePlacement(
+    defaultBaseDirectory: URL,
+    repositoryRootURL: URL,
+    trimmedName: String,
+    trimmedPath: String,
+    branchName: String
+  ) -> URL {
+    let baseURL: URL
+    if let normalizedPath = normalizedWorktreeBaseDirectoryPath(
+      trimmedPath,
+      repositoryRootURL: repositoryRootURL
+    ) {
+      baseURL = URL(filePath: normalizedPath, directoryHint: .isDirectory).standardizedFileURL
+    } else {
+      baseURL = defaultBaseDirectory.standardizedFileURL
+    }
+    let leaf =
+      trimmedName.isEmpty
+      ? branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+      : trimmedName
+    guard !leaf.isEmpty else {
+      return baseURL
+    }
+    return baseURL.appending(path: leaf, directoryHint: .isDirectory).standardizedFileURL
   }
 
   static func worktreeBaseDirectory(

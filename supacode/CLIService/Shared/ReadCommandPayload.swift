@@ -11,6 +11,12 @@ public struct ReadCommandPayload: Codable, Sendable, Equatable {
   public let truncated: Bool
   public let lineCount: Int
   public let text: String
+  /// Whether `--wait-stable` observed the output settle (true) or hit the timeout (false). Nil when not waiting.
+  public let stabilized: Bool?
+  /// Total milliseconds spent waiting for stable output. Nil when not waiting.
+  public let waitedMs: Int?
+  /// Number of samples taken while waiting for stable output. Nil when not waiting.
+  public let samples: Int?
 
   enum CodingKeys: String, CodingKey {
     case target
@@ -20,6 +26,9 @@ public struct ReadCommandPayload: Codable, Sendable, Equatable {
     case truncated
     case lineCount = "line_count"
     case text
+    case stabilized
+    case waitedMs = "waited_ms"
+    case samples
   }
 
   public init(
@@ -29,7 +38,10 @@ public struct ReadCommandPayload: Codable, Sendable, Equatable {
     source: ReadSource,
     truncated: Bool,
     lineCount: Int,
-    text: String
+    text: String,
+    stabilized: Bool? = nil,
+    waitedMs: Int? = nil,
+    samples: Int? = nil
   ) {
     self.target = target
     self.mode = mode
@@ -38,6 +50,9 @@ public struct ReadCommandPayload: Codable, Sendable, Equatable {
     self.truncated = truncated
     self.lineCount = lineCount
     self.text = text
+    self.stabilized = stabilized
+    self.waitedMs = waitedMs
+    self.samples = samples
   }
 }
 

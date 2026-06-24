@@ -12,15 +12,23 @@ struct RepositorySectionView: View {
   @Binding var expandedRepoIDs: Set<Repository.ID>
   @Bindable var store: StoreOf<RepositoriesFeature>
   let terminalManager: WorktreeTerminalManager
+  let onRepositorySelected: () -> Void
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var isHovering = false
   @Shared(.repositoryAppearances) private var repositoryAppearances
 
   var body: some View {
     let state = store.state
     let isExpanded = expandedRepoIDs.contains(repository.id)
+    // Workspaces are `.plain` (no git worktrees) but still expand to reveal
+    // their child repository rows, so they get the chevron even though
+    // `supportsWorktrees` is false. Worktree-creation affordances stay gated on
+    // `supportsWorktrees` so a workspace never offers "New Worktree".
+    let isExpandable = repository.capabilities.supportsWorktrees || repository.isWorkspace
     let isRemovingRepository = state.isRemovingRepository(repository)
+    let isSelected = state.selection == .repository(repository.id) && state.selectedWorkspaceChildID == nil
     let openRepoSettings = {
       _ = store.send(.repositoryManagement(.openRepositorySettings(repository.id)))
     }
@@ -34,8 +42,6 @@ struct RepositorySectionView: View {
         }
       }
     }
-    let isDragging = isDragActive
-
     let appearance = repositoryAppearances[repository.id] ?? .empty
     let header = HStack {
       // Inner HStack groups the name row and the tab-count badge so they
@@ -46,13 +52,14 @@ struct RepositorySectionView: View {
       HStack {
         RepoHeaderRow(
           name: repository.name,
+          customTitle: store.repositoryCustomTitles[repository.id],
           isRemoving: isRemovingRepository,
-          icon: appearance.icon,
-          iconTint: appearance.color?.color,
+          icon: appearance.icon ?? (repository.isWorkspace ? .sfSymbol("folder") : nil),
+          iconTint: appearance.color?.color ?? .accentColor,
           repositoryRootURL: repository.rootURL,
           nameTooltip: repository.capabilities.supportsWorktrees
             ? (isExpanded ? "Collapse" : "Expand")
-            : "Open terminal in folder"
+            : (repository.isWorkspace ? "Open terminal in workspace" : "Open terminal in folder")
         )
         RepoHeaderTabCountBadge(
           repository: repository,
@@ -70,7 +77,7 @@ struct RepositorySectionView: View {
             }
         }
       }
-      if isRemovingRepository && !isDragging {
+      if isRemovingRepository {
         ProgressView()
           .controlSize(.small)
           .background {
@@ -84,14 +91,7 @@ struct RepositorySectionView: View {
             }
           }
       }
-      if let color = appearance.color {
-        Circle()
-          .fill(color.color)
-          .frame(width: 8, height: 8)
-          .help(color.displayName)
-          .accessibilityLabel(Text("Repo color: \(color.displayName)"))
-      }
-      if isHovering && !isDragging {
+      if isHovering {
         Menu {
           Button("Repo Settings") {
             openRepoSettings()
@@ -152,7 +152,7 @@ struct RepositorySectionView: View {
           )
           .disabled(isRemovingRepository)
         }
-        if repository.capabilities.supportsWorktrees {
+        if isExpandable {
           Button {
             toggleExpanded()
           } label: {
@@ -177,13 +177,30 @@ struct RepositorySectionView: View {
           .help(isExpanded ? "Collapse" : "Expand")
         }
       }
+      if let color = appearance.color {
+        // Solid fill (not .glassEffect): glass/vibrant materials desaturate to
+        // gray when the window is not key, but the repo color dot must keep its
+        // color regardless of focus.
+        Circle()
+          .fill(color.color)
+          .frame(width: 8, height: 8)
+          .help(color.displayName)
+          .accessibilityLabel(Text("Repo color: \(color.displayName)"))
+      }
     }
-    .frame(maxWidth: .infinity, minHeight: headerCellHeight, maxHeight: .infinity, alignment: .center)
+    .frame(
+      maxWidth: .infinity, minHeight: headerCellHeight, maxHeight: .infinity, alignment: .center
+    )
+    .padding(.horizontal, 12)
     .padding(.top, hasTopSpacing ? 4 : 0)
-    .padding(.bottom, hasTopSpacing && !repository.capabilities.supportsWorktrees ? 4 : 0)
+    .padding(.bottom, hasTopSpacing && !isExpandable ? 4 : 0)
     .contentShape(.interaction, .rect)
     .background {
-      if Self.debugHeaderLayers {
+      if isSelected {
+        RoundedRectangle(cornerRadius: 5)
+          .fill(Color.accentColor.opacity(0.18))
+          .padding(.horizontal, 6)
+      } else if Self.debugHeaderLayers {
         Rectangle()
           .fill(.red.opacity(0.12))
           .overlay {
@@ -192,7 +209,19 @@ struct RepositorySectionView: View {
           }
       }
     }
-    .onHover { isHovering = $0 }
+    .onHover { hovering in
+      if reduceMotion {
+        isHovering = hovering
+      } else {
+        withAnimation(.easeOut(duration: 0.15)) {
+          isHovering = hovering
+        }
+      }
+    }
+    .onTapGesture {
+      onRepositorySelected()
+    }
+    .accessibilityAddTraits(.isButton)
     .contentShape(.rect)
     .contextMenu {
       Button("Repo Settings") {
@@ -210,20 +239,32 @@ struct RepositorySectionView: View {
     .environment(\.colorScheme, colorScheme)
     .preferredColorScheme(colorScheme)
 
-    Group {
+    VStack(spacing: 0) {
       header
         .tag(SidebarSelection.repository(repository.id))
       if isExpanded {
-        WorktreeRowsView(
-          repository: repository,
-          isExpanded: isExpanded,
-          hotkeyRows: hotkeyRows,
-          selectedWorktreeIDs: selectedWorktreeIDs,
-          store: store,
-          terminalManager: terminalManager
-        )
+        if repository.isWorkspace {
+          WorkspaceChildRowsView(
+            rows: state.workspaceChildRows(in: repository),
+            selectedID: state.selection == .repository(repository.id)
+              ? state.selectedWorkspaceChildID : nil,
+            onSelect: { childID in
+              store.send(.openWorkspaceChild(childID))
+            }
+          )
+        } else {
+          WorktreeRowsView(
+            repository: repository,
+            isExpanded: isExpanded,
+            hotkeyRows: hotkeyRows,
+            selectedWorktreeIDs: selectedWorktreeIDs,
+            store: store,
+            terminalManager: terminalManager
+          )
+        }
       }
     }
+    .id(SidebarScrollID.repository(repository.id))
   }
 
   private var headerCellHeight: CGFloat {

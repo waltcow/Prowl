@@ -8,9 +8,10 @@ make build-app                   # Build macOS app (Debug) via xcodebuild
 make run-app                     # Build and launch Debug app
 make install-dev-build           # Build and copy to /Applications (Debug)
 make install-release             # Build Release, sign locally, install to /Applications
-make format                      # Run swift-format only
-make lint                        # Run swiftlint only (fix + lint)
-make check                       # Run both format and lint
+make format-changed              # Run swift-format on changed Swift files only
+make format                      # Run full-tree swift-format cleanup
+make lint                        # Run swiftlint only
+make check                       # Run changed-file format, swift-format lint, and swiftlint
 make test                        # Run all tests
 make log-stream                  # Stream app logs (subsystem: com.onevcat.prowl)
 make build-cli                   # Build CLI (prowl) via SwiftPM
@@ -25,6 +26,14 @@ Run a single test class or method:
 xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" \
   -only-testing:supacodeTests/TerminalTabManagerTests \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation
+```
+
+**Swift Testing vs XCTest `-only-testing` format**: Swift Testing (`@Test`) requires trailing `()` in the test identifier. Without it, `xcodebuild` silently matches nothing and reports `TEST SUCCEEDED` with zero tests run.
+```bash
+# XCTest (func testFoo)
+-only-testing:supacodeTests/FooTests/testBar
+# Swift Testing (@Test func bar)
+-only-testing:"supacodeTests/FooTests/bar()"
 ```
 
 Requires [mise](https://mise.jdx.dev/) for zig, swiftlint, and xcsift tooling.
@@ -100,10 +109,10 @@ Reducer ← .terminalEvent(Event) ← AsyncStream<Event>
 ### Formatting & Linting
 
 - 2-space indentation, 120 character line length (enforced by `.swift-format.json`)
-- Trailing commas are mandatory (enforced by `.swiftlint.yml`)
+- `swift-format` is the source of truth for trailing commas: multi-element collection literals keep trailing commas, while single-element collection literals may have them removed.
 - SwiftLint runs in strict mode; never disable lint rules without permission
 - Custom SwiftLint rule: `store_state_mutation_in_views` — do not mutate `store.*` directly in view files; send actions instead
-- Before creating a PR, run `make lint`.
+- Before creating a PR, run `make check`. Use `make format` only for intentional full-tree formatting cleanup.
 
 ## UX Standards
 
@@ -117,6 +126,8 @@ Reducer ← .terminalEvent(Event) ← AsyncStream<Event>
 
 - After a task, ensure the app builds: `make build-app`
 - When working on CLI code (`ProwlCLI/`, `ProwlCLITests/`, `Package.swift`), run `make build-cli`, `make test-cli-smoke`, and `make test-cli-integration` before committing.
+- When you change user-facing behavior (keyboard shortcuts, settings, the `prowl` CLI, or a feature's UX), update the matching file under `docs/` in the same change. For a full audit, run the `sync-docs` skill.
+- When implementing a new feature or fixing a bug that is unrelated to the current branch's active work, first create a dedicated branch from the latest `origin/main`; then work, commit, push, and open a PR from that branch.
 - Automatically commit your changes and your changes only. Do not use `git add .`
 - Before you go on your task, check the current git branch name, if it's something generic like an animal name, name it accordingly. Do not do this for main branch
 - After implementing an execplan, always submit a PR if you're not in the main branch

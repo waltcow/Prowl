@@ -108,7 +108,7 @@ struct GithubBatchPullRequestsTests {
     #expect(prs["feature-a"]?.title == "Fork PR")
   }
 
-  @Test func ignoresNilHeadRepositoryInFallback() throws {
+  @Test func fallsBackToMergedPullRequestWithDeletedFork() throws {
     let json = """
       {
         "data": {
@@ -117,8 +117,8 @@ struct GithubBatchPullRequestsTests {
               "nodes": [
                 {
                   "number": 7,
-                  "title": "Head Missing",
-                  "state": "OPEN",
+                  "title": "Deleted Fork",
+                  "state": "MERGED",
                   "additions": 1,
                   "deletions": 0,
                   "isDraft": false,
@@ -127,18 +127,62 @@ struct GithubBatchPullRequestsTests {
                   "url": "https://github.com/octo/repo/pull/7",
                   "headRefName": "feature-a",
                   "headRepository": null
+                }
+              ]
+            }
+          }
+        }
+      }
+      """
+    let data = Data(json.utf8)
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let response = try decoder.decode(GithubGraphQLPullRequestResponse.self, from: data)
+    let prs = response.pullRequestsByBranch(
+      aliasMap: ["branch0": "feature-a"],
+      owner: "octo",
+      repo: "repo"
+    )
+    #expect(prs["feature-a"]?.number == 7)
+    #expect(prs["feature-a"]?.title == "Deleted Fork")
+  }
+
+  @Test func forkFallbackIgnoresSameBaseBranchMatches() throws {
+    let json = """
+      {
+        "data": {
+          "repository": {
+            "branch0": {
+              "nodes": [
+                {
+                  "number": 12,
+                  "title": "Same Branch Candidate",
+                  "state": "OPEN",
+                  "additions": 1,
+                  "deletions": 0,
+                  "isDraft": false,
+                  "reviewDecision": null,
+                  "updatedAt": "2025-01-03T00:00:00Z",
+                  "url": "https://github.com/fork/repo/pull/12",
+                  "headRefName": "feature-a",
+                  "baseRefName": "feature-a",
+                  "headRepository": {
+                    "name": "repo",
+                    "owner": { "login": "fork" }
+                  }
                 },
                 {
-                  "number": 8,
-                  "title": "Fork PR",
+                  "number": 13,
+                  "title": "Fork PR From Feature",
                   "state": "OPEN",
                   "additions": 1,
                   "deletions": 0,
                   "isDraft": false,
                   "reviewDecision": null,
                   "updatedAt": "2025-01-01T00:00:00Z",
-                  "url": "https://github.com/fork/repo/pull/8",
+                  "url": "https://github.com/fork/repo/pull/13",
                   "headRefName": "feature-a",
+                  "baseRefName": "main",
                   "headRepository": {
                     "name": "repo",
                     "owner": { "login": "fork" }
@@ -159,7 +203,8 @@ struct GithubBatchPullRequestsTests {
       owner: "octo",
       repo: "repo"
     )
-    #expect(prs["feature-a"]?.number == 8)
+    #expect(prs["feature-a"]?.number == 13)
+    #expect(prs["feature-a"]?.title == "Fork PR From Feature")
   }
 
   @Test func prefersOpenOverMergedEvenIfOlder() throws {

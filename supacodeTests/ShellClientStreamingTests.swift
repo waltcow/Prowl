@@ -127,6 +127,75 @@ struct ShellClientStreamingTests {
     #expect(streamedLines.contains(where: { $0.source == .stderr && $0.text == "err" }))
   }
 
+  @Test func cancellingRunStreamConsumerTerminatesProcessQuickly() async throws {
+    let shell = ShellClient.liveValue
+    let commandURL = URL(fileURLWithPath: "/bin/sleep")
+    let stream = shell.runStream(commandURL, ["30"], nil)
+
+    let consumer = Task {
+      var lines: [ShellStreamLine] = []
+      do {
+        for try await event in stream {
+          if case .line(let line) = event {
+            lines.append(line)
+          }
+        }
+      } catch {
+        // CancellationError or ShellClientError after SIGTERM both indicate
+        // the cancellation pathway is connected.
+      }
+      return lines
+    }
+
+    try await Task.sleep(for: .milliseconds(120))
+
+    let start = ContinuousClock.now
+    consumer.cancel()
+    _ = await consumer.value
+    let elapsed = ContinuousClock.now - start
+
+    #expect(
+      elapsed < .seconds(5),
+      "consumer cancel should propagate to the shell process; took \(elapsed)"
+    )
+  }
+
+  @Test func runReturnsQuicklyWhenCallingTaskIsCancelled() async {
+    let shell = ShellClient.liveValue
+    let commandURL = URL(fileURLWithPath: "/bin/sleep")
+
+    let runTask = Task {
+      try await shell.run(commandURL, ["30"], nil)
+    }
+
+    try? await Task.sleep(for: .milliseconds(120))
+
+    let start = ContinuousClock.now
+    runTask.cancel()
+    _ = await runTask.result
+    let elapsed = ContinuousClock.now - start
+
+    #expect(
+      elapsed < .seconds(5),
+      "run() should propagate cancellation to the process; took \(elapsed)"
+    )
+  }
+
+  @Test func runStreamSucceedsForShortLivedProcessAfterCancellationFixes() async throws {
+    // Regression guard: terminationHandler / isRunning race in waitForExit
+    // must not deadlock or double-resume on fast-exiting processes.
+    let shell = ShellClient.liveValue
+    let commandURL = URL(fileURLWithPath: "/bin/sh")
+    let stream = shell.runStream(commandURL, ["-c", "true"], nil)
+    var finished: ShellOutput?
+    for try await event in stream {
+      if case .finished(let output) = event {
+        finished = output
+      }
+    }
+    #expect(finished?.exitCode == 0)
+  }
+
   @Test func runLoginStreamForwardsParameters() async throws {
     let recorder = LoginStreamCallRecorder()
     let shell = ShellClient(

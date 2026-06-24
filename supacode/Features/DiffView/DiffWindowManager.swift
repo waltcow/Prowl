@@ -43,6 +43,7 @@ final class DiffWindowManager {
     newWindow.identifier = NSUserInterfaceItemIdentifier("diff")
     newWindow.styleMask = [.titled, .closable, .miniaturizable, .resizable]
     newWindow.tabbingMode = .disallowed
+    newWindow.collectionBehavior = [.moveToActiveSpace]
     newWindow.toolbarStyle = .unified
     newWindow.toolbar = NSToolbar(identifier: "DiffToolbar")
     newWindow.isReleasedWhenClosed = false

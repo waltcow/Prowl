@@ -167,6 +167,44 @@ struct RepositoryPersistenceClientTests {
     #expect(restored == [repository])
   }
 
+  @Test func repositorySnapshotPayloadDeduplicatesRestoredWorktreeIDs() throws {
+    let payloadData = Data(
+      """
+      {
+        "version": 2,
+        "repositories": [
+          {
+            "rootPath": "/tmp/repo",
+            "name": "repo",
+            "kind": "git",
+            "worktrees": [
+              {
+                "name": "feature",
+                "detail": ".worktrees/feature",
+                "workingDirectoryPath": "/tmp/repo/.worktrees/feature",
+                "createdAt": null
+              },
+              {
+                "name": "duplicate",
+                "detail": ".worktrees/feature",
+                "workingDirectoryPath": "/tmp/repo/.worktrees/./feature",
+                "createdAt": null
+              }
+            ]
+          }
+        ]
+      }
+      """.utf8
+    )
+    let payload = try JSONDecoder().decode(RepositorySnapshotCachePayload.self, from: payloadData)
+
+    let restored = payload.restoreRepositories { path in
+      path == "/tmp/repo" || path == "/tmp/repo/.worktrees/feature"
+    }
+
+    #expect(restored?.first?.worktrees.map(\.name) == ["feature"])
+  }
+
   @Test func repositorySnapshotPayloadRejectsMissingWorktreePath() {
     let repoRoot = "/tmp/repo"
     let worktree = Worktree(

@@ -21,14 +21,18 @@ enum TerminalTabIconLock: Equatable, Sendable {
 struct TerminalTabItem: Identifiable, Equatable, Sendable {
   let id: TerminalTabID
   var title: String
+  var customTitle: String?
   var icon: String?
   var isDirty: Bool
   var isTitleLocked: Bool
   var iconLock: TerminalTabIconLock
 
+  var displayTitle: String { customTitle ?? title }
+
   init(
     id: TerminalTabID = TerminalTabID(),
     title: String,
+    customTitle: String? = nil,
     icon: String?,
     isDirty: Bool = false,
     isTitleLocked: Bool = false,
@@ -36,6 +40,7 @@ struct TerminalTabItem: Identifiable, Equatable, Sendable {
   ) {
     self.id = id
     self.title = title
+    self.customTitle = customTitle
     self.icon = icon
     self.isDirty = isDirty
     self.isTitleLocked = isTitleLocked

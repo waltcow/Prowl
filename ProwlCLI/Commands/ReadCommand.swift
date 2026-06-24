@@ -15,6 +15,27 @@ struct ReadCommand: ParsableCommand {
   @Option(name: .long, help: "Number of recent lines to read (omit for snapshot).")
   var last: Int?
 
+  @Flag(name: .long, help: "Re-read the pane until its output stops changing before returning (good for live TUIs).")
+  var waitStable = false
+
+  @Option(
+    name: .long,
+    help: "Sampling interval in milliseconds while waiting for stable output (50–5000, default: 200)."
+  )
+  var stableInterval: Int?
+
+  @Option(
+    name: .long,
+    help: "Output must stay unchanged for this many milliseconds to count as stable (100–60000, default: 800)."
+  )
+  var stablePeriod: Int?
+
+  @Option(
+    name: .long,
+    help: "Maximum seconds to keep waiting for stable output (1–300, default: 10)."
+  )
+  var waitTimeout: Int?
+
   @Argument(help: "Target pane/tab UUID or worktree id/name/path (auto-resolved).")
   var target: String?
 
@@ -29,11 +50,51 @@ struct ReadCommand: ParsableCommand {
         )
       }
 
+      try validateStabilityOptions()
+
       let envelope = CommandEnvelope(
         output: options.outputMode,
-        command: .read(ReadInput(selector: sel, last: last))
+        command: .read(ReadInput(
+          selector: sel,
+          last: last,
+          waitStable: waitStable,
+          stableIntervalMs: stableInterval,
+          stablePeriodMs: stablePeriod,
+          waitTimeoutSeconds: waitTimeout
+        ))
       )
       try CLIRunner.execute(envelope)
+    }
+  }
+
+  /// Stability tuning options only apply together with `--wait-stable`; validate ranges up front.
+  private func validateStabilityOptions() throws {
+    if !waitStable, stableInterval != nil || stablePeriod != nil || waitTimeout != nil {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "--stable-interval/--stable-period/--wait-timeout require --wait-stable."
+      )
+    }
+
+    if let stableInterval, stableInterval < 50 || stableInterval > 5000 {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "--stable-interval must be between 50 and 5000 milliseconds."
+      )
+    }
+
+    if let stablePeriod, stablePeriod < 100 || stablePeriod > 60000 {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "--stable-period must be between 100 and 60000 milliseconds."
+      )
+    }
+
+    if let waitTimeout, waitTimeout < 1 || waitTimeout > 300 {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "--wait-timeout must be between 1 and 300 seconds."
+      )
     }
   }
 }

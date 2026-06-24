@@ -32,6 +32,41 @@ struct GhosttyUserConfigSnapshotTests {
     #expect(snapshot.themeMode == .none)
   }
 
+  @Test func detectsSameNameDualThemeFromRawConfig() {
+    // Ghostty's `+show-config` collapses `light:X,dark:X` to `theme = X`, but the
+    // raw config keeps the explicit pair, which must be honored as dual.
+    let spec = GhosttyUserConfigSnapshot.rawThemeSpec(
+      fromConfig: """
+        # my ghostty config
+        theme = light:Everforest Dark Hard,dark:Everforest Dark Hard
+        background-opacity = 0.95
+        """)
+
+    #expect(spec == "light:Everforest Dark Hard,dark:Everforest Dark Hard")
+    #expect(GhosttyUserConfigSnapshot.parseThemeMode(from: spec) == .dual)
+  }
+
+  @Test func fallbackEligibilityByThemeMode() {
+    // `.single` and `.none` adapt to the app appearance; `.dual` is the user's
+    // explicit per-mode choice and must be left untouched.
+    #expect(GhosttyThemeMode.single.allowsMismatchFallback)
+    #expect(GhosttyThemeMode.none.allowsMismatchFallback)
+    #expect(!GhosttyThemeMode.dual.allowsMismatchFallback)
+  }
+
+  @Test func rawThemeSpecIgnoresCommentsAndTakesLastWins() {
+    #expect(
+      GhosttyUserConfigSnapshot.rawThemeSpec(
+        fromConfig: """
+          # theme = should-be-ignored
+          theme = kanagawabones
+          font-size = 14
+          theme = Everforest Dark Hard
+          """) == "Everforest Dark Hard")
+
+    #expect(GhosttyUserConfigSnapshot.rawThemeSpec(fromConfig: "font-size = 14\n") == nil)
+  }
+
   @Test func classifiesBackgroundToneLightDarkUnknown() {
     let dark = GhosttyUserConfigSnapshot.parse(showConfigOutput: "background = #1a1a1a")
     #expect(dark.backgroundTone == .dark)

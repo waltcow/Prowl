@@ -104,6 +104,16 @@ SPARKLE_KEY_FILE="${SPARKLE_PRIVATE_KEY_FILE:-$HOME/.prowl-sparkle-private-key}"
 NOTES_FILE="build/release-notes.md"
 [[ -s "$NOTES_FILE" ]] || die "$NOTES_FILE not found — run release-notes.sh first"
 
+# Section headings must be `### New` / `### Fixed` / `### Improved` so they
+# render as <h3> on Prowl-Site (its CSS targets `:global(h3)`) and sit one
+# level below the `## [VERSION]` header that this script prepends. Reject
+# bold-paragraph pseudo-headings and `## …` headings — both render unstyled.
+if bad_lines="$(grep -nE '^(\*\*(New|Fixed|Improved)\*\*|## (New|Fixed|Improved))[[:space:]]*$' "$NOTES_FILE")"; then
+  echo "error: invalid section headings in $NOTES_FILE:" >&2
+  echo "$bad_lines" | sed 's/^/  /' >&2
+  die "use '### New' / '### Fixed' / '### Improved' (level-3 headings) instead"
+fi
+
 log "repository: $REPO"
 log "signing identity: $SIGNING_IDENTITY"
 log "team ID: $TEAM_ID"
@@ -211,6 +221,19 @@ if [[ "$SENTRY_ENABLED" -eq 1 ]]; then
       || log "WARNING: dSYM upload failed (release will continue; re-run sentry-cli debug-files upload later)"
   else
     log "WARNING: $DSYM_DIR not found, skipping dSYM upload"
+  fi
+
+  # Sparkle ships as a prebuilt binaryTarget (Sparkle.xcframework), so Xcode never emits a
+  # dSYM for it into the archive — the archive-dSYM upload above therefore never covers
+  # Sparkle. Upload the dSYMs bundled inside the xcframework directly so each new Sparkle
+  # version is symbolicated automatically, instead of relying on a one-off manual bulk upload.
+  SPARKLE_XCFRAMEWORK="$HOME/Library/Caches/supacode-spm-cache/SourcePackages/artifacts/sparkle/Sparkle/Sparkle.xcframework"
+  if [[ -d "$SPARKLE_XCFRAMEWORK" ]]; then
+    log "uploading Sparkle xcframework dSYMs to Sentry..."
+    sentry-cli debug-files upload --wait "$SPARKLE_XCFRAMEWORK" \
+      || log "WARNING: Sparkle dSYM upload failed (release will continue)"
+  else
+    log "WARNING: $SPARKLE_XCFRAMEWORK not found, skipping Sparkle dSYM upload"
   fi
 
   log "associating commits with Sentry release..."
