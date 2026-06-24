@@ -180,6 +180,10 @@ struct AppShortcutsTests {
       idToDisplay["organize_canvas_cards"],
       AppShortcuts.organizeCanvasCards.display
     )
+    expectNoDifference(
+      idToDisplay["tile_canvas_cards"],
+      AppShortcuts.tileCanvasCards.display
+    )
 
     #expect(idToScope["command_palette"] == .configurableAppAction)
     #expect(idToScope["toggle_active_agents_panel"] == .configurableAppAction)
@@ -188,13 +192,16 @@ struct AppShortcutsTests {
     #expect(idToScope["select_all_canvas_cards"] == .localInteraction)
     #expect(idToScope["arrange_canvas_cards"] == .localInteraction)
     #expect(idToScope["organize_canvas_cards"] == .localInteraction)
+    #expect(idToScope["tile_canvas_cards"] == .localInteraction)
   }
 
   @Test func canvasLayoutShortcutsUseCommandOptionFamily() {
     expectNoDifference(AppShortcuts.arrangeCanvasCards.display, "⌘⌥R")
     expectNoDifference(AppShortcuts.organizeCanvasCards.display, "⌘⌥G")
+    expectNoDifference(AppShortcuts.tileCanvasCards.display, "⌘⌥T")
     #expect(AppShortcuts.arrangeCanvasCards.modifiers == [.command, .option])
     #expect(AppShortcuts.organizeCanvasCards.modifiers == [.command, .option])
+    #expect(AppShortcuts.tileCanvasCards.modifiers == [.command, .option])
   }
 
   @Test func userOverrideConflictsDetectsReservedAppShortcuts() {
@@ -453,6 +460,10 @@ struct AppShortcutsTests {
           binding: Keybinding(key: "g", modifiers: .init(command: true, option: true)),
           isEnabled: false
         ),
+        AppShortcuts.CommandID.tileCanvasCards: KeybindingUserOverride(
+          binding: Keybinding(key: "t", modifiers: .init(command: true, option: true)),
+          isEnabled: false
+        ),
       ]
     )
     let resolved = KeybindingResolver.resolve(
@@ -461,9 +472,10 @@ struct AppShortcutsTests {
     )
 
     // When disabled the resolved shortcut must be nil so CanvasView's handler bails
-    // instead of falling back to the app-default ⌘⌥R / ⌘⌥G key.
+    // instead of falling back to the app-default layout keys.
     #expect(AppShortcuts.resolvedShortcut(for: AppShortcuts.CommandID.arrangeCanvasCards, in: resolved) == nil)
     #expect(AppShortcuts.resolvedShortcut(for: AppShortcuts.CommandID.organizeCanvasCards, in: resolved) == nil)
+    #expect(AppShortcuts.resolvedShortcut(for: AppShortcuts.CommandID.tileCanvasCards, in: resolved) == nil)
   }
 
   @Test func resolvedShortcutFallsBackToDefaultWhenCommandMissingInResolvedMap() {
