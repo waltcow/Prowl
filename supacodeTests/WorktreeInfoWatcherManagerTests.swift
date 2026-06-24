@@ -378,17 +378,63 @@ struct WorktreeInfoWatcherManagerTests {
     await clock.advance(by: .milliseconds(500))
     await drainAsyncEvents()
 
+    // Selecting first worktree triggers immediate refresh.
     manager.handleCommand(.setSelectedWorktreeID(firstWorktree.id))
     await drainAsyncEvents()
     #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 1)
 
+    // Switching to a different worktree cancels cooldown and triggers immediate refresh.
     manager.handleCommand(.setSelectedWorktreeID(secondWorktree.id))
     await drainAsyncEvents()
-    #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 1)
+    #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 2)
+
+    // Switching back to first worktree also triggers immediate refresh (different worktree).
+    manager.handleCommand(.setSelectedWorktreeID(firstWorktree.id))
+    await drainAsyncEvents()
+    #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 3)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
+  @Test func reselectingSameWorktreeRespectsCooldown() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow", "swift"])
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      pullRequestSelectionRefreshCooldown: .milliseconds(500),
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setWorktrees(tempRepository.worktrees))
+    await drainAsyncEvents()
+    let baselineCount = await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot)
+    #expect(baselineCount == 1)
+    let firstWorktree = try #require(tempRepository.worktrees.first)
 
     await clock.advance(by: .milliseconds(500))
     await drainAsyncEvents()
 
+    // Selecting worktree triggers immediate refresh and starts cooldown.
+    manager.handleCommand(.setSelectedWorktreeID(firstWorktree.id))
+    await drainAsyncEvents()
+    #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 1)
+
+    // Deselect then re-select the same worktree within cooldown — should NOT refresh.
+    manager.handleCommand(.setSelectedWorktreeID(nil))
+    await drainAsyncEvents()
+    manager.handleCommand(.setSelectedWorktreeID(firstWorktree.id))
+    await drainAsyncEvents()
+    #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 1)
+
+    // After cooldown expires, re-selecting the same worktree should refresh.
+    await clock.advance(by: .milliseconds(500))
+    await drainAsyncEvents()
+    manager.handleCommand(.setSelectedWorktreeID(nil))
+    await drainAsyncEvents()
     manager.handleCommand(.setSelectedWorktreeID(firstWorktree.id))
     await drainAsyncEvents()
     #expect(await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot) == baselineCount + 2)
@@ -534,11 +580,12 @@ struct WorktreeInfoWatcherManagerTests {
     )
     #expect(afterReplacementCooldownCount == afterFirstSelectionCount + 2)
 
+    // Switching back to first worktree triggers refresh (different worktree).
     manager.handleCommand(.setSelectedWorktreeID(firstWorktree.id))
     await drainAsyncEvents()
     #expect(
       await collector.pullRequestRefreshCount(repositoryRootURL: tempRepository.tempRoot)
-        == afterReplacementCooldownCount
+        == afterReplacementCooldownCount + 1
     )
 
     manager.handleCommand(.stop)
