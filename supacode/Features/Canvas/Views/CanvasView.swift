@@ -801,77 +801,83 @@ struct CanvasView: View {
   }
 
   var canvasToolbar: some View {
-    HStack(spacing: 8) {
-      if selectionState.isBroadcasting {
-        Label(
-          "Broadcasting to \(selectionState.selectedTabIDs.count) cards",
-          systemImage: "dot.radiowaves.left.and.right"
-        )
-        .font(.callout)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.bar, in: Capsule())
+    // Two visual groups: selection (broadcast / select-all) and the three layout
+    // actions. A wider gap separates the groups; the layout trio is tucked tight.
+    HStack(spacing: 14) {
+      HStack(spacing: 8) {
+        if selectionState.isBroadcasting {
+          Label(
+            "Broadcasting to \(selectionState.selectedTabIDs.count) cards",
+            systemImage: "dot.radiowaves.left.and.right"
+          )
+          .font(.callout)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 6)
+          .background(.bar, in: Capsule())
+        }
+
+        Button {
+          selectAllCards()
+        } label: {
+          Image(systemName: "checkmark.rectangle.stack")
+            .font(.body)
+            .accessibilityLabel("Select All")
+        }
+        .buttonStyle(.bordered)
+        .help(
+          AppShortcuts.helpText(
+            title: "Select all cards for broadcast",
+            commandID: AppShortcuts.CommandID.selectAllCanvasCards,
+            in: resolvedKeybindings
+          ))
       }
 
-      Button {
-        selectAllCards()
-      } label: {
-        Image(systemName: "checkmark.rectangle.stack")
-          .font(.body)
-          .accessibilityLabel("Select All")
-      }
-      .buttonStyle(.bordered)
-      .help(
-        AppShortcuts.helpText(
-          title: "Select all cards for broadcast",
-          commandID: AppShortcuts.CommandID.selectAllCanvasCards,
-          in: resolvedKeybindings
-        ))
+      HStack(spacing: 4) {
+        Button {
+          arrangeCardsWithFit()
+        } label: {
+          Image(systemName: "rectangle.3.group")
+            .font(.body)
+            .accessibilityLabel("Arrange")
+        }
+        .buttonStyle(.bordered)
+        .help(
+          AppShortcuts.helpText(
+            title: "Arrange cards preserving sizes",
+            commandID: AppShortcuts.CommandID.arrangeCanvasCards,
+            in: resolvedKeybindings
+          ))
 
-      Button {
-        arrangeCardsWithFit()
-      } label: {
-        Image(systemName: "rectangle.3.group")
-          .font(.body)
-          .accessibilityLabel("Arrange")
-      }
-      .buttonStyle(.bordered)
-      .help(
-        AppShortcuts.helpText(
-          title: "Arrange cards preserving sizes",
-          commandID: AppShortcuts.CommandID.arrangeCanvasCards,
-          in: resolvedKeybindings
-        ))
+        Button {
+          organizeCardsWithFit()
+        } label: {
+          Image(systemName: "square.grid.2x2")
+            .font(.body)
+            .accessibilityLabel("Organize")
+        }
+        .buttonStyle(.bordered)
+        .help(
+          AppShortcuts.helpText(
+            title: "Organize cards in a uniform grid",
+            commandID: AppShortcuts.CommandID.organizeCanvasCards,
+            in: resolvedKeybindings
+          ))
 
-      Button {
-        organizeCardsWithFit()
-      } label: {
-        Image(systemName: "square.grid.2x2")
-          .font(.body)
-          .accessibilityLabel("Organize")
+        Button {
+          tileCardsWithFit()
+        } label: {
+          Image(systemName: "rectangle.split.2x1")
+            .font(.body)
+            .accessibilityLabel("Tile")
+        }
+        .buttonStyle(.bordered)
+        .help(
+          AppShortcuts.helpText(
+            title: "Tile cards to fill the canvas",
+            commandID: AppShortcuts.CommandID.tileCanvasCards,
+            in: resolvedKeybindings
+          ))
       }
-      .buttonStyle(.bordered)
-      .help(
-        AppShortcuts.helpText(
-          title: "Organize cards in a uniform grid",
-          commandID: AppShortcuts.CommandID.organizeCanvasCards,
-          in: resolvedKeybindings
-        ))
-
-      Button {
-        tileCardsWithFit()
-      } label: {
-        Image(systemName: "rectangle.split.2x1")
-          .font(.body)
-          .accessibilityLabel("Tile")
-      }
-      .buttonStyle(.bordered)
-      .help(
-        AppShortcuts.helpText(
-          title: "Tile cards to fill the canvas",
-          commandID: AppShortcuts.CommandID.tileCanvasCards,
-          in: resolvedKeybindings
-        ))
     }
     .padding()
   }
