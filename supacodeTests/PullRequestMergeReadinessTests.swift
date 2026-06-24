@@ -96,7 +96,7 @@ struct PullRequestMergeReadinessTests {
       mergeable: "MERGEABLE",
       mergeStateStatus: "CLEAN",
       checks: [
-        GithubPullRequestStatusCheck(status: "PENDING", conclusion: nil, state: nil),
+        GithubPullRequestStatusCheck(status: "PENDING", conclusion: nil, state: nil)
       ]
     )
 
@@ -113,7 +113,7 @@ struct PullRequestMergeReadinessTests {
       mergeable: "MERGEABLE",
       mergeStateStatus: "CLEAN",
       checks: [
-        GithubPullRequestStatusCheck(status: "IN_PROGRESS", conclusion: nil, state: nil),
+        GithubPullRequestStatusCheck(status: "IN_PROGRESS", conclusion: nil, state: nil)
       ]
     )
 
