@@ -288,10 +288,21 @@ private struct WorktreeRowInfoView: View {
     } else if let mergeReadiness {
       appendSeparator()
       var segment = AttributedString(mergeReadiness.label)
-      segment.foregroundColor = mergeReadiness.isBlocking ? .red : .green
+      segment.foregroundColor = mergeStatusColor(mergeReadiness)
       result.append(segment)
     }
     return Text(result)
+  }
+
+  private func mergeStatusColor(_ readiness: PullRequestMergeReadiness) -> Color {
+    switch readiness.blockingReason {
+    case .none:
+      return .green
+    case .mergeConflicts, .changesRequested, .checksFailed, .blocked:
+      return .red
+    case .checksPending:
+      return .yellow
+    }
   }
 }
 

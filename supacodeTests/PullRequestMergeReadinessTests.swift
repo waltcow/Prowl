@@ -72,6 +72,74 @@ struct PullRequestMergeReadinessTests {
     #expect(readiness.blockingReason == .blocked)
     #expect(readiness.label == "Blocked")
   }
+
+  @Test func mergeReadinessUsesChecksPendingWhenInProgressAndNoFailures() {
+    let pullRequest = makePullRequest(
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      checks: [
+        GithubPullRequestStatusCheck(status: "PENDING", conclusion: nil, state: nil),
+        GithubPullRequestStatusCheck(status: "PENDING", conclusion: nil, state: nil),
+        GithubPullRequestStatusCheck(status: "COMPLETED", conclusion: "SUCCESS", state: nil),
+      ]
+    )
+
+    let readiness = PullRequestMergeReadiness(pullRequest: pullRequest)
+
+    #expect(readiness.blockingReason == .checksPending(2))
+    #expect(readiness.label == "2 checks running")
+    #expect(readiness.isBlocking)
+  }
+
+  @Test func mergeReadinessSingleCheckPending() {
+    let pullRequest = makePullRequest(
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      checks: [
+        GithubPullRequestStatusCheck(status: "PENDING", conclusion: nil, state: nil),
+      ]
+    )
+
+    let readiness = PullRequestMergeReadiness(pullRequest: pullRequest)
+
+    #expect(readiness.blockingReason == .checksPending(1))
+    #expect(readiness.label == "1 check running")
+  }
+
+  @Test func mergeReadinessChecksPendingTakesPriorityOverMergeable() {
+    // When checks are in progress but mergeable is already true,
+    // we should still show "checks running" rather than "Mergeable"
+    let pullRequest = makePullRequest(
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      checks: [
+        GithubPullRequestStatusCheck(status: "IN_PROGRESS", conclusion: nil, state: nil),
+      ]
+    )
+
+    let readiness = PullRequestMergeReadiness(pullRequest: pullRequest)
+
+    #expect(readiness.blockingReason == .checksPending(1))
+    #expect(readiness.label == "1 check running")
+  }
+
+  @Test func mergeReadinessChecksFailedTakesPriorityOverPending() {
+    // When there are both failed and in-progress checks,
+    // failed should take priority
+    let pullRequest = makePullRequest(
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      checks: [
+        GithubPullRequestStatusCheck(status: "COMPLETED", conclusion: "FAILURE", state: nil),
+        GithubPullRequestStatusCheck(status: "PENDING", conclusion: nil, state: nil),
+      ]
+    )
+
+    let readiness = PullRequestMergeReadiness(pullRequest: pullRequest)
+
+    #expect(readiness.blockingReason == .checksFailed(1))
+    #expect(readiness.label == "1 check failed")
+  }
 }
 
 private func makePullRequest(

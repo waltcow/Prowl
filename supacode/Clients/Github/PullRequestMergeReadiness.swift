@@ -4,6 +4,7 @@ nonisolated enum PullRequestMergeBlockingReason: Equatable, Hashable {
   case mergeConflicts
   case changesRequested
   case checksFailed(Int)
+  case checksPending(Int)
   case blocked
 }
 
@@ -27,6 +28,10 @@ nonisolated struct PullRequestMergeReadiness: Equatable, Hashable {
     }
     if breakdown.failed > 0 {
       self.blockingReason = .checksFailed(breakdown.failed)
+      return
+    }
+    if breakdown.inProgress > 0 {
+      self.blockingReason = .checksPending(breakdown.inProgress)
       return
     }
 
@@ -57,6 +62,9 @@ nonisolated struct PullRequestMergeReadiness: Equatable, Hashable {
     case .checksFailed(let count):
       let checksLabel = count == 1 ? "check" : "checks"
       return "\(count) \(checksLabel) failed"
+    case .checksPending(let count):
+      let checksLabel = count == 1 ? "check" : "checks"
+      return "\(count) \(checksLabel) running"
     case .blocked:
       return "Blocked"
     }
