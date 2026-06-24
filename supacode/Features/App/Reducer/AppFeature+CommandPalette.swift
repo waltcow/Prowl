@@ -140,6 +140,9 @@ extension AppFeature {
     case .organizeCanvasCards:
       return .send(.repositories(.requestCanvasCommand(.organize)))
 
+    case .tileCanvasCards:
+      return .send(.repositories(.requestCanvasCommand(.tile)))
+
     case .selectAllCanvasCards:
       return .send(.repositories(.requestCanvasCommand(.selectAll)))
 

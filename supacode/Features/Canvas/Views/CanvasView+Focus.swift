@@ -13,6 +13,8 @@ extension CanvasView {
       arrangeCardsWithFit()
     case .organize:
       organizeCardsWithFit()
+    case .tile:
+      tileCardsWithFit()
     case .selectAll:
       selectAllCards()
     }

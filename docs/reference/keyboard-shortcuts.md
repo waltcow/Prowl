@@ -66,6 +66,7 @@ Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control �
 | Select All Canvas Cards | ⌘⌥A | `select_all_canvas_cards` | yes (local) |
 | Arrange Canvas Cards (pack to fit) | ⌘⌥R | `arrange_canvas_cards` | yes (local) |
 | Organize Canvas Cards (uniform grid) | ⌘⌥G | `organize_canvas_cards` | yes (local) |
+| Tile Canvas Cards (fill viewport) | ⌘⌥T | `tile_canvas_cards` | yes (local) |
 | Expand / Restore Canvas Card | ⌘⌥E | `expand_canvas_card` | yes (local) |
 | Clear selection | Esc | — | — |
 | Zoom | ⌘ + scroll, or pinch | — | — |

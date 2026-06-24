@@ -18,6 +18,7 @@ enum CommandPaletteItemID {
   static let globalExpandCanvasCard = "global.expand-canvas-card"
   static let globalArrangeCanvasCards = "global.arrange-canvas-cards"
   static let globalOrganizeCanvasCards = "global.organize-canvas-cards"
+  static let globalTileCanvasCards = "global.tile-canvas-cards"
   static let globalSelectAllCanvasCards = "global.select-all-canvas-cards"
   static let globalToggleShelf = "global.toggle-shelf"
   static let globalShowDiff = "global.show-diff"
@@ -191,6 +192,7 @@ func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.
     .expandCanvasCard,
     .arrangeCanvasCards,
     .organizeCanvasCards,
+    .tileCanvasCards,
     .selectAllCanvasCards,
     .toggleShelf,
     .showDiff,
@@ -268,6 +270,8 @@ func viewDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeat
     return .arrangeCanvasCards
   case .organizeCanvasCards:
     return .organizeCanvasCards
+  case .tileCanvasCards:
+    return .tileCanvasCards
   case .selectAllCanvasCards:
     return .selectAllCanvasCards
   case .toggleShelf:
@@ -318,6 +322,7 @@ func pullRequestDelegateAction(
     .expandCanvasCard,
     .arrangeCanvasCards,
     .organizeCanvasCards,
+    .tileCanvasCards,
     .selectAllCanvasCards,
     .toggleShelf,
     .showDiff,

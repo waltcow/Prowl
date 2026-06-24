@@ -3,7 +3,7 @@
 > A zoomable board where every agent is a live, interactive terminal card —
 > watch them all at once, and broadcast one command to every selected agent.
 
-**Keywords:** canvas, board, cards, grid, zoom, pan, broadcast, multi-select, select all, arrange, organize, expand card, bird's-eye, overview of agents
+**Keywords:** canvas, board, cards, grid, zoom, pan, broadcast, multi-select, select all, arrange, organize, tile, fill, expand card, bird's-eye, overview of agents
 
 **Related:** [view-modes](view-modes.md) · [shelf](shelf.md) · [terminal](terminal.md) · [active-agents](active-agents.md) · [keyboard-shortcuts](../reference/keyboard-shortcuts.md)
 
@@ -58,6 +58,14 @@ Selection controls:
   aspect ratio, preserving each card's size, then fit-to-view.
 - **`⌘⌥G` Organize Cards** — reset every card to a uniform grid (≈√N columns) at a
   default size and center them.
+- **`⌘⌥T` Tile Cards** — resize every card to tile and fill the viewport, like an
+  automatic window manager. Cards form a balanced grid whose orientation follows
+  the window: a wide window spreads them into rows (2 cards → left/right, 5 →
+  top 2 / bottom 3), a tall window stacks them into columns. Each line fills its
+  full extent, so the cards use as much area as possible. The zoom adapts to card
+  count: a few cards stay at native scale (large, detailed), while many cards zoom
+  out so each keeps a readable terminal surface (more rows/columns at smaller text
+  — enough to follow what each agent is doing).
 
 These also appear as toolbar buttons. There's a `?` help popover (bottom-left)
 explaining pan/zoom/expand.

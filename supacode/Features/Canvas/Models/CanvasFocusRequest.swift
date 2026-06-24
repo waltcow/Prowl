@@ -24,6 +24,7 @@ struct CanvasCommandRequest: Equatable, Sendable {
     case toggleExpand
     case arrange
     case organize
+    case tile
     case selectAll
   }
 

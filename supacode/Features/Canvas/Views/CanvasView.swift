@@ -48,6 +48,9 @@ struct CanvasView: View {
   let maxCardHeight: CGFloat = 1600
   let titleBarHeight: CGFloat = 28
   let cardSpacing: CGFloat = 20
+  /// Tighter gap for the Tile layout. It lives in the scaled-up tile frame, so
+  /// the on-screen gap shrinks further as more cards are tiled (gap × scale).
+  let tileCardSpacing: CGFloat = 14
   /// Reserved height at the bottom of the viewport for the help button and
   /// layout toolbar so cards don't sit underneath them after auto-fit.
   /// Cards end up shifted upward by half of this amount.
@@ -84,6 +87,10 @@ struct CanvasView: View {
     )
     let organizeCanvasShortcut = AppShortcuts.resolvedShortcut(
       for: AppShortcuts.CommandID.organizeCanvasCards,
+      in: resolvedKeybindings
+    )
+    let tileCanvasShortcut = AppShortcuts.resolvedShortcut(
+      for: AppShortcuts.CommandID.tileCanvasCards,
       in: resolvedKeybindings
     )
     let expandCanvasShortcut = AppShortcuts.resolvedShortcut(
@@ -208,6 +215,15 @@ struct CanvasView: View {
       guard let shortcut = organizeCanvasShortcut else { return .ignored }
       guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
       organizeCardsWithFit()
+      return .handled
+    }
+    .onKeyPress(
+      tileCanvasShortcut?.keyEquivalent ?? AppShortcuts.tileCanvasCards.keyEquivalent,
+      phases: .down
+    ) { keyPress in
+      guard let shortcut = tileCanvasShortcut else { return .ignored }
+      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
+      tileCardsWithFit()
       return .handled
     }
     .onKeyPress(
@@ -622,6 +638,25 @@ struct CanvasView: View {
     layoutStore.setCardLayouts(result.layouts, zOrder: keys)
   }
 
+  /// Tile cards to fill the viewport: resize every card into a balanced grid
+  /// whose orientation follows the viewport (rows when wide, columns when tall).
+  func tileCards() {
+    let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
+    guard !keys.isEmpty, viewportSize.width > 0, viewportSize.height > 0 else { return }
+
+    // Below this card surface, scale the layout up (and the viewport back down)
+    // so cards keep enough rows/columns to read at a glance. 0.6 keeps a handful
+    // of cards at native scale before the gentle zoom-out begins.
+    let comfortableSize = CGSize(
+      width: adaptiveDefaultCardSize.width * 0.6,
+      height: adaptiveDefaultCardSize.height * 0.6
+    )
+    let tiler = CanvasTileLayout(spacing: tileCardSpacing, titleBarHeight: titleBarHeight)
+    let layouts = tiler.layout(keys: keys, viewport: viewportSize, comfortableSize: comfortableSize)
+    guard !layouts.isEmpty else { return }
+    layoutStore.setCardLayouts(layouts, zOrder: keys)
+  }
+
   /// Arrange cards (preserving sizes) and refit the viewport, animated.
   /// Shared by the toolbar button and the keyboard shortcut.
   func arrangeCardsWithFit() {
@@ -638,6 +673,16 @@ struct CanvasView: View {
     withAnimation(.easeInOut(duration: 0.2)) {
       cancelExpandForRelayout()
       organizeCards()
+      fitToView(canvasSize: viewportSize)
+    }
+  }
+
+  /// Tile cards to fill the viewport and refit, animated. Shared by the toolbar
+  /// button and the keyboard shortcut.
+  func tileCardsWithFit() {
+    withAnimation(.easeInOut(duration: 0.2)) {
+      cancelExpandForRelayout()
+      tileCards()
       fitToView(canvasSize: viewportSize)
     }
   }
@@ -810,6 +855,21 @@ struct CanvasView: View {
         AppShortcuts.helpText(
           title: "Organize cards in a uniform grid",
           commandID: AppShortcuts.CommandID.organizeCanvasCards,
+          in: resolvedKeybindings
+        ))
+
+      Button {
+        tileCardsWithFit()
+      } label: {
+        Image(systemName: "rectangle.split.2x1")
+          .font(.body)
+          .accessibilityLabel("Tile")
+      }
+      .buttonStyle(.bordered)
+      .help(
+        AppShortcuts.helpText(
+          title: "Tile cards to fill the canvas",
+          commandID: AppShortcuts.CommandID.tileCanvasCards,
           in: resolvedKeybindings
         ))
     }

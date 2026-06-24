@@ -68,6 +68,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case expandCanvasCard
     case arrangeCanvasCards
     case organizeCanvasCards
+    case tileCanvasCards
     case selectAllCanvasCards
     case toggleShelf
     case showDiff
@@ -133,6 +134,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
       return AppShortcuts.CommandID.arrangeCanvasCards
     case .organizeCanvasCards:
       return AppShortcuts.CommandID.organizeCanvasCards
+    case .tileCanvasCards:
+      return AppShortcuts.CommandID.tileCanvasCards
     case .selectAllCanvasCards:
       return AppShortcuts.CommandID.selectAllCanvasCards
     case .toggleShelf:
