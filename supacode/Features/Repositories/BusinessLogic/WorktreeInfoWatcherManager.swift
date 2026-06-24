@@ -221,39 +221,17 @@ final class WorktreeInfoWatcherManager {
       emitLineChangesChanged(worktreeID: worktreeID)
       syncLineChangesActivity(for: worktreeID)
     }
-    // When switching to a different worktree within the same repo, cancel any active cooldown
-    // so the PR refresh fires immediately. Re-selecting the same worktree still respects the cooldown.
+    // When switching to a different worktree, cancel any active cooldown so the PR refresh
+    // fires immediately. Re-selecting the same worktree still respects the cooldown.
     if let previousRepository, previousRepository == nextRepository {
-      let lastWorktreeForRepo = lastSelectedWorktreeIDByRepo[previousRepository]
-      let isDifferentWorktree = lastWorktreeForRepo != worktreeID
-      if isDifferentWorktree {
-        cancelPullRequestSelectionCooldown(for: previousRepository)
-      }
-      updatePullRequestSchedule(
-        repositoryRootURL: previousRepository,
-        immediate: shouldImmediatelyRefreshPullRequests(repositoryRootURL: previousRepository)
-      )
-      if let worktreeID {
-        lastSelectedWorktreeIDByRepo[previousRepository] = worktreeID
-      }
+      handlePullRequestRefreshOnSelection(repositoryRootURL: previousRepository, worktreeID: worktreeID)
       return
     }
     if let previousRepository {
       updatePullRequestSchedule(repositoryRootURL: previousRepository, immediate: false)
     }
     if let nextRepository {
-      let lastWorktreeForRepo = lastSelectedWorktreeIDByRepo[nextRepository]
-      let isDifferentWorktree = lastWorktreeForRepo != worktreeID
-      if isDifferentWorktree {
-        cancelPullRequestSelectionCooldown(for: nextRepository)
-      }
-      updatePullRequestSchedule(
-        repositoryRootURL: nextRepository,
-        immediate: shouldImmediatelyRefreshPullRequests(repositoryRootURL: nextRepository)
-      )
-      if let worktreeID {
-        lastSelectedWorktreeIDByRepo[nextRepository] = worktreeID
-      }
+      handlePullRequestRefreshOnSelection(repositoryRootURL: nextRepository, worktreeID: worktreeID)
     }
   }
 
@@ -801,6 +779,23 @@ final class WorktreeInfoWatcherManager {
       return
     }
     eventContinuation?.yield(event)
+  }
+
+  private func handlePullRequestRefreshOnSelection(
+    repositoryRootURL: URL,
+    worktreeID: Worktree.ID?
+  ) {
+    let lastWorktreeForRepo = lastSelectedWorktreeIDByRepo[repositoryRootURL]
+    if lastWorktreeForRepo != worktreeID {
+      cancelPullRequestSelectionCooldown(for: repositoryRootURL)
+    }
+    updatePullRequestSchedule(
+      repositoryRootURL: repositoryRootURL,
+      immediate: shouldImmediatelyRefreshPullRequests(repositoryRootURL: repositoryRootURL)
+    )
+    if let worktreeID {
+      lastSelectedWorktreeIDByRepo[repositoryRootURL] = worktreeID
+    }
   }
 
   private func cancelPullRequestSelectionCooldown(for repositoryRootURL: URL) {
