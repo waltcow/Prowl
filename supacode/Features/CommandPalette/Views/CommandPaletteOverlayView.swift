@@ -522,7 +522,7 @@ private struct CommandPaletteRowView: View {
       .copyCiFailureLogs,
       .rerunFailedJobs, .openFailingCheckDetails, .worktreeSelect, .changeFocusedTabIcon,
       .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
-      .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+      .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
       .toggleShelf, .showDiff,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
@@ -591,6 +591,8 @@ private struct CommandPaletteRowView: View {
       return "rectangle.3.group"
     case .organizeCanvasCards:
       return "square.grid.2x2"
+    case .tileCanvasCards:
+      return "rectangle.split.2x1"
     case .selectAllCanvasCards:
       return "checkmark.rectangle.stack"
     case .toggleShelf:
@@ -637,7 +639,7 @@ private struct CommandPaletteRowView: View {
       .copyCiFailureLogs,
       .rerunFailedJobs, .openFailingCheckDetails, .changeFocusedTabIcon,
       .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
-      .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+      .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
       .toggleShelf, .showDiff,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
@@ -776,6 +778,8 @@ private struct CommandPaletteRowView: View {
       base = "Arrange Canvas Cards"
     case .organizeCanvasCards:
       base = "Organize Canvas Cards"
+    case .tileCanvasCards:
+      base = "Tile Canvas Cards"
     case .selectAllCanvasCards:
       base = "Select All Canvas Cards"
     case .toggleShelf:

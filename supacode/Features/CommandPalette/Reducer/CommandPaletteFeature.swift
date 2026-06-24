@@ -58,6 +58,7 @@ struct CommandPaletteFeature {
     case expandCanvasCard
     case arrangeCanvasCards
     case organizeCanvasCards
+    case tileCanvasCards
     case selectAllCanvasCards
     case toggleShelf
     case showDiff
@@ -619,6 +620,13 @@ private func canvasCommandItems() -> [CommandPaletteItem] {
       category: .view,
       kind: .organizeCanvasCards,
       keywords: ["canvas", "organize", "grid", "tidy", "uniform"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalTileCanvasCards,
+      title: "Tile Canvas Cards",
+      category: .view,
+      kind: .tileCanvasCards,
+      keywords: ["canvas", "tile", "fill", "layout", "window", "split"]
     ),
     .appShortcut(
       id: CommandPaletteItemID.globalSelectAllCanvasCards,

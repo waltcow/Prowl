@@ -1722,7 +1722,7 @@ private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteIt
   case .ghosttyCommand:
     return .terminal
   case .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
-    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
     .toggleShelf, .showDiff:
     return .view
   #if DEBUG
@@ -1739,7 +1739,7 @@ private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
     .openPullRequest, .markPullRequestReady, .mergePullRequest, .closePullRequest,
     .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails,
     .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
-    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .selectAllCanvasCards,
+    .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
     .toggleShelf, .showDiff,
     .revealInFinder, .copyPath, .revealInSidebar,
     .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,

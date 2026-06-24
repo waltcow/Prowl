@@ -255,6 +255,82 @@ struct CanvasCardPacker {
   }
 }
 
+// MARK: - Tile Layout
+
+/// Resizes cards to tile and fill the entire viewport, like an automatic window
+/// manager. Cards are laid into a balanced grid whose orientation follows the
+/// viewport: wide viewports spread cards into rows (left-to-right), tall
+/// viewports stack them into columns (top-to-bottom). Each line independently
+/// fills its full extent, so a 2-card row gets ½-width cards while a 3-card row
+/// gets ⅓-width cards — maximizing the area every card uses.
+struct CanvasTileLayout {
+  var spacing: CGFloat
+  var titleBarHeight: CGFloat
+
+  /// Distribute `count` cards across `floor(√count)` lines, packing the extra
+  /// cards into the later lines. e.g. 5 → `[2, 3]`, 7 → `[3, 4]`, 9 → `[3, 3, 3]`.
+  static func lineCounts(for count: Int) -> [Int] {
+    guard count > 0 else { return [] }
+    let lines = max(1, Int(Double(count).squareRoot().rounded(.down)))
+    let base = count / lines
+    let remainder = count % lines
+    // Earlier lines get `base`; the last `remainder` lines get one extra.
+    return (0..<lines).map { index in index < lines - remainder ? base : base + 1 }
+  }
+
+  /// Resize and position `keys` to tile and fill `viewport`. Returns an empty
+  /// dictionary when there is nothing to lay out (the caller treats this as a
+  /// no-op, matching `CanvasCardPacker.pack`).
+  func layout(keys: [String], viewport: CGSize) -> [String: CanvasCardLayout] {
+    guard !keys.isEmpty, viewport.width > 0, viewport.height > 0 else { return [:] }
+
+    let counts = Self.lineCounts(for: keys.count)
+    let landscape = viewport.width >= viewport.height
+    var layouts: [String: CanvasCardLayout] = [:]
+    var cursor = 0
+
+    if landscape {
+      // Lines are rows: split the height evenly, fill each row's width.
+      let rows = counts.count
+      let rowVisualHeight = (viewport.height - CGFloat(rows + 1) * spacing) / CGFloat(rows)
+      var originY = spacing
+      for cardsInRow in counts {
+        let cardWidth = (viewport.width - CGFloat(cardsInRow + 1) * spacing) / CGFloat(cardsInRow)
+        var originX = spacing
+        for _ in 0..<cardsInRow {
+          layouts[keys[cursor]] = CanvasCardLayout(
+            position: CGPoint(x: originX + cardWidth / 2, y: originY + rowVisualHeight / 2),
+            size: CGSize(width: cardWidth, height: rowVisualHeight - titleBarHeight)
+          )
+          originX += cardWidth + spacing
+          cursor += 1
+        }
+        originY += rowVisualHeight + spacing
+      }
+    } else {
+      // Lines are columns: split the width evenly, fill each column's height.
+      let cols = counts.count
+      let colVisualWidth = (viewport.width - CGFloat(cols + 1) * spacing) / CGFloat(cols)
+      var originX = spacing
+      for cardsInColumn in counts {
+        let cardVisualHeight = (viewport.height - CGFloat(cardsInColumn + 1) * spacing) / CGFloat(cardsInColumn)
+        var originY = spacing
+        for _ in 0..<cardsInColumn {
+          layouts[keys[cursor]] = CanvasCardLayout(
+            position: CGPoint(x: originX + colVisualWidth / 2, y: originY + cardVisualHeight / 2),
+            size: CGSize(width: colVisualWidth, height: cardVisualHeight - titleBarHeight)
+          )
+          originY += cardVisualHeight + spacing
+          cursor += 1
+        }
+        originX += colVisualWidth + spacing
+      }
+    }
+
+    return layouts
+  }
+}
+
 @MainActor
 @Observable
 final class CanvasLayoutStore {
