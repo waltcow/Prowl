@@ -174,6 +174,8 @@ struct SettingsFilePersistenceTests {
     #expect(settings.global.showActiveAgentStatusInShelf == true)
     #expect(settings.global.shelfSpineTintFallback == .neutral)
     #expect(settings.global.shelfSpineTintFollowsRepositoryColor == true)
+    // Absent from legacy payloads → falls back to the new Tile default.
+    #expect(settings.global.canvasDefaultLayout == .tile)
     #expect(settings.repositoryRoots.isEmpty)
     #expect(settings.pinnedWorktreeIDs.isEmpty)
   }

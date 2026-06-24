@@ -261,6 +261,21 @@ struct SettingsFeatureTests {
     #expect(settingsFile.global.defaultWorktreeBaseDirectoryPath == expectedPath)
   }
 
+  @Test(.dependencies) func changingCanvasDefaultLayoutPersists() async {
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = .default }
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+    // Default is Tile; switch to Uniform and confirm it persists.
+    #expect(store.state.canvasDefaultLayout == .tile)
+    await store.send(.binding(.set(\.canvasDefaultLayout, .uniform))) {
+      $0.canvasDefaultLayout = .uniform
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(settingsFile.global.canvasDefaultLayout == .uniform)
+  }
+
   @Test(.dependencies) func changingGlobalOverrideDefaultsUpdatesRepositorySettingsState() async {
     let rootURL = URL(fileURLWithPath: "/tmp/repo")
     @Shared(.settingsFile) var settingsFile

@@ -99,6 +99,10 @@ performance.
 ## Settings that affect Canvas
 
 - `defaultViewMode` — launch directly into Canvas.
+- `canvasDefaultLayout` — how cards are first laid out when you open Canvas:
+  `uniform` (same-size cards packed to fit) or `tile` (resize cards to fill the
+  screen, the default). Only the initial auto-layout is affected; saved card
+  positions are always restored.
 - `windowTintMode` / repository colors — card and nav tinting.
 - `showRunButtonInToolbar` — whether the Run button appears in the Canvas toolbar.
 

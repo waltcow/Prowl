@@ -41,6 +41,10 @@ Toggling Canvas or Shelf with **no open worktrees** does nothing.
 `defaultViewMode` (Settings) chooses which mode Prowl opens in:
 `normal`, `shelf`, or `canvas`.
 
+`canvasDefaultLayout` (Settings) chooses how cards are first arranged when you
+open Canvas: `uniform` (same-size cards packed to fit) or `tile` (resize cards to
+fill the screen — the default).
+
 ## Which to recommend
 
 - Supervising a fleet / sending the same command everywhere → **Canvas**

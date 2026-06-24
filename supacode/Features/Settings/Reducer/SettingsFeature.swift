@@ -34,6 +34,7 @@ struct SettingsFeature {
     var terminalFontSize: Float32?
     var keybindingUserOverrides: KeybindingUserOverrideStore
     var defaultViewMode: DefaultViewMode
+    var canvasDefaultLayout: CanvasDefaultLayout
     var dimUnfocusedSplits: Bool
     var autoShowActiveAgentsPanel: Bool
     var showActiveAgentTabTitles: Bool
@@ -92,6 +93,7 @@ struct SettingsFeature {
       terminalFontSize = settings.terminalFontSize
       keybindingUserOverrides = settings.keybindingUserOverrides
       defaultViewMode = settings.defaultViewMode
+      canvasDefaultLayout = settings.canvasDefaultLayout
       dimUnfocusedSplits = settings.dimUnfocusedSplits
       autoShowActiveAgentsPanel = settings.autoShowActiveAgentsPanel
       showActiveAgentTabTitles = settings.showActiveAgentTabTitles
@@ -140,6 +142,7 @@ struct SettingsFeature {
         terminalFontSize: terminalFontSize,
         keybindingUserOverrides: keybindingUserOverrides,
         defaultViewMode: defaultViewMode,
+        canvasDefaultLayout: canvasDefaultLayout,
         dimUnfocusedSplits: dimUnfocusedSplits,
         autoShowActiveAgentsPanel: autoShowActiveAgentsPanel,
         showActiveAgentTabTitles: showActiveAgentTabTitles,

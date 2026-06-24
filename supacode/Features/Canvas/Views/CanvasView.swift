@@ -24,6 +24,7 @@ struct CanvasView: View {
   var onExpandedChange: (Bool) -> Void = { _ in }
   @State var layoutStore = CanvasLayoutStore()
   @Shared(.repositoryAppearances) var repositoryAppearances
+  @Shared(.settingsFile) var settingsFile
 
   @State var canvasOffset: CGSize = .zero
   @State var lastCanvasOffset: CGSize = .zero
@@ -170,7 +171,12 @@ struct CanvasView: View {
           if !CanvasLayoutStore.hasAutoArrangedInSession {
             CanvasLayoutStore.hasAutoArrangedInSession = true
             if layoutStore.shouldAutoArrangeOnInitialEntry(for: currentCardKeys) {
-              arrangeCards()
+              switch settingsFile.global.canvasDefaultLayout {
+              case .uniform:
+                arrangeCards()
+              case .tile:
+                tileCards()
+              }
             }
           }
           fitToView(canvasSize: newSize)

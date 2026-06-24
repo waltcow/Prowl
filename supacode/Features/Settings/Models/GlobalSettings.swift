@@ -27,6 +27,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var archivedAutoDeletePeriod: AutoDeletePeriod?
   var keybindingUserOverrides: KeybindingUserOverrideStore
   var defaultViewMode: DefaultViewMode
+  var canvasDefaultLayout: CanvasDefaultLayout
   var dimUnfocusedSplits: Bool
   var autoShowActiveAgentsPanel: Bool
   var showActiveAgentTabTitles: Bool
@@ -71,6 +72,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     terminalFontSize: nil,
     keybindingUserOverrides: .empty,
     defaultViewMode: .normal,
+    canvasDefaultLayout: .tile,
     dimUnfocusedSplits: true,
     autoShowActiveAgentsPanel: false,
     showActiveAgentTabTitles: false,
@@ -114,6 +116,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     terminalFontSize: Float32? = nil,
     keybindingUserOverrides: KeybindingUserOverrideStore = .empty,
     defaultViewMode: DefaultViewMode = .normal,
+    canvasDefaultLayout: CanvasDefaultLayout = .tile,
     dimUnfocusedSplits: Bool = true,
     autoShowActiveAgentsPanel: Bool = false,
     showActiveAgentTabTitles: Bool = false,
@@ -155,6 +158,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.terminalFontSize = terminalFontSize
     self.keybindingUserOverrides = keybindingUserOverrides
     self.defaultViewMode = defaultViewMode
+    self.canvasDefaultLayout = canvasDefaultLayout
     self.dimUnfocusedSplits = dimUnfocusedSplits
     self.autoShowActiveAgentsPanel = autoShowActiveAgentsPanel
     self.showActiveAgentTabTitles = showActiveAgentTabTitles
@@ -199,6 +203,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encodeIfPresent(terminalFontSize, forKey: .terminalFontSize)
     try container.encode(keybindingUserOverrides, forKey: .keybindingUserOverrides)
     try container.encode(defaultViewMode, forKey: .defaultViewMode)
+    try container.encode(canvasDefaultLayout, forKey: .canvasDefaultLayout)
     try container.encode(dimUnfocusedSplits, forKey: .dimUnfocusedSplits)
     try container.encode(autoShowActiveAgentsPanel, forKey: .autoShowActiveAgentsPanel)
     try container.encode(showActiveAgentTabTitles, forKey: .showActiveAgentTabTitles)
@@ -244,6 +249,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case terminalFontSize
     case keybindingUserOverrides
     case defaultViewMode
+    case canvasDefaultLayout
     case dimUnfocusedSplits
     case autoShowActiveAgentsPanel
     case showActiveAgentTabTitles
@@ -339,9 +345,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     keybindingUserOverrides =
       try container.decodeIfPresent(KeybindingUserOverrideStore.self, forKey: .keybindingUserOverrides)
       ?? Self.default.keybindingUserOverrides
-    defaultViewMode =
-      try container.decodeIfPresent(DefaultViewMode.self, forKey: .defaultViewMode)
-      ?? Self.default.defaultViewMode
+    (defaultViewMode, canvasDefaultLayout) = try Self.decodeViewSettings(from: container)
     dimUnfocusedSplits =
       try container.decodeIfPresent(Bool.self, forKey: .dimUnfocusedSplits)
       ?? Self.default.dimUnfocusedSplits
@@ -362,6 +366,18 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     showDefaultEditorInToolbar = toolbarAndDock.showDefaultEditorInToolbar
     dockBounceMode = toolbarAndDock.dockBounceMode
     showNotificationDotOnDock = toolbarAndDock.showNotificationDotOnDock
+  }
+
+  private static func decodeViewSettings(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> (DefaultViewMode, CanvasDefaultLayout) {
+    let mode =
+      try container.decodeIfPresent(DefaultViewMode.self, forKey: .defaultViewMode)
+      ?? Self.default.defaultViewMode
+    let layout =
+      try container.decodeIfPresent(CanvasDefaultLayout.self, forKey: .canvasDefaultLayout)
+      ?? Self.default.canvasDefaultLayout
+    return (mode, layout)
   }
 
   private static func decodeWindowTint(
