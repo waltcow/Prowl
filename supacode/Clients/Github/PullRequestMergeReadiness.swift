@@ -4,6 +4,7 @@ nonisolated enum PullRequestMergeBlockingReason: Equatable, Hashable {
   case mergeConflicts
   case changesRequested
   case checksFailed(Int)
+  case checksPending(Int)
   case blocked
 }
 
@@ -27,6 +28,14 @@ nonisolated struct PullRequestMergeReadiness: Equatable, Hashable {
     }
     if breakdown.failed > 0 {
       self.blockingReason = .checksFailed(breakdown.failed)
+      return
+    }
+    // `expected` checks (legacy commit-status required contexts that have not
+    // reported yet) are still in flight, so treat them like in-progress checks
+    // rather than letting the PR fall through to a green "Mergeable".
+    let pendingChecks = breakdown.inProgress + breakdown.expected
+    if pendingChecks > 0 {
+      self.blockingReason = .checksPending(pendingChecks)
       return
     }
 
@@ -57,6 +66,9 @@ nonisolated struct PullRequestMergeReadiness: Equatable, Hashable {
     case .checksFailed(let count):
       let checksLabel = count == 1 ? "check" : "checks"
       return "\(count) \(checksLabel) failed"
+    case .checksPending(let count):
+      let checksLabel = count == 1 ? "check" : "checks"
+      return "\(count) \(checksLabel) running"
     case .blocked:
       return "Blocked"
     }
