@@ -578,7 +578,7 @@ nonisolated private func makeCrossRepoBatchQuery(
       branchAliasMap[branchAlias] = branch
       let escapedBranch = escapeGraphQLString(branch)
       let pullRequestsArgs =
-        "first: 5, states: [OPEN, MERGED], headRefName: \"\(escapedBranch)\", \(orderBy)"
+        "first: 5, states: [OPEN, MERGED, CLOSED], headRefName: \"\(escapedBranch)\", \(orderBy)"
       let selection = """
           \(branchAlias): pullRequests(\(pullRequestsArgs)) {
             nodes {
