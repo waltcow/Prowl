@@ -62,7 +62,10 @@ Selection controls:
   automatic window manager. Cards form a balanced grid whose orientation follows
   the window: a wide window spreads them into rows (2 cards → left/right, 5 →
   top 2 / bottom 3), a tall window stacks them into columns. Each line fills its
-  full extent, so the cards use as much area as possible.
+  full extent, so the cards use as much area as possible. The zoom adapts to card
+  count: a few cards stay at native scale (large, detailed), while many cards zoom
+  out so each keeps a readable terminal surface (more rows/columns at smaller text
+  — enough to follow what each agent is doing).
 
 These also appear as toolbar buttons. There's a `?` help popover (bottom-left)
 explaining pan/zoom/expand.

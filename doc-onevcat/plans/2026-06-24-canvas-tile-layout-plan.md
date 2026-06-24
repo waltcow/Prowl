@@ -64,12 +64,24 @@ Prowl 的画布模式（Canvas）当前提供两种卡片排序，入口在 `Can
 > 观感。若日后想要极端比例下进一步铺开，可在 `lineCounts` 上叠加一层 aspect-aware 的
 > 候选评分（按最大化最小卡片面积选 `s`），属于后续增强、不在本次范围。
 
-### 缩放策略（已确认）
+### 缩放策略（已确认 + 自适应增强）
 
 **复用现有 `fitToView`**：Tile 在画布坐标系按视口比例摆好卡片后，调用 `fitToView` 居中并
 缩放。因为布局 bounding box 的宽高比 ≈ 视口宽高比，`fitToView` 的 `min(W/bboxW, H/bboxH)`
-会让两个方向同时贴合（仅受 30pt padding + 底部 reserve 影响留出少量边距），行为与
-Arrange/Organize 完全一致，改动最小。
+会让两个方向同时贴合。
+
+**自适应 zoom（v2 增强，回应"字太大、间距偏大"反馈）**：固定 scale=1 时，卡片多→单卡
+surface 小→终端行列少→字相对显得大、内容少。改进做法：`layout` 在一个
+`viewport × zoom` 的放大画框里铺卡，`fitToView` 自然得到 `scale ≈ 1/zoom`。
+
+- `zoom = max(1, comfortableSize / 单卡 surface)`：卡片本就够大时 `zoom=1`（scale≈1，
+  与单窗口体验一致）；卡片缩小到 `comfortableSize` 以下时 `zoom>1`，surface 维持舒适
+  尺寸（更多行列、字更小、内容更多）。`comfortableSize = adaptiveDefaultCardSize × 0.6`，
+  让少量卡片保持原生 scale，再平滑过渡。
+- **间距**：Tile 用更小的 `tileCardSpacing = 14`（其余模式 20）；它活在放大画框里，屏幕
+  间距 = `14 × scale`，会随卡片增多自动收紧——同时解决"间距偏大"与"不随尺寸适配"。
+- `fitToView` 的 scale 夹在 `[0.25, 1.0]`：`zoom>1 → scale≤1`；极端卡片数 zoom 很大时
+  scale 触底 0.25、卡片轻微溢出，属可接受降级。
 
 ## 算法细节
 

@@ -48,6 +48,9 @@ struct CanvasView: View {
   let maxCardHeight: CGFloat = 1600
   let titleBarHeight: CGFloat = 28
   let cardSpacing: CGFloat = 20
+  /// Tighter gap for the Tile layout. It lives in the scaled-up tile frame, so
+  /// the on-screen gap shrinks further as more cards are tiled (gap × scale).
+  let tileCardSpacing: CGFloat = 14
   /// Reserved height at the bottom of the viewport for the help button and
   /// layout toolbar so cards don't sit underneath them after auto-fit.
   /// Cards end up shifted upward by half of this amount.
@@ -641,8 +644,15 @@ struct CanvasView: View {
     let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
     guard !keys.isEmpty, viewportSize.width > 0, viewportSize.height > 0 else { return }
 
-    let tiler = CanvasTileLayout(spacing: cardSpacing, titleBarHeight: titleBarHeight)
-    let layouts = tiler.layout(keys: keys, viewport: viewportSize)
+    // Below this card surface, scale the layout up (and the viewport back down)
+    // so cards keep enough rows/columns to read at a glance. 0.6 keeps a handful
+    // of cards at native scale before the gentle zoom-out begins.
+    let comfortableSize = CGSize(
+      width: adaptiveDefaultCardSize.width * 0.6,
+      height: adaptiveDefaultCardSize.height * 0.6
+    )
+    let tiler = CanvasTileLayout(spacing: tileCardSpacing, titleBarHeight: titleBarHeight)
+    let layouts = tiler.layout(keys: keys, viewport: viewportSize, comfortableSize: comfortableSize)
     guard !layouts.isEmpty else { return }
     layoutStore.setCardLayouts(layouts, zOrder: keys)
   }
