@@ -192,6 +192,12 @@ final class WorktreeInfoWatcherManager {
     for repositoryRootURL in obsoleteCooldownRepositories {
       cancelPullRequestSelectionCooldown(for: repositoryRootURL)
     }
+    let obsoleteSelectionRepositories = lastSelectedWorktreeIDByRepo.keys.filter {
+      !repositoryRoots.contains($0)
+    }
+    for repositoryRootURL in obsoleteSelectionRepositories {
+      lastSelectedWorktreeIDByRepo.removeValue(forKey: repositoryRootURL)
+    }
   }
 
   private func setOpenedWorktreeIDs(_ worktreeIDs: Set<Worktree.ID>) {
