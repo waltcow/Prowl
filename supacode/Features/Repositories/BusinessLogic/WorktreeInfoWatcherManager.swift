@@ -333,17 +333,10 @@ final class WorktreeInfoWatcherManager {
   }
 
   private func scheduleFilesChanged(worktreeID: Worktree.ID) {
-    filesDebounceTasks[worktreeID]?.cancel()
-    let debounceInterval = lineChangesTiming(for: worktreeID).filesChangedDebounce
-    let sleep = self.sleep
-    let task = Task { [weak self, sleep] in
-      try? await sleep(debounceInterval)
-      await MainActor.run {
-        guard let self else { return }
-        self.emit(.filesChanged(worktreeID: worktreeID))
-      }
-    }
-    filesDebounceTasks[worktreeID] = task
+    // Route through the debounced refresh path so the scheduled task
+    // calls emitLineChangesChanged (which clears deferredLineChangeIDs)
+    // instead of emitting directly (which gets swallowed when deferred).
+    scheduleLineChangesDebouncedRefresh(worktreeID: worktreeID)
   }
 
   private func scheduleRestart(worktreeID: Worktree.ID) {
