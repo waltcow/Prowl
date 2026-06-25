@@ -3,7 +3,7 @@ import SwiftUI
 enum PullRequestBadgeStyle {
   static let mergedColor = Color.purple
   static let openColor = Color.green
-  static let closedColor = Color.red
+  static let closedColor = Color.orange
   static let queuedColor = Color.brown
 
   static func style(state: String?, number: Int?, isQueued: Bool = false) -> (text: String, color: Color)? {
