@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026.6.25](https://github.com/onevcat/Prowl/releases/tag/v2026.6.25)
+
+Canvas gains a Tile layout, hover-reveal help, and full toolbar PR awareness alongside fixes to PR status display and update behavior.
+
+### New
+
+- **Tile canvas layout** (`⌘⌥T`): resizes all cards to fill the viewport in a balanced grid. Orientation follows the window shape (wide → rows, tall → columns), and cards scale down gracefully as the count grows.
+- **Canvas default layout setting**: Settings → General → Default Views now includes a "Canvas layout" picker (Uniform or Tile). Tile is the new default for all installs, including existing ones.
+- **Closed PR visibility**: worktrees now display closed (non-merged) PRs with an orange badge instead of hiding them.
+- **Pending checks indicator**: the sidebar now shows a yellow state when a PR has checks that are still running or expected, rather than incorrectly showing "Mergeable."
+
+### Improved
+
+- **Canvas help on hover**: the `?` button in the bottom-left of Canvas now reveals its popover on cursor hover and can be pinned open with a click, matching the notifications bell behavior.
+- **Canvas toolbar awareness**: when Canvas is active, the toolbar center reflects the focused card's PR status and check results. "Open on Code Host" and "Open Pull Request" now act on the focused Canvas card.
+- **Update install confirmation**: Prowl now asks before installing and relaunching an update, preventing an unintended relaunch triggered by a routine update check.
+
+### Fixed
+
+- Sidebar diff badges now refresh correctly after HEAD changes that were previously dropped on a deferred code path.
+
 ## [2026.6.23](https://github.com/onevcat/Prowl/releases/tag/v2026.6.23)
 
 This release focuses on search usability, terminal activity detection, and window management reliability.
