@@ -592,11 +592,11 @@ struct WorktreeInfoWatcherManagerTests {
     await task.value
     try FileManager.default.removeItem(at: tempRepository.tempRoot)
   }
-  @Test func headWatcherEventNotBlockedByDeferredLineChanges() async throws {
-    // Regression test: scheduleFilesChanged previously emitted .filesChanged
-    // directly, which gets swallowed when the worktree is in deferredLineChangeIDs.
-    // After the fix, it routes through scheduleLineChangesRefresh which calls
-    // emitLineChangesChanged (clears deferred flag before emitting).
+  @Test func deferredWorktreeEmitsFilesChangedOnSelection() async throws {
+    // Regression test: worktrees added after initial load go into deferredLineChangeIDs,
+    // which previously blocked all .filesChanged events until the 5-minute safety refresh.
+    // After the fix, selecting a deferred worktree calls emitLineChangesChanged which
+    // clears the deferred flag and immediately emits .filesChanged.
     let clock = TestClock()
     let tempRepository = try makeTempRepository(worktreeNames: ["sparrow", "swift"])
     let firstWorktree = try #require(tempRepository.worktrees.first)
@@ -604,7 +604,6 @@ struct WorktreeInfoWatcherManagerTests {
     let manager = WorktreeInfoWatcherManager(
       focusedInterval: .seconds(3_600),
       unfocusedInterval: .seconds(3_600),
-      defaultLineChangesTiming: .init(filesChangedDebounce: .milliseconds(80), eventDebounce: .seconds(3_600)),
       lineChangePhaseOffset: { _, _ in .zero },
       pullRequestPhaseOffset: { _, _ in .zero },
       clock: clock
@@ -615,25 +614,15 @@ struct WorktreeInfoWatcherManagerTests {
     // Load only the first worktree initially — second will be deferred when added.
     manager.handleCommand(.setWorktrees([firstWorktree]))
     await drainAsyncEvents(120)
-    let initialCount = await collector.filesChangedCount(worktreeID: firstWorktree.id)
-    #expect(initialCount == 1)
+    #expect(await collector.filesChangedCount(worktreeID: firstWorktree.id) == 1)
 
-    // Add second worktree — it goes into deferredLineChangeIDs.
+    // Add second worktree — it goes into deferredLineChangeIDs, no filesChanged yet.
     manager.handleCommand(.setWorktrees([firstWorktree, secondWorktree]))
     await drainAsyncEvents(120)
     #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 0)
 
-    // Simulate a commit by writing to HEAD file — triggers HEAD watcher.
-    let headURL = secondWorktree.workingDirectory.appending(path: ".git/HEAD")
-    try "ref: refs/heads/swift\n".write(to: headURL, atomically: true, encoding: .utf8)
-    await drainAsyncEvents(120)
-
-    // Even though secondWorktree is deferred, the event should fire after debounce.
-    await clock.advance(by: .milliseconds(79))
-    await drainAsyncEvents(120)
-    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 0)
-
-    await clock.advance(by: .milliseconds(1))
+    // Selecting the deferred worktree clears the deferred flag and emits immediately.
+    manager.handleCommand(.setSelectedWorktreeID(secondWorktree.id))
     await drainAsyncEvents(120)
     #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 1)
 
