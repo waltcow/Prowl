@@ -801,7 +801,7 @@ struct SupacodeApp: App {
       // Grouped to keep `commands` under SwiftUI's CommandsBuilder
       // tuple-arity limit when `#if DEBUG` adds the Debug menu below.
       Group {
-        WorktreeCommands(store: store)
+        WorktreeCommands(store: store, terminalManager: terminalManager)
         SidebarCommands(store: store)
         TerminalCommands(
           ghosttyShortcuts: ghosttyShortcuts,

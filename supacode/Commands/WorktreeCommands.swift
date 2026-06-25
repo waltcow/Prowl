@@ -4,6 +4,7 @@ import SwiftUI
 
 struct WorktreeCommands: Commands {
   @Bindable var store: StoreOf<AppFeature>
+  let terminalManager: WorktreeTerminalManager
   @FocusedValue(\.openSelectedWorktreeAction) private var openSelectedWorktreeAction
   @FocusedValue(\.confirmWorktreeAction) private var confirmWorktreeAction
   @FocusedValue(\.archiveWorktreeAction) private var archiveWorktreeAction
@@ -12,8 +13,9 @@ struct WorktreeCommands: Commands {
   @FocusedValue(\.stopRunScriptAction) private var stopRunScriptAction
   @FocusedValue(\.visibleHotkeyWorktreeRows) private var visibleHotkeyWorktreeRows
 
-  init(store: StoreOf<AppFeature>) {
+  init(store: StoreOf<AppFeature>, terminalManager: WorktreeTerminalManager) {
     self.store = store
+    self.terminalManager = terminalManager
   }
 
   var body: some Commands {
@@ -159,15 +161,10 @@ struct WorktreeCommands: Commands {
   }
 
   private var selectedCodeHostWorktreeID: Worktree.ID? {
-    let repositories = store.repositories
-    guard let selectedWorktreeID = repositories.selectedWorktreeID else { return nil }
-    guard
-      let repositoryID = repositories.repositoryID(containing: selectedWorktreeID),
-      repositories.repositories[id: repositoryID]?.capabilities.supportsCodeHost == true
-    else {
-      return nil
-    }
-    return selectedWorktreeID
+    codeHostWorktreeID(
+      repositories: store.repositories,
+      canvasFocusedWorktreeID: store.repositories.isShowingCanvas ? terminalManager.canvasFocusedWorktreeID : nil
+    )
   }
 
   private func keyboardShortcut(for commandID: String) -> KeyboardShortcut? {
@@ -278,6 +275,21 @@ struct WorktreeCommands: Commands {
     .help(helpText)
     .disabled(!hasActiveWorktree)
   }
+}
+
+func codeHostWorktreeID(
+  repositories: RepositoriesFeature.State,
+  canvasFocusedWorktreeID: Worktree.ID?
+) -> Worktree.ID? {
+  let candidateID = repositories.selectedWorktreeID ?? canvasFocusedWorktreeID
+  guard
+    let candidateID,
+    let repositoryID = repositories.repositoryID(containing: candidateID),
+    repositories.repositories[id: repositoryID]?.capabilities.supportsCodeHost == true
+  else {
+    return nil
+  }
+  return candidateID
 }
 
 private struct WorktreeMenuEntry: Identifiable {

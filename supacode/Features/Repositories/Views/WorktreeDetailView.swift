@@ -23,6 +23,9 @@ struct WorktreeDetailView: View {
   }
 
   private struct CanvasToolbarState {
+    let statusToast: RepositoriesFeature.StatusToast?
+    let pullRequest: GithubPullRequest?
+    let codeHost: CodeHost
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
     let runScriptEnabled: Bool
@@ -32,6 +35,16 @@ struct WorktreeDetailView: View {
     let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
     let showRunButtonInToolbar: Bool
+  }
+
+  private struct CanvasToolbarStateInput {
+    let appState: AppFeature.State
+    let actionTargetWorktree: Worktree?
+    let notificationGroups: [ToolbarNotificationRepositoryGroup]
+    let unseenNotificationWorktreeCount: Int
+    let runScriptEnabled: Bool
+    let runScriptIsRunning: Bool
+    let customCommands: [UserCustomCommand]
   }
 
   @Bindable var store: StoreOf<AppFeature>
@@ -91,16 +104,16 @@ struct WorktreeDetailView: View {
     .toolbar {
       if repositories.isShowingCanvas {
         canvasToolbarContent(
-          state: CanvasToolbarState(
-            notificationGroups: notificationGroups,
-            unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
-            runScriptEnabled: runScriptEnabled,
-            runScriptIsRunning: runScriptIsRunning,
-            customCommands: customCommands,
-            isUpdateAvailable: state.updates.isUpdateAvailable,
-            isUpdateReadyToInstall: state.updates.isUpdateReadyToInstall,
-            availableUpdateVersion: state.updates.availableVersion,
-            showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar
+          state: canvasToolbarState(
+            input: CanvasToolbarStateInput(
+              appState: state,
+              actionTargetWorktree: actionTargetWorktree,
+              notificationGroups: notificationGroups,
+              unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
+              runScriptEnabled: runScriptEnabled,
+              runScriptIsRunning: runScriptIsRunning,
+              customCommands: customCommands
+            )
           )
         )
       } else if hasActiveTerminalTarget,
@@ -197,10 +210,41 @@ struct WorktreeDetailView: View {
     )
   }
 
+  private func canvasToolbarState(
+    input: CanvasToolbarStateInput
+  ) -> CanvasToolbarState {
+    CanvasToolbarState(
+      statusToast: input.appState.repositories.statusToast,
+      pullRequest: matchedPullRequest(
+        for: input.actionTargetWorktree,
+        repositories: input.appState.repositories
+      ),
+      codeHost: input.appState.repositories.codeHost(forWorktreeID: input.actionTargetWorktree?.id),
+      notificationGroups: input.notificationGroups,
+      unseenNotificationWorktreeCount: input.unseenNotificationWorktreeCount,
+      runScriptEnabled: input.runScriptEnabled,
+      runScriptIsRunning: input.runScriptIsRunning,
+      customCommands: input.customCommands,
+      isUpdateAvailable: input.appState.updates.isUpdateAvailable,
+      isUpdateReadyToInstall: input.appState.updates.isUpdateReadyToInstall,
+      availableUpdateVersion: input.appState.updates.availableVersion,
+      showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar
+    )
+  }
+
   @ToolbarContentBuilder
   private func canvasToolbarContent(
     state: CanvasToolbarState
   ) -> some ToolbarContent {
+    ToolbarItem(placement: .principal) {
+      ToolbarStatusView(
+        toast: state.statusToast,
+        pullRequest: state.pullRequest,
+        codeHost: state.codeHost
+      )
+      .padding(.horizontal)
+    }
+
     ToolbarItemGroup(placement: .primaryAction) {
       ToolbarNotificationsPopoverButton(
         groups: state.notificationGroups,
@@ -312,17 +356,13 @@ struct WorktreeDetailView: View {
     else {
       return nil
     }
-    let pullRequest = input.selectedWorktree.flatMap { input.repositories.worktreeInfo(for: $0.id)?.pullRequest }
-    let matchesBranch =
-      if let selectedWorktree = input.selectedWorktree, let pullRequest {
-        pullRequest.headRefName == nil || pullRequest.headRefName == selectedWorktree.name
-      } else {
-        false
-      }
     return WorktreeToolbarState(
       title: title,
       statusToast: input.repositories.statusToast,
-      pullRequest: matchesBranch ? pullRequest : nil,
+      pullRequest: matchedPullRequest(
+        for: input.selectedWorktree,
+        repositories: input.repositories
+      ),
       codeHost: input.repositories.codeHost(forWorktreeID: input.selectedWorktree?.id),
       notificationGroups: input.notificationGroups,
       unseenNotificationWorktreeCount: input.unseenNotificationWorktreeCount,
@@ -361,6 +401,21 @@ struct WorktreeDetailView: View {
         }
         return lhsRepository.localizedCaseInsensitiveCompare(rhsRepository) == .orderedAscending
       }
+  }
+
+  private func matchedPullRequest(
+    for worktree: Worktree?,
+    repositories: RepositoriesFeature.State
+  ) -> GithubPullRequest? {
+    guard let worktree,
+      let pullRequest = repositories.worktreeInfo(for: worktree.id)?.pullRequest
+    else {
+      return nil
+    }
+    guard pullRequest.headRefName == nil || pullRequest.headRefName == worktree.name else {
+      return nil
+    }
+    return pullRequest
   }
 
   private func shouldShowMultiSelectionSummary(

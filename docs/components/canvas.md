@@ -71,6 +71,14 @@ These also appear as toolbar buttons. There's a `?` help popover (bottom-left)
 explaining pan/zoom/expand — hover the button to reveal it, move away to dismiss,
 or click to pin it open.
 
+## Toolbar actions
+
+The main toolbar tracks the focused card. Its center status area shows the same
+PR/check summary, toast, or time hint as Normal view, and the right-side Run
+Script / Custom Command buttons run against the focused card's worktree. `⌘⌃G`
+(`open_pull_request`, "Open on Code Host") opens that card's PR when it has one,
+or the repository page otherwise.
+
 ## Visual cues
 
 - **Focused card:** bright accent border. **Selected (multi-select):** medium

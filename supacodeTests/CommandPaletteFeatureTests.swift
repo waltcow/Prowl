@@ -557,6 +557,32 @@ struct CommandPaletteFeatureTests {
     #expect(githubOpenItem?.title == "Open Repository on GitHub")
   }
 
+  @Test func commandPaletteItems_showsCodeHostActionForCanvasActionTarget() {
+    let rootPath = "/tmp/repo-canvas-code-host"
+    let worktree = makeWorktree(id: "\(rootPath)/wt-1", name: "feature/canvas", repoRoot: rootPath)
+    let repository = makeRepository(rootPath: rootPath, name: "Repo", worktrees: [worktree])
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .canvas
+    state.codeHostByRepositoryID[repository.id] = .github
+    state.worktreeInfoByID[worktree.id] = WorktreeInfoEntry(
+      pullRequest: makePullRequest()
+    )
+
+    let items = CommandPaletteFeature.commandPaletteItems(
+      from: state,
+      actionTargetWorktreeID: worktree.id
+    )
+    let openItem = items.first {
+      if case .openPullRequest(let worktreeID) = $0.kind {
+        return worktreeID == worktree.id
+      }
+      return false
+    }
+
+    #expect(openItem?.title == "Open Pull Request on GitHub")
+    #expect(openItem?.subtitle == "PR")
+  }
+
   @Test func emptyQueryHidesChangeFocusedTabIcon() {
     let rootPath = "/tmp/repo"
     let worktree = makeWorktree(id: rootPath, name: "repo", repoRoot: rootPath)

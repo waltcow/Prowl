@@ -52,6 +52,7 @@ selected worktree has a pull request).
   suggestions.
 - PR and Canvas entries appear/disappear as state changes (PR present, Canvas
   active, etc.).
+- In Canvas, worktree-scoped actions use the focused card as their context.
 - There are no user settings for the palette; ranking is automatic.
 
 ## Gotchas for agents

@@ -43,10 +43,11 @@ palette.
 
 ## Actions (via Command Palette, when a PR exists)
 
-Open the [Command Palette](command-palette.md) (`⌘P`) on a worktree that has a PR:
+Open the [Command Palette](command-palette.md) (`⌘P`) on a worktree that has a PR
+(or focus that worktree's card in Canvas):
 
 - **Open Pull Request on GitHub** — open it in the browser. (`⌘⌃G` "Open on Code
-  Host" also opens the PR/repo page.)
+  Host" also opens the PR/repo page, including from Canvas.)
 - **Mark PR Ready for Review** — convert a draft to ready (only when it's a draft).
 - **Copy failing job URL** — copy the first failing check's URL.
 - **Copy CI Failure Logs** — extract and copy the failed run's logs (great to hand

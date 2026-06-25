@@ -291,7 +291,12 @@ struct CommandPaletteFeature {
         )
       )
     }
-    items.append(contentsOf: selectedCodeHostItems(from: repositories))
+    items.append(
+      contentsOf: selectedCodeHostItems(
+        from: repositories,
+        actionTargetWorktreeID: worktreeActionTargetID
+      )
+    )
     #if DEBUG
       items.append(contentsOf: debugToastItems())
     #endif
@@ -639,18 +644,19 @@ private func canvasCommandItems() -> [CommandPaletteItem] {
 }
 
 private func selectedCodeHostItems(
-  from repositories: RepositoriesFeature.State
+  from repositories: RepositoriesFeature.State,
+  actionTargetWorktreeID: Worktree.ID? = nil
 ) -> [CommandPaletteItem] {
   guard
-    let selectedWorktreeID = repositories.selectedWorktreeID,
-    let repositoryID = repositories.repositoryID(containing: selectedWorktreeID),
+    let worktreeID = actionTargetWorktreeID ?? repositories.selectedWorktreeID,
+    let repositoryID = repositories.repositoryID(containing: worktreeID),
     let repository = repositories.repositories[id: repositoryID]
   else {
     return []
   }
 
   let codeHost = repositories.codeHost(for: repositoryID)
-  let pullRequest = repositories.worktreeInfo(for: selectedWorktreeID)?.pullRequest
+  let pullRequest = repositories.worktreeInfo(for: worktreeID)?.pullRequest
   if repository.capabilities.supportsPullRequests,
     let pullRequest,
     pullRequest.number > 0,
@@ -658,7 +664,7 @@ private func selectedCodeHostItems(
   {
     return pullRequestItems(
       pullRequest: pullRequest,
-      worktreeID: selectedWorktreeID,
+      worktreeID: worktreeID,
       repositoryID: repositoryID,
       codeHost: codeHost
     )
@@ -673,7 +679,7 @@ private func selectedCodeHostItems(
       id: CommandPaletteItemID.pullRequestOpen(repositoryID),
       title: "Open Repository on \(codeHost.displayName)",
       subtitle: repository.name,
-      kind: .openRepositoryOnCodeHost(selectedWorktreeID),
+      kind: .openRepositoryOnCodeHost(worktreeID),
       category: .pullRequest,
       defaultSuggestion: false,
       priorityTier: 2
