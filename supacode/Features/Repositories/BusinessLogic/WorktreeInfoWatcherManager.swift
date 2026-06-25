@@ -1,4 +1,3 @@
-import Darwin
 import Dispatch
 import Foundation
 
@@ -11,6 +10,12 @@ final class WorktreeInfoWatcherManager {
       _ worktree: Worktree,
       _ onEvent: @escaping @MainActor @Sendable () -> Void
     ) -> WorktreeFileEventMonitoring?
+  typealias WorktreeHeadEventMonitorFactory =
+    @MainActor @Sendable (
+      _ worktreeID: Worktree.ID,
+      _ headURL: URL,
+      _ onEvent: @escaping @MainActor @Sendable (DispatchSource.FileSystemEvent) -> Void
+    ) -> WorktreeHeadEventMonitoring?
   typealias WorktreeRegistryMonitorFactory =
     @MainActor @Sendable (
       _ repositoryRootURL: URL,
@@ -24,7 +29,7 @@ final class WorktreeInfoWatcherManager {
 
   private struct HeadWatcher {
     let headURL: URL
-    let source: DispatchSourceFileSystemObject
+    let monitor: WorktreeHeadEventMonitoring
   }
 
   private struct RefreshTask {
@@ -81,6 +86,7 @@ final class WorktreeInfoWatcherManager {
   private let lineChangePhaseOffset: WorktreePhaseOffset
   private let pullRequestPhaseOffset: RepositoryPhaseOffset
   private let worktreeFileEventMonitorFactory: WorktreeFileEventMonitorFactory
+  private let worktreeHeadEventMonitorFactory: WorktreeHeadEventMonitorFactory
   private let worktreeRegistryMonitorFactory: WorktreeRegistryMonitorFactory
   private let remoteConfigMonitorFactory: RemoteConfigMonitorFactory
   private let sleep: @Sendable (Duration) async throws -> Void
@@ -118,6 +124,8 @@ final class WorktreeInfoWatcherManager {
     pullRequestPhaseOffset: @escaping RepositoryPhaseOffset = WorktreeInfoWatcherManager.defaultPullRequestPhaseOffset,
     worktreeFileEventMonitorFactory: @escaping WorktreeFileEventMonitorFactory =
       WorktreeInfoWatcherManager.defaultWorktreeFileEventMonitorFactory,
+    worktreeHeadEventMonitorFactory: @escaping WorktreeHeadEventMonitorFactory =
+      WorktreeInfoWatcherManager.defaultWorktreeHeadEventMonitorFactory,
     worktreeRegistryMonitorFactory: @escaping WorktreeRegistryMonitorFactory =
       WorktreeInfoWatcherManager.defaultWorktreeRegistryMonitorFactory,
     remoteConfigMonitorFactory: @escaping RemoteConfigMonitorFactory =
@@ -134,6 +142,7 @@ final class WorktreeInfoWatcherManager {
     self.lineChangePhaseOffset = lineChangePhaseOffset
     self.pullRequestPhaseOffset = pullRequestPhaseOffset
     self.worktreeFileEventMonitorFactory = worktreeFileEventMonitorFactory
+    self.worktreeHeadEventMonitorFactory = worktreeHeadEventMonitorFactory
     self.worktreeRegistryMonitorFactory = worktreeRegistryMonitorFactory
     self.remoteConfigMonitorFactory = remoteConfigMonitorFactory
     self.indexEntryCountProvider = indexEntryCountProvider
@@ -281,29 +290,16 @@ final class WorktreeInfoWatcherManager {
   }
 
   private func startWatcher(worktreeID: Worktree.ID, headURL: URL) {
-    let path = headURL.path(percentEncoded: false)
-    let fileDescriptor = open(path, O_EVTONLY)
-    guard fileDescriptor >= 0 else {
+    guard
+      let monitor = worktreeHeadEventMonitorFactory(
+        worktreeID, headURL,
+        { [weak self] event in
+          self?.handleEvent(worktreeID: worktreeID, event: event)
+        })
+    else {
       return
     }
-    let queue = DispatchQueue(label: "worktree-info-watcher.\(worktreeID)")
-    let source = DispatchSource.makeFileSystemObjectSource(
-      fileDescriptor: fileDescriptor,
-      eventMask: [.write, .rename, .delete, .attrib],
-      queue: queue
-    )
-    source.setEventHandler { @Sendable [weak self, weak source] in
-      guard let source else { return }
-      let event = source.data
-      Task { @MainActor in
-        self?.handleEvent(worktreeID: worktreeID, event: event)
-      }
-    }
-    source.setCancelHandler { @Sendable in
-      close(fileDescriptor)
-    }
-    source.resume()
-    headWatchers[worktreeID] = HeadWatcher(headURL: headURL, source: source)
+    headWatchers[worktreeID] = HeadWatcher(headURL: headURL, monitor: monitor)
   }
 
   private func handleEvent(
@@ -365,7 +361,7 @@ final class WorktreeInfoWatcherManager {
 
   private func stopHeadWatcher(for worktreeID: Worktree.ID) {
     if let watcher = headWatchers.removeValue(forKey: worktreeID) {
-      watcher.source.cancel()
+      watcher.monitor.cancel()
     }
   }
 
@@ -381,7 +377,7 @@ final class WorktreeInfoWatcherManager {
 
   private func stopAll() {
     for watcher in headWatchers.values {
-      watcher.source.cancel()
+      watcher.monitor.cancel()
     }
     for task in branchDebounceTasks.values {
       task.cancel()
@@ -771,6 +767,14 @@ final class WorktreeInfoWatcherManager {
     onEvent: @escaping @MainActor @Sendable () -> Void
   ) -> WorktreeFileEventMonitoring? {
     FSEventsWorktreeFileEventMonitor(rootURL: worktree.workingDirectory, onEvent: onEvent)
+  }
+
+  private static func defaultWorktreeHeadEventMonitorFactory(
+    worktreeID _: Worktree.ID,
+    headURL: URL,
+    onEvent: @escaping @MainActor @Sendable (DispatchSource.FileSystemEvent) -> Void
+  ) -> WorktreeHeadEventMonitoring? {
+    DispatchSourceWorktreeHeadEventMonitor(headURL: headURL, onEvent: onEvent)
   }
 
   private static func defaultWorktreeRegistryMonitorFactory(

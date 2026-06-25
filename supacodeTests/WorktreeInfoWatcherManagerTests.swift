@@ -631,6 +631,49 @@ struct WorktreeInfoWatcherManagerTests {
     try FileManager.default.removeItem(at: tempRepository.tempRoot)
   }
 
+  @Test func headWatcherEventClearsDeferredLineChangesAfterFilesChangedDebounce() async throws {
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow", "swift"])
+    let firstWorktree = try #require(tempRepository.worktrees.first)
+    let secondWorktree = try #require(tempRepository.worktrees.dropFirst().first)
+    let headMonitorStore = TestWorktreeHeadEventMonitorStore()
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      defaultLineChangesTiming: .init(filesChangedDebounce: .milliseconds(80), eventDebounce: .seconds(3_600)),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      worktreeHeadEventMonitorFactory: headMonitorStore.makeMonitor,
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    manager.handleCommand(.setWorktrees([firstWorktree]))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: firstWorktree.id) == 1)
+
+    manager.handleCommand(.setWorktrees([firstWorktree, secondWorktree]))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 0)
+
+    let monitor = try #require(headMonitorStore.monitor(for: secondWorktree.id))
+    monitor.emit(.write)
+    await drainAsyncEvents(120)
+
+    await clock.advance(by: .milliseconds(79))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 0)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 1)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
 }
 
 actor EventCollector {
@@ -748,6 +791,43 @@ private func startCollecting(
 private func drainAsyncEvents(_ iterations: Int = 20) async {
   for _ in 0..<iterations {
     await Task.yield()
+  }
+}
+
+@MainActor
+private final class TestWorktreeHeadEventMonitorStore {
+  private var monitors: [Worktree.ID: TestWorktreeHeadEventMonitor] = [:]
+
+  func makeMonitor(
+    worktreeID: Worktree.ID,
+    headURL _: URL,
+    onEvent: @escaping @MainActor @Sendable (DispatchSource.FileSystemEvent) -> Void
+  ) -> WorktreeHeadEventMonitoring? {
+    let monitor = TestWorktreeHeadEventMonitor(onEvent: onEvent)
+    monitors[worktreeID] = monitor
+    return monitor
+  }
+
+  func monitor(for worktreeID: Worktree.ID) -> TestWorktreeHeadEventMonitor? {
+    monitors[worktreeID]
+  }
+}
+
+@MainActor
+private final class TestWorktreeHeadEventMonitor: WorktreeHeadEventMonitoring {
+  private let onEvent: @MainActor @Sendable (DispatchSource.FileSystemEvent) -> Void
+  private(set) var isCanceled = false
+
+  init(onEvent: @escaping @MainActor @Sendable (DispatchSource.FileSystemEvent) -> Void) {
+    self.onEvent = onEvent
+  }
+
+  func emit(_ event: DispatchSource.FileSystemEvent) {
+    onEvent(event)
+  }
+
+  func cancel() {
+    isCanceled = true
   }
 }
 

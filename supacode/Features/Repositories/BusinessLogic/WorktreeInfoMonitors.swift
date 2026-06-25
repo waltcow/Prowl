@@ -9,6 +9,11 @@ protocol WorktreeFileEventMonitoring: AnyObject {
 }
 
 @MainActor
+protocol WorktreeHeadEventMonitoring: AnyObject {
+  func cancel()
+}
+
+@MainActor
 protocol WorktreeRegistryMonitoring: AnyObject {
   func cancel()
 }
@@ -78,6 +83,43 @@ final class FSEventsWorktreeFileEventMonitor: WorktreeFileEventMonitoring {
     FSEventStreamInvalidate(stream)
     FSEventStreamRelease(stream)
     self.stream = nil
+  }
+}
+
+final class DispatchSourceWorktreeHeadEventMonitor: WorktreeHeadEventMonitoring {
+  private let source: DispatchSourceFileSystemObject
+
+  init?(
+    headURL: URL,
+    onEvent: @escaping @MainActor @Sendable (DispatchSource.FileSystemEvent) -> Void
+  ) {
+    let path = headURL.path(percentEncoded: false)
+    let fileDescriptor = open(path, O_EVTONLY)
+    guard fileDescriptor >= 0 else {
+      return nil
+    }
+    let queue = DispatchQueue(label: "worktree-head-event-monitor.\(path)")
+    let source = DispatchSource.makeFileSystemObjectSource(
+      fileDescriptor: fileDescriptor,
+      eventMask: [.write, .rename, .delete, .attrib],
+      queue: queue
+    )
+    self.source = source
+    source.setEventHandler { @Sendable [weak source] in
+      guard let source else { return }
+      let event = source.data
+      Task { @MainActor in
+        onEvent(event)
+      }
+    }
+    source.setCancelHandler { @Sendable in
+      close(fileDescriptor)
+    }
+    source.resume()
+  }
+
+  func cancel() {
+    source.cancel()
   }
 }
 
