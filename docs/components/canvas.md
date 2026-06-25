@@ -68,7 +68,8 @@ Selection controls:
   — enough to follow what each agent is doing).
 
 These also appear as toolbar buttons. There's a `?` help popover (bottom-left)
-explaining pan/zoom/expand.
+explaining pan/zoom/expand — hover the button to reveal it, move away to dismiss,
+or click to pin it open.
 
 ## Visual cues
 
