@@ -36,7 +36,6 @@ struct CanvasView: View {
   @State var hasPerformedInitialFit = false
   @State var hasSeenCanvasCards = false
   @State var viewportSize: CGSize = .zero
-  @State var showsCanvasHelp = false
   @State var configReloadCounter = 0
   @State var focusViewportAnimationID = 0
   /// The tab currently expanded in place (near-fullscreen overlay) on canvas,
@@ -187,7 +186,7 @@ struct CanvasView: View {
       canvasToolbar
     }
     .overlay(alignment: .bottomLeading) {
-      canvasHelpButton
+      CanvasHelpButton()
     }
     .onKeyPress(.escape) {
       guard selectionState.isBroadcasting else { return .ignored }
@@ -740,70 +739,6 @@ struct CanvasView: View {
     let visibleKeys = Set(collectCardKeys(from: terminalManager.activeWorktreeStates))
     guard !visibleKeys.isEmpty || hasSeenCanvasCards else { return }
     layoutStore.prune(to: visibleKeys)
-  }
-
-  var canvasHelpButton: some View {
-    Button {
-      showsCanvasHelp.toggle()
-    } label: {
-      Image(systemName: "questionmark.circle")
-        .font(.body)
-        .accessibilityLabel("Canvas navigation help")
-    }
-    .buttonStyle(.bordered)
-    .help("Canvas navigation help")
-    .popover(isPresented: $showsCanvasHelp, arrowEdge: .bottom) {
-      canvasHelpContent
-    }
-    .padding()
-  }
-
-  var canvasHelpContent: some View {
-    let expandShortcut = AppShortcuts.display(
-      for: AppShortcuts.CommandID.expandCanvasCard,
-      in: resolvedKeybindings
-    )
-    return VStack(alignment: .leading, spacing: 14) {
-      Text("Canvas Navigation")
-        .font(.headline)
-
-      VStack(alignment: .leading, spacing: 12) {
-        canvasHelpRow(
-          icon: "plus.magnifyingglass",
-          title: "Zoom in/out",
-          detail: "⌘ + scroll, or pinch gesture"
-        )
-        canvasHelpRow(
-          icon: "hand.draw",
-          title: "Pan canvas",
-          detail: "Drag empty area, middle-click drag, or two-finger swipe"
-        )
-        canvasHelpRow(
-          icon: "arrow.up.left.and.arrow.down.right",
-          title: "Expand / restore card",
-          detail: expandShortcut.map { "\($0), or the card's title-bar button" }
-            ?? "Use the card's title-bar button"
-        )
-      }
-    }
-    .padding()
-    .frame(width: 320, alignment: .leading)
-  }
-
-  func canvasHelpRow(icon: String, title: String, detail: String) -> some View {
-    HStack(alignment: .firstTextBaseline, spacing: 10) {
-      Image(systemName: icon)
-        .foregroundStyle(.secondary)
-        .frame(width: 18)
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(.callout).fontWeight(.medium)
-        Text(detail)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-    }
   }
 
   var canvasToolbar: some View {
