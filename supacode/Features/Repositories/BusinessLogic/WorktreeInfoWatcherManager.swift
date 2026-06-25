@@ -333,10 +333,11 @@ final class WorktreeInfoWatcherManager {
   }
 
   private func scheduleFilesChanged(worktreeID: Worktree.ID) {
-    // Route through the debounced refresh path so the scheduled task
-    // calls emitLineChangesChanged (which clears deferredLineChangeIDs)
-    // instead of emitting directly (which gets swallowed when deferred).
-    scheduleLineChangesDebouncedRefresh(worktreeID: worktreeID)
+    // Route through scheduleLineChangesRefresh so the scheduled task calls
+    // emitLineChangesChanged (which clears deferredLineChangeIDs) instead of
+    // emitting directly. Keep filesChangedDebounce for fast HEAD-change refresh.
+    let delay = lineChangesTiming(for: worktreeID).filesChangedDebounce
+    scheduleLineChangesRefresh(worktreeID: worktreeID, delay: delay)
   }
 
   private func scheduleRestart(worktreeID: Worktree.ID) {

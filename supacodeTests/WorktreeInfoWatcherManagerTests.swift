@@ -592,6 +592,56 @@ struct WorktreeInfoWatcherManagerTests {
     await task.value
     try FileManager.default.removeItem(at: tempRepository.tempRoot)
   }
+  @Test func headWatcherEventNotBlockedByDeferredLineChanges() async throws {
+    // Regression test: scheduleFilesChanged previously emitted .filesChanged
+    // directly, which gets swallowed when the worktree is in deferredLineChangeIDs.
+    // After the fix, it routes through scheduleLineChangesRefresh which calls
+    // emitLineChangesChanged (clears deferred flag before emitting).
+    let clock = TestClock()
+    let tempRepository = try makeTempRepository(worktreeNames: ["sparrow", "swift"])
+    let firstWorktree = try #require(tempRepository.worktrees.first)
+    let secondWorktree = try #require(tempRepository.worktrees.dropFirst().first)
+    let manager = WorktreeInfoWatcherManager(
+      focusedInterval: .seconds(3_600),
+      unfocusedInterval: .seconds(3_600),
+      defaultLineChangesTiming: .init(filesChangedDebounce: .milliseconds(80), eventDebounce: .seconds(3_600)),
+      lineChangePhaseOffset: { _, _ in .zero },
+      pullRequestPhaseOffset: { _, _ in .zero },
+      clock: clock
+    )
+    let (collector, task) = startCollecting(manager.eventStream())
+
+    manager.handleCommand(.setPullRequestTrackingEnabled(false))
+    // Load only the first worktree initially — second will be deferred when added.
+    manager.handleCommand(.setWorktrees([firstWorktree]))
+    await drainAsyncEvents(120)
+    let initialCount = await collector.filesChangedCount(worktreeID: firstWorktree.id)
+    #expect(initialCount == 1)
+
+    // Add second worktree — it goes into deferredLineChangeIDs.
+    manager.handleCommand(.setWorktrees([firstWorktree, secondWorktree]))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 0)
+
+    // Simulate a commit by writing to HEAD file — triggers HEAD watcher.
+    let headURL = secondWorktree.workingDirectory.appending(path: ".git/HEAD")
+    try "ref: refs/heads/swift\n".write(to: headURL, atomically: true, encoding: .utf8)
+    await drainAsyncEvents(120)
+
+    // Even though secondWorktree is deferred, the event should fire after debounce.
+    await clock.advance(by: .milliseconds(79))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 0)
+
+    await clock.advance(by: .milliseconds(1))
+    await drainAsyncEvents(120)
+    #expect(await collector.filesChangedCount(worktreeID: secondWorktree.id) == 1)
+
+    manager.handleCommand(.stop)
+    await task.value
+    try FileManager.default.removeItem(at: tempRepository.tempRoot)
+  }
+
 }
 
 actor EventCollector {
