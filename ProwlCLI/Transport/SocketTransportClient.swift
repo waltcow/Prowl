@@ -1,13 +1,14 @@
 // ProwlCLI/Transport/SocketTransportClient.swift
 // Unix domain socket client for communicating with running Prowl app.
 
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 import Foundation
 import ProwlCLIShared
+
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 
 enum SocketTransportClient {
   /// Send a command envelope to the Prowl app and receive a response.
@@ -29,30 +30,9 @@ enum SocketTransportClient {
     }
     defer { close(clientFD) }
 
-    // Connect
-    var addr = sockaddr_un()
-    addr.sun_family = sa_family_t(AF_UNIX)
-    let pathBytes = Array(socketPath.utf8)
-    let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
-    let copyLen = min(pathBytes.count, maxLen)
-    withUnsafeMutableBytes(of: &addr.sun_path) { sunPathPtr in
-      for idx in 0..<copyLen {
-        sunPathPtr[idx] = pathBytes[idx]
-      }
-      sunPathPtr[copyLen] = 0
-    }
-
-    let connectResult = withUnsafePointer(to: &addr) { ptr in
-      ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-        connect(clientFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-      }
-    }
-
-    guard connectResult == 0 else {
-      throw ExitError(
-        code: CLIErrorCode.appNotRunning,
-        message: "Cannot connect to Prowl. Is the app running?"
-      )
+    let connection = SocketConnectionProbe.connect(socketFD: clientFD, socketPath: socketPath)
+    if let error = connection.exitError() {
+      throw error
     }
 
     // Send length-prefixed request: 4-byte big-endian length + JSON payload
@@ -83,7 +63,7 @@ enum SocketTransportClient {
     while offset < buffer.count {
       let written = Darwin.write(fildes, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
       guard written > 0 else {
-        throw ExitError(code: CLIErrorCode.transportFailed, message: "Socket write failed.")
+        throw ExitError(code: CLIErrorCode.transportFailed, message: socketWriteFailureMessage(bytesWritten: written))
       }
       offset += written
     }
@@ -99,11 +79,37 @@ enum SocketTransportClient {
       let toRead = min(remaining, bufferSize)
       let bytesRead = Darwin.read(fildes, buffer, toRead)
       guard bytesRead > 0 else {
-        throw ExitError(code: CLIErrorCode.transportFailed, message: "Socket read failed.")
+        throw ExitError(code: CLIErrorCode.transportFailed, message: socketReadFailureMessage(bytesRead: bytesRead))
       }
       data.append(buffer.assumingMemoryBound(to: UInt8.self), count: bytesRead)
       remaining -= bytesRead
     }
     return data
+  }
+
+  private static func socketWriteFailureMessage(bytesWritten: Int) -> String {
+    if bytesWritten == 0 {
+      return "Socket write failed: wrote 0 bytes before the request was complete."
+    }
+    return "Socket write failed (\(errnoName(errno)): \(String(cString: strerror(errno))))."
+  }
+
+  private static func socketReadFailureMessage(bytesRead: Int) -> String {
+    if bytesRead == 0 {
+      return "Socket read failed: Prowl closed the connection before sending a complete response."
+    }
+    return "Socket read failed (\(errnoName(errno)): \(String(cString: strerror(errno))))."
+  }
+
+  private static func errnoName(_ errorNumber: Int32) -> String {
+    switch errorNumber {
+    case EACCES: "EACCES"
+    case ECONNREFUSED: "ECONNREFUSED"
+    case EINVAL: "EINVAL"
+    case ENOENT: "ENOENT"
+    case ENOTSOCK: "ENOTSOCK"
+    case EPERM: "EPERM"
+    default: "errno \(errorNumber)"
+    }
   }
 }

@@ -6,12 +6,6 @@ import AppKit
 import Foundation
 import ProwlCLIShared
 
-#if canImport(Darwin)
-  import Darwin
-#elseif canImport(Glibc)
-  import Glibc
-#endif
-
 enum AppLauncher {
   private static let prowlAppBundleIdentifiers: Set<String> = [
     "com.onevcat.prowl",
@@ -25,7 +19,7 @@ enum AppLauncher {
 
   /// Check whether the CLI socket is currently connectable.
   static func isSocketAvailable() -> Bool {
-    canConnect(to: ProwlSocket.defaultPath)
+    socketStatus().isConnected
   }
 
   /// Ensure the app is running and the socket is ready.
@@ -41,21 +35,25 @@ enum AppLauncher {
       return false
     }
 
+    let initialStatus = socketStatus()
     // Fast path: socket file exists and is connectable.
-    if isSocketAvailable() {
+    if initialStatus.isConnected {
       return false
+    }
+    if let error = initialStatus.permissionBlocker {
+      throw error
     }
 
     // Socket not available — check if the app process is running.
     if isAppProcessRunning() {
       // App is running but socket isn't ready yet. Wait without launching.
-      try waitForSocket()
+      try waitForSocket(initialStatus: initialStatus)
       return false
     }
 
     // App is genuinely not running. Launch and wait.
     try launchApp()
-    try waitForSocket()
+    try waitForSocket(initialStatus: initialStatus)
     return true
   }
 
@@ -110,43 +108,46 @@ enum AppLauncher {
 
   // MARK: - Socket readiness
 
-  private static func waitForSocket() throws {
-    let socketPath = ProwlSocket.defaultPath
+  private static func waitForSocket(initialStatus: SocketConnectionProbe.Status) throws {
     let deadline = Date().addingTimeInterval(socketTimeoutSeconds)
+    var lastStatus = initialStatus
     while Date() < deadline {
-      if canConnect(to: socketPath) {
+      let status = socketStatus()
+      if status.isConnected {
         return
       }
+      if let error = status.immediateLaunchBlocker {
+        throw error
+      }
+      lastStatus = status
       Thread.sleep(forTimeInterval: pollIntervalSeconds)
     }
-    throw ExitError(
-      code: CLIErrorCode.launchFailed,
-      message: "Prowl CLI socket did not become available within \(Int(socketTimeoutSeconds))s."
-    )
+    let message = """
+      Prowl CLI socket did not become available within \(Int(socketTimeoutSeconds))s. \
+      Last connection error: \(lastStatus.diagnosticMessage).
+      """
+    throw ExitError(code: CLIErrorCode.launchFailed, message: message)
   }
 
-  private static func canConnect(to socketPath: String) -> Bool {
-    let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard socketFD >= 0 else { return false }
-    defer { close(socketFD) }
+  private static func socketStatus() -> SocketConnectionProbe.Status {
+    SocketConnectionProbe.check(socketPath: ProwlSocket.defaultPath)
+  }
+}
 
-    var addr = sockaddr_un()
-    addr.sun_family = sa_family_t(AF_UNIX)
-    let pathBytes = Array(socketPath.utf8)
-    let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
-    let copyLen = min(pathBytes.count, maxLen)
-    withUnsafeMutableBytes(of: &addr.sun_path) { sunPathPtr in
-      for idx in 0..<copyLen {
-        sunPathPtr[idx] = pathBytes[idx]
-      }
-      sunPathPtr[copyLen] = 0
+extension SocketConnectionProbe.Status {
+  fileprivate var permissionBlocker: ExitError? {
+    if case .permissionDenied = self {
+      return exitError()
     }
+    return nil
+  }
 
-    let result = withUnsafePointer(to: &addr) { ptr in
-      ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-        connect(socketFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-      }
+  fileprivate var immediateLaunchBlocker: ExitError? {
+    switch self {
+    case .connected, .appUnavailable:
+      nil
+    case .permissionDenied, .transportFailed:
+      exitError()
     }
-    return result == 0
   }
 }

@@ -53,6 +53,64 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(error["code"] as? String, CLIErrorCode.appNotRunning)
   }
 
+  func testListReportsSocketPermissionDeniedWhenSocketCannotBeOpened() throws {
+    let socketPath = temporarySocketPath(suffix: "permission-denied")
+    let socket = PermissionDeniedSocket(socketPath: socketPath)
+    try socket.start()
+    defer { socket.stop() }
+
+    let result = try runProwl(
+      args: ["list", "--json"],
+      environment: [ProwlSocket.environmentKey: socketPath]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.socketPermissionDenied)
+    let message = try XCTUnwrap(error["message"] as? String)
+    XCTAssertTrue(message.contains("EACCES"), "Message should include errno name: \(message)")
+    XCTAssertTrue(message.localizedCaseInsensitiveContains("sandbox"), "Message should guide agent recovery: \(message)")
+  }
+
+  func testListReportsTransportFailedWhenSocketPathIsNotASocket() throws {
+    let socketPath = temporarySocketPath(suffix: "not-a-socket")
+    XCTAssertTrue(FileManager.default.createFile(atPath: socketPath, contents: Data()))
+    defer { unlink(socketPath) }
+
+    let result = try runProwl(
+      args: ["list", "--json"],
+      environment: [ProwlSocket.environmentKey: socketPath]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.transportFailed)
+    let message = try XCTUnwrap(error["message"] as? String)
+    XCTAssertTrue(message.contains("ENOTSOCK"), "Message should include errno name: \(message)")
+  }
+
+  func testListReportsTransportFailedWhenSocketPathIsTooLong() throws {
+    let socketPath = (Self.socketDirectory as NSString)
+      .appendingPathComponent("prowl-cli-\(String(repeating: "x", count: 120)).sock")
+
+    let result = try runProwl(
+      args: ["list", "--json"],
+      environment: [ProwlSocket.environmentKey: socketPath]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.transportFailed)
+    let message = try XCTUnwrap(error["message"] as? String)
+    XCTAssertTrue(message.localizedCaseInsensitiveContains("too long"), "Message should identify path length: \(message)")
+  }
+
   func testAgentsCommandRoundTripsOverSocket() throws {
     let socketPath = temporarySocketPath(suffix: "agents")
     let response = try CommandResponse(
@@ -2128,4 +2186,59 @@ private enum MockSocketError: Error {
   case listenFailed
   case readFailed
   case writeFailed
+}
+
+private final class PermissionDeniedSocket {
+  private let socketPath: String
+  private var serverFD: Int32 = -1
+
+  init(socketPath: String) {
+    self.socketPath = socketPath
+  }
+
+  deinit { stop() }
+
+  func start() throws {
+    unlink(socketPath)
+    serverFD = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard serverFD >= 0 else {
+      throw MockSocketError.socketCreateFailed
+    }
+
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    let pathBytes = Array(socketPath.utf8)
+    let maxLength = MemoryLayout.size(ofValue: addr.sun_path) - 1
+    let copyLength = min(pathBytes.count, maxLength)
+    withUnsafeMutableBytes(of: &addr.sun_path) { buffer in
+      for index in 0..<copyLength {
+        buffer[index] = pathBytes[index]
+      }
+      buffer[copyLength] = 0
+    }
+
+    let bindResult = withUnsafePointer(to: &addr) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { addrPointer in
+        bind(serverFD, addrPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
+      }
+    }
+    guard bindResult == 0 else {
+      throw MockSocketError.bindFailed
+    }
+    guard listen(serverFD, 1) == 0 else {
+      throw MockSocketError.listenFailed
+    }
+    guard chmod(socketPath, 0) == 0 else {
+      throw MockSocketError.bindFailed
+    }
+  }
+
+  func stop() {
+    if serverFD >= 0 {
+      close(serverFD)
+      serverFD = -1
+    }
+    chmod(socketPath, S_IRUSR | S_IWUSR)
+    unlink(socketPath)
+  }
 }

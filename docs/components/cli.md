@@ -220,13 +220,18 @@ inside-root / new-root), `app_launched`, `brought_to_front`, `created_tab`, and 
   `$TMPDIR/prowl-cli.sock`.
 - If the app isn't running, the CLI launches it (`open -a Prowl`) and waits up to
   ~15s for the socket — except when `PROWL_CLI_SOCKET` is set.
+- Sandboxed agents must be allowed to connect to the Unix socket. If the CLI
+  reports `SOCKET_PERMISSION_DENIED`, allowlist the socket path in the agent
+  sandbox, run `prowl` outside that sandbox, or start both the app and CLI with
+  the same `PROWL_CLI_SOCKET` pointing at a sandbox-accessible path.
 - Framed protocol: 4-byte length prefix + JSON, both directions.
 
 ## Error codes
 
 | Code | Meaning / recovery |
 |------|--------------------|
-| `APP_NOT_RUNNING` | Can't reach Prowl. Ask before restarting it. |
+| `APP_NOT_RUNNING` | Prowl is not reachable, or the socket is missing/stale. Start or restart Prowl, then retry. |
+| `SOCKET_PERMISSION_DENIED` | The socket exists but the client cannot connect, usually because a sandbox blocked the Unix socket. Allowlist the socket path, run outside the sandbox, or use matching `PROWL_CLI_SOCKET` values for both app and CLI. |
 | `TARGET_NOT_FOUND` | Selector matched nothing — re-run `list` and pick a UUID. |
 | `TARGET_NOT_UNIQUE` | Selector matched several — be more specific (use `--pane`). |
 | `NO_ACTIVE_PANE` | No pane for focused-target; pass an explicit `--pane`. |
@@ -236,7 +241,8 @@ inside-root / new-root), `app_launched`, `brought_to_front`, `created_tab`, and 
 | `WAIT_TIMEOUT` | Command didn't finish in time — raise `--timeout` or use `--no-wait`. |
 | `UNSUPPORTED_KEY` / `INVALID_REPEAT` | Check `prowl key --help`. |
 | `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`tab create` path. |
-| `LAUNCH_FAILED` | App launch or socket wait failed. |
+| `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
+| `TRANSPORT_FAILED` | Socket transport failed for a reason other than app availability or permission, such as `ENOTSOCK` or an invalid `PROWL_CLI_SOCKET` path. |
 | `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`) | The action itself failed. |
 
 ## Safety & self-targeting

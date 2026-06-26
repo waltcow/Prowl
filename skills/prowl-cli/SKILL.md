@@ -259,6 +259,7 @@ Avoid outer double quotes around payloads containing `$PWD`, `$VAR`, backticks, 
 - In zsh, do not name variables `status`; it is readonly.
 - Parser errors are not JSON even if `--json` is present, because parsing happens before command execution.
 - The CLI talks to one socket owner by default. If two Prowl app instances are running, the default `prowl` command reaches whichever app owns the standard socket. For a manually launched dev instance, start the app and every CLI command with the same `PROWL_CLI_SOCKET=/tmp/name.sock`.
+- Sandboxed agents must be allowed to connect to the Unix socket. `PROWL_CLI_SOCKET` is a workaround only when both the app and every CLI command use the same sandbox-accessible path.
 - A newer CLI command sent to an older app can fail at transport level. If `prowl agents` returns `TRANSPORT_FAILED`, confirm the running app instance was built with the command.
 - `cmd-w` can close a temporary tab, but double-check the pane first.
 
@@ -272,8 +273,9 @@ In `--json` mode, command-level failures look like:
 
 Common codes and recovery:
 
-- `APP_NOT_RUNNING`: Prowl is not reachable. Ask before restarting the app.
-- `TRANSPORT_FAILED`: the socket connection broke or the running app could not decode the command. Recheck which Prowl instance owns the socket.
+- `APP_NOT_RUNNING`: Prowl is not reachable, or the socket is missing/stale. Ask before restarting the app.
+- `SOCKET_PERMISSION_DENIED`: the socket exists but the sandbox or filesystem permissions blocked `connect()`. Report this as a permission/sandbox problem, not as an app-liveness problem.
+- `TRANSPORT_FAILED`: the socket connection broke or the socket path is invalid (for example `ENOTSOCK` or a too-long `PROWL_CLI_SOCKET`). Recheck which Prowl instance owns the socket.
 - `TARGET_NOT_FOUND` / `TARGET_NOT_UNIQUE`: run `prowl list --json` again and choose an explicit pane UUID.
 - `EMPTY_INPUT`: `send` got neither argv text nor stdin.
 - `NO_ACTIVE_PANE`: no pane resolved for positional (focused-pane) targeting; pass an explicit `--pane`.

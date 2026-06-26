@@ -49,5 +49,6 @@ public enum CLIErrorCode {
 
   // Transport
   public static let transportFailed = "TRANSPORT_FAILED"
+  public static let socketPermissionDenied = "SOCKET_PERMISSION_DENIED"
   public static let timeout = "TIMEOUT"
 }

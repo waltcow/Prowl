@@ -54,7 +54,7 @@ Do not launch the built `ProwlApp` binary directly in the background from an age
 
 If plain `make run-app` reports a socket ownership problem, relaunch with the custom `PROWL_CLI_SOCKET`; the installed app may already own the standard socket.
 
-If the socket appears but `prowl_debug list --json` returns `APP_NOT_RUNNING`, the app likely exited and left a stale socket/lock behind. Remove both socket files, confirm no debug `ProwlApp` PID is still alive, then relaunch with `PROWL_CLI_SOCKET=/tmp/prowl-self-verify.sock make run-app` in a persistent shell session.
+If the socket appears but `prowl_debug list --json` returns `APP_NOT_RUNNING`, the app likely exited and left a stale socket/lock behind. Remove both socket files, confirm no debug `ProwlApp` PID is still alive, then relaunch with `PROWL_CLI_SOCKET=/tmp/prowl-self-verify.sock make run-app` in a persistent shell session. If it returns `SOCKET_PERMISSION_DENIED`, the agent sandbox cannot connect to that socket path; allowlist the path or rerun the CLI outside that sandbox.
 
 When `PROWL_CLI_SOCKET` is set, CLI auto-launch is disabled. The debug app and every CLI invocation must use the same socket value.
 
