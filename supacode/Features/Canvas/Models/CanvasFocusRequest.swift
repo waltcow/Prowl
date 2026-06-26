@@ -26,6 +26,7 @@ struct CanvasCommandRequest: Equatable, Sendable {
     case organize
     case tile
     case selectAll
+    case navigate(CanvasNavigationDirection)
   }
 
   let id: Int

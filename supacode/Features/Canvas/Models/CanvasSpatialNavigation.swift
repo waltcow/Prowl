@@ -1,6 +1,6 @@
 import CoreGraphics
 
-enum CanvasNavigationDirection {
+enum CanvasNavigationDirection: Equatable, Sendable {
   case moveUp, moveDown, moveLeft, moveRight
 }
 

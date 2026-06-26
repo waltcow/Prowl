@@ -17,6 +17,8 @@ extension CanvasView {
       tileCardsWithFit()
     case .selectAll:
       selectAllCards()
+    case .navigate(let direction):
+      navigateCard(direction)
     }
     onCommandConsumed(request.id)
   }

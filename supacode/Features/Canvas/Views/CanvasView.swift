@@ -97,22 +97,6 @@ struct CanvasView: View {
       for: AppShortcuts.CommandID.expandCanvasCard,
       in: resolvedKeybindings
     )
-    let selectNextWorktreeShortcut = AppShortcuts.resolvedShortcut(
-      for: AppShortcuts.CommandID.selectNextWorktree,
-      in: resolvedKeybindings
-    )
-    let selectPreviousWorktreeShortcut = AppShortcuts.resolvedShortcut(
-      for: AppShortcuts.CommandID.selectPreviousWorktree,
-      in: resolvedKeybindings
-    )
-    let selectNextShelfBookShortcut = AppShortcuts.resolvedShortcut(
-      for: AppShortcuts.CommandID.selectNextShelfBook,
-      in: resolvedKeybindings
-    )
-    let selectPreviousShelfBookShortcut = AppShortcuts.resolvedShortcut(
-      for: AppShortcuts.CommandID.selectPreviousShelfBook,
-      in: resolvedKeybindings
-    )
     let _ = configReloadCounter
     CanvasScrollContainer(
       offset: $canvasOffset,
@@ -255,38 +239,6 @@ struct CanvasView: View {
       guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
       toggleExpandFocusedCard()
       return .handled
-    }
-    .onKeyPress(
-      selectPreviousWorktreeShortcut?.keyEquivalent ?? AppShortcuts.selectPreviousWorktree.keyEquivalent,
-      phases: .down
-    ) { keyPress in
-      guard let shortcut = selectPreviousWorktreeShortcut else { return .ignored }
-      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
-      return navigateCard(.moveUp) ? .handled : .ignored
-    }
-    .onKeyPress(
-      selectNextWorktreeShortcut?.keyEquivalent ?? AppShortcuts.selectNextWorktree.keyEquivalent,
-      phases: .down
-    ) { keyPress in
-      guard let shortcut = selectNextWorktreeShortcut else { return .ignored }
-      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
-      return navigateCard(.moveDown) ? .handled : .ignored
-    }
-    .onKeyPress(
-      selectPreviousShelfBookShortcut?.keyEquivalent ?? AppShortcuts.selectPreviousShelfBook.keyEquivalent,
-      phases: .down
-    ) { keyPress in
-      guard let shortcut = selectPreviousShelfBookShortcut else { return .ignored }
-      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
-      return navigateCard(.moveLeft) ? .handled : .ignored
-    }
-    .onKeyPress(
-      selectNextShelfBookShortcut?.keyEquivalent ?? AppShortcuts.selectNextShelfBook.keyEquivalent,
-      phases: .down
-    ) { keyPress in
-      guard let shortcut = selectNextShelfBookShortcut else { return .ignored }
-      guard keyPress.modifiers == shortcut.modifiers else { return .ignored }
-      return navigateCard(.moveRight) ? .handled : .ignored
     }
     .onChange(of: expandedTabID) { _, newValue in
       onExpandedChange(newValue != nil)
