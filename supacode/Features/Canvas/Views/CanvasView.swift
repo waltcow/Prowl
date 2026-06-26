@@ -896,7 +896,7 @@ struct CanvasView: View {
       let allTabIDs = collectVisibleTabIDs(from: activeStates)
       if let first = allTabIDs.first {
         focusSingleCard(first, states: activeStates)
-        focusViewport(on: first)
+        scrollToRevealCard(first)
       }
       return !allTabIDs.isEmpty
     }
@@ -919,8 +919,55 @@ struct CanvasView: View {
     }
 
     focusSingleCard(targetTabID, states: activeStates)
-    focusViewport(on: targetTabID)
+    scrollToRevealCard(targetTabID)
     return true
+  }
+
+  private func scrollToRevealCard(_ tabID: TerminalTabID) {
+    guard viewportSize.width > 0, viewportSize.height > 0 else { return }
+    let cardKey = tabID.rawValue.uuidString
+    guard let layout = layoutStore.cardLayouts[cardKey] else { return }
+
+    let margin: CGFloat = 20
+    let cardHeight = layout.size.height + titleBarHeight
+    let scaledHalfW = layout.size.width / 2 * canvasScale
+    let scaledHalfH = cardHeight / 2 * canvasScale
+    let screenCenter = screenPosition(for: layout.position)
+
+    let cardMinX = screenCenter.x - scaledHalfW
+    let cardMaxX = screenCenter.x + scaledHalfW
+    let cardMinY = screenCenter.y - scaledHalfH
+    let cardMaxY = screenCenter.y + scaledHalfH
+
+    let viewMinX: CGFloat = 0
+    let viewMaxX = viewportSize.width
+    let viewMinY: CGFloat = 0
+    let viewMaxY = viewportSize.height - bottomToolbarReserve
+
+    var deltaX: CGFloat = 0
+    var deltaY: CGFloat = 0
+
+    if cardMinX < viewMinX + margin {
+      deltaX = (viewMinX + margin) - cardMinX
+    } else if cardMaxX > viewMaxX - margin {
+      deltaX = (viewMaxX - margin) - cardMaxX
+    }
+
+    if cardMinY < viewMinY + margin {
+      deltaY = (viewMinY + margin) - cardMinY
+    } else if cardMaxY > viewMaxY - margin {
+      deltaY = (viewMaxY - margin) - cardMaxY
+    }
+
+    guard deltaX != 0 || deltaY != 0 else { return }
+
+    let newOffset = CGSize(
+      width: canvasOffset.width + deltaX,
+      height: canvasOffset.height + deltaY
+    )
+    canvasOffset = newOffset
+    lastCanvasOffset = newOffset
+    focusViewportAnimationID &+= 1
   }
 
   private func cardEntries(
