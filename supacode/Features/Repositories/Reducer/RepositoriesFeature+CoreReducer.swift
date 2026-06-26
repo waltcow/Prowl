@@ -621,6 +621,8 @@ extension RepositoriesFeature {
       }
 
     case .selectNextWorktree:
+      // Canvas handles directional navigation in CanvasView.onKeyPress.
+      guard !state.isShowingCanvas else { return .none }
       // In Shelf, the vertical arrow pair maps to tab navigation
       // within the open book — horizontal (← / →) is already book
       // navigation, so the two axes match the Shelf layout.
@@ -633,6 +635,7 @@ extension RepositoriesFeature {
       return .send(.selectWorktree(id, focusTerminal: true))
 
     case .selectPreviousWorktree:
+      guard !state.isShowingCanvas else { return .none }
       if state.isShelfActive, let worktree = state.selectedTerminalWorktree {
         return .run { _ in
           await terminalClient.send(.performBindingAction(worktree, action: "previous_tab"))
