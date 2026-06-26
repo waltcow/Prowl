@@ -123,6 +123,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     debugID
   }
   let bridge: GhosttySurfaceBridge
+  let launchWorkingDirectory: URL?
   private(set) var surface: ghostty_surface_t?
   private var surfaceRef: GhosttyRuntime.SurfaceReference?
   private let workingDirectoryCString: UnsafeMutablePointer<CChar>?
@@ -269,8 +270,10 @@ final class GhosttySurfaceView: NSView, Identifiable {
       let path = Self.normalizedWorkingDirectoryPath(
         workingDirectory.path(percentEncoded: false)
       )
+      launchWorkingDirectory = URL(fileURLWithPath: path, isDirectory: true)
       workingDirectoryCString = path.withCString { strdup($0) }
     } else {
+      launchWorkingDirectory = nil
       workingDirectoryCString = nil
     }
     if let initialInput {
