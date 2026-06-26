@@ -89,23 +89,28 @@ class CanvasScrollCoordinator {
 
 @MainActor
 @Observable
-final class CanvasOffsetAnimator {
+final class CanvasViewportAnimator {
+  struct Snapshot {
+    var offset: CGSize
+    var scale: CGFloat
+  }
+
   private var timer: Timer?
-  private var startOffset: CGSize = .zero
-  private var targetOffset: CGSize = .zero
+  private var startSnapshot = Snapshot(offset: .zero, scale: 1)
+  private var targetSnapshot = Snapshot(offset: .zero, scale: 1)
   private var startTime: CFTimeInterval = 0
   private var duration: CFTimeInterval = 0
-  private var onUpdate: (@MainActor (CGSize) -> Void)?
+  private var onUpdate: (@MainActor (Snapshot) -> Void)?
 
   func animate(
-    from start: CGSize,
-    to target: CGSize,
-    duration: CFTimeInterval = 0.22,
-    onUpdate: @escaping @MainActor (CGSize) -> Void
+    from start: Snapshot,
+    to target: Snapshot,
+    duration: CFTimeInterval = 0.25,
+    onUpdate: @escaping @MainActor (Snapshot) -> Void
   ) {
     cancel()
-    self.startOffset = start
-    self.targetOffset = target
+    self.startSnapshot = start
+    self.targetSnapshot = target
     self.startTime = CACurrentMediaTime()
     self.duration = duration
     self.onUpdate = onUpdate
@@ -120,9 +125,12 @@ final class CanvasOffsetAnimator {
     let progress = min(elapsed / duration, 1.0)
     let eased = progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
 
-    let current = CGSize(
-      width: startOffset.width + (targetOffset.width - startOffset.width) * eased,
-      height: startOffset.height + (targetOffset.height - startOffset.height) * eased
+    let current = Snapshot(
+      offset: CGSize(
+        width: lerp(startSnapshot.offset.width, targetSnapshot.offset.width, eased),
+        height: lerp(startSnapshot.offset.height, targetSnapshot.offset.height, eased)
+      ),
+      scale: lerp(startSnapshot.scale, targetSnapshot.scale, eased)
     )
     onUpdate?(current)
 
@@ -135,6 +143,10 @@ final class CanvasOffsetAnimator {
     timer?.invalidate()
     timer = nil
     onUpdate = nil
+  }
+
+  private func lerp(_ start: CGFloat, _ end: CGFloat, _ fraction: CGFloat) -> CGFloat {
+    start + (end - start) * fraction
   }
 }
 
