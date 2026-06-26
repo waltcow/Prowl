@@ -965,9 +965,10 @@ struct CanvasView: View {
       width: canvasOffset.width + deltaX,
       height: canvasOffset.height + deltaY
     )
-    canvasOffset = newOffset
-    lastCanvasOffset = newOffset
-    focusViewportAnimationID &+= 1
+    withAnimation(.easeInOut(duration: 0.22)) {
+      canvasOffset = newOffset
+      lastCanvasOffset = newOffset
+    }
   }
 
   private func cardEntries(
