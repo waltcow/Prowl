@@ -82,7 +82,7 @@ struct CanvasHelpButton: View {
         )
         if !navKeys.isEmpty {
           canvasHelpRow(
-            icon: "arrow.up.arrow.down.arrow.left.arrow.right",
+            icon: "arrow.up.and.down.and.arrow.left.and.right",
             title: "Navigate between cards",
             detail: "\(navKeys) — jump to the nearest card in that direction"
           )
