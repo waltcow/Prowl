@@ -216,13 +216,7 @@ extension WorktreeTerminalState {
     let paneIDs = trees[tabId]?.leaves().map(\.id) ?? []
     let paneIndex = paneIDs.firstIndex(of: surfaceID).map { $0 + 1 } ?? 1
     let tabTitle = tabManager.tabs.first(where: { $0.id == tabId })?.displayTitle ?? "?"
-    // Resolve the displayed repository/branch from where the agent actually runs, not the tab's
-    // owning worktree: a user may `cd` into a different repo before launching the agent. Falls
-    // back to the surface's launch directory when the shell hasn't reported a pwd.
-    let workingDirectory = inheritedSurfaceConfig(
-      fromSurfaceId: surfaceID,
-      context: GHOSTTY_SURFACE_CONTEXT_TAB
-    ).workingDirectory
+    let workingDirectory = activeAgentWorkingDirectory(surfaceID: surfaceID)
     return ActiveAgentEntry(
       id: surfaceID,
       worktreeID: worktree.id,
@@ -238,6 +232,18 @@ extension WorktreeTerminalState {
       displayState: state.displayState,
       lastChangedAt: state.lastChangedAt
     )
+  }
+
+  func activeAgentWorkingDirectory(surfaceID: UUID) -> URL? {
+    guard let surface = surfaces[surfaceID] else { return nil }
+    // This can run while handling Ghostty callbacks, so use cached Swift state instead of
+    // re-entering Ghostty for inherited surface config.
+    if let pwd = surface.bridge.state.pwd?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !pwd.isEmpty
+    {
+      return URL(fileURLWithPath: pwd, isDirectory: true)
+    }
+    return surface.launchWorkingDirectory ?? worktree.workingDirectory
   }
 
   func cleanupAgentDetectionState(forSurfaceId surfaceId: UUID) {
