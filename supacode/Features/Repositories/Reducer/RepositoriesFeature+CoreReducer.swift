@@ -347,8 +347,9 @@ extension RepositoriesFeature {
       state.isShelfActive = false
       // Toggle: if already showing archived, return to the previous worktree.
       if state.isShowingArchivedWorktrees {
+        defer { state.preArchivedWorktreeID = nil }
         if let previousID = state.preArchivedWorktreeID,
-          state.worktree(for: previousID) != nil
+          isSelectionValid(previousID, state: state)
         {
           setSingleWorktreeSelection(previousID, state: &state, recordHistory: false)
           state.openedWorktreeIDs.insert(previousID)

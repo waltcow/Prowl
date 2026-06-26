@@ -902,6 +902,40 @@ struct ShelfFeatureTests {
       $0.sidebarSelectedWorktreeIDs = [worktree.id]
       $0.openedWorktreeIDs = [worktree.id]
       $0.pendingTerminalFocusWorktreeIDs = [worktree.id]
+      $0.preArchivedWorktreeID = nil
+    }
+    await store.receive(\.delegate.selectedWorktreeChanged)
+    await store.finish()
+  }
+
+  @Test(.dependencies) func selectArchivedWorktreesStalePreviousIDClearsSelection() async {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo")
+    let worktree = Worktree(
+      id: "/tmp/repo/wt1",
+      name: "wt1",
+      detail: "",
+      workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt1"),
+      repositoryRootURL: rootURL
+    )
+    let repository = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: "repo",
+      worktrees: IdentifiedArray(uniqueElements: [worktree])
+    )
+    var state = RepositoriesFeature.State(repositories: [repository])
+    state.selection = .archivedWorktrees
+    state.sidebarSelectedWorktreeIDs = []
+    // Point to a worktree ID that no longer exists in any repository.
+    state.preArchivedWorktreeID = "/tmp/repo/wt-deleted"
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.selectArchivedWorktrees) {
+      $0.selection = nil
+      $0.sidebarSelectedWorktreeIDs = []
+      $0.preArchivedWorktreeID = nil
     }
     await store.receive(\.delegate.selectedWorktreeChanged)
     await store.finish()

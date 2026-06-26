@@ -229,7 +229,10 @@ struct CommandPaletteFeature {
     let showsNewWorktreeAction =
       repositories.repositories.isEmpty
       || repositories.repositories.contains { $0.capabilities.supportsWorktrees }
-    var items = globalCommandItems(showsNewWorktreeAction: showsNewWorktreeAction)
+    var items = globalCommandItems(
+      showsNewWorktreeAction: showsNewWorktreeAction,
+      isShowingArchivedWorktrees: repositories.isShowingArchivedWorktrees
+    )
     if repositories.isShowingCanvas {
       items.append(contentsOf: canvasCommandItems())
     }
@@ -336,7 +339,10 @@ struct CommandPaletteFeature {
   }
 }
 
-private func globalCommandItems(showsNewWorktreeAction: Bool) -> [CommandPaletteItem] {
+private func globalCommandItems(
+  showsNewWorktreeAction: Bool,
+  isShowingArchivedWorktrees: Bool
+) -> [CommandPaletteItem] {
   var items: [CommandPaletteItem] = [
     .appShortcut(
       id: CommandPaletteItemID.globalCheckForUpdates,
@@ -401,7 +407,7 @@ private func globalCommandItems(showsNewWorktreeAction: Bool) -> [CommandPalette
   items.append(
     .appShortcut(
       id: CommandPaletteItemID.globalViewArchivedWorktrees,
-      title: "View Archived Worktrees",
+      title: isShowingArchivedWorktrees ? "Exit Archived Worktrees" : "View Archived Worktrees",
       category: .worktree,
       kind: .viewArchivedWorktrees,
       keywords: ["archive", "history"]
