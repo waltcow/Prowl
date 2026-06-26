@@ -87,6 +87,57 @@ class CanvasScrollCoordinator {
   }
 }
 
+@MainActor
+@Observable
+final class CanvasOffsetAnimator {
+  private var timer: Timer?
+  private var startOffset: CGSize = .zero
+  private var targetOffset: CGSize = .zero
+  private var startTime: CFTimeInterval = 0
+  private var duration: CFTimeInterval = 0
+  private var onUpdate: (@MainActor (CGSize) -> Void)?
+
+  func animate(
+    from start: CGSize,
+    to target: CGSize,
+    duration: CFTimeInterval = 0.22,
+    onUpdate: @escaping @MainActor (CGSize) -> Void
+  ) {
+    cancel()
+    self.startOffset = start
+    self.targetOffset = target
+    self.startTime = CACurrentMediaTime()
+    self.duration = duration
+    self.onUpdate = onUpdate
+
+    timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.tick() }
+    }
+  }
+
+  private func tick() {
+    let elapsed = CACurrentMediaTime() - startTime
+    let progress = min(elapsed / duration, 1.0)
+    let eased = progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
+
+    let current = CGSize(
+      width: startOffset.width + (targetOffset.width - startOffset.width) * eased,
+      height: startOffset.height + (targetOffset.height - startOffset.height) * eased
+    )
+    onUpdate?(current)
+
+    if progress >= 1.0 {
+      cancel()
+    }
+  }
+
+  func cancel() {
+    timer?.invalidate()
+    timer = nil
+    onUpdate = nil
+  }
+}
+
 /// Pure zoom math, extracted for testability.
 enum CanvasZoomMath {
   static let minScale: CGFloat = 0.25

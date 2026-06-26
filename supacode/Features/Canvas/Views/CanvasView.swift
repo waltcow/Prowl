@@ -41,6 +41,7 @@ struct CanvasView: View {
   /// The tab currently expanded in place (near-fullscreen overlay) on canvas,
   /// or nil when no card is expanded.
   @State var expandedTabID: TerminalTabID?
+  @State var offsetAnimator = CanvasOffsetAnimator()
 
   let minCardWidth: CGFloat = 300
   let minCardHeight: CGFloat = 200
@@ -961,13 +962,13 @@ struct CanvasView: View {
 
     guard deltaX != 0 || deltaY != 0 else { return }
 
-    let newOffset = CGSize(
+    let target = CGSize(
       width: canvasOffset.width + deltaX,
       height: canvasOffset.height + deltaY
     )
-    withAnimation(.easeInOut(duration: 0.22)) {
-      canvasOffset = newOffset
-      lastCanvasOffset = newOffset
+    offsetAnimator.animate(from: canvasOffset, to: target) { [self] current in
+      canvasOffset = current
+      lastCanvasOffset = current
     }
   }
 
