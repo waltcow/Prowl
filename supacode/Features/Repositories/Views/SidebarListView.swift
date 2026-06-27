@@ -208,6 +208,9 @@ struct SidebarListView: View {
               onBrowse: {
                 store.send(.setOpenPanelPresented(true))
               },
+              onCloneCompleted: { url in
+                store.send(.repositoryManagement(.openRepositories([url])))
+              },
               onWorkspace: {
                 store.send(.workspaceCreation(.promptRequested))
               },
