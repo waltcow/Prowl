@@ -105,8 +105,9 @@ Archiving hides a worktree from the main list without deleting it.
 - If the branch is already **merged**, Prowl archives immediately without asking.
 - If the repo defines an **archive script**, it runs first (live progress); if it
   fails, archiving stops and the worktree stays active.
-- **View archived:** `⌘⌃A` opens the Archived Worktrees panel, grouped by repo,
-  with **Unarchive** and **Delete Selected** (`⌘⇧⌫`) buttons.
+- **View archived:** `⌘⌃A` toggles the Archived Worktrees panel (press again to
+  return to the previous worktree), grouped by repo, with **Unarchive** and
+  **Delete Selected** (`⌘⇧⌫`) buttons.
 - **Auto-delete:** if `archivedAutoDeletePeriod` is set, archived worktrees older
   than the period are deleted automatically.
 

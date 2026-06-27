@@ -1,6 +1,6 @@
 {
   "_comment": "Metadata for the docs/ manual. The last_synced_commit is the commit at which docs/ was last verified against the implementation; the sync-docs skill (.claude/skills/sync-docs/SKILL.md) diffs HEAD against it and updates this file. Committed to git on purpose so the baseline persists across sessions and machines. A dotfile + .json so a future docs website does not render it as a page.",
-  "last_synced_commit": "ca0b6391fd51bcda99ccac91d03f75d34ff90f7d",
-  "last_synced_date": "2026-06-25",
-  "note": "Release prep. Canvas tile layout, canvasDefaultLayout setting, CLOSED PR state, pending checks, and update install confirmation already documented in prior commits."
+  "last_synced_commit": "33ebb2b173f62ed536736a4432ea4961cddbf6d4",
+  "last_synced_date": "2026-06-27",
+  "note": "Release prep. Archived Worktrees toggle behavior documented; Canvas directional navigation, CLI socket diagnostics, and viewport animation are internal changes already covered."
 }
