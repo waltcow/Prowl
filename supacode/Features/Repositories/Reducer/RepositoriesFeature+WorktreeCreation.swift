@@ -146,6 +146,12 @@ extension RepositoriesFeature {
         globalDefaultPath: settingsFile.global.defaultWorktreeBaseDirectoryPath,
         repositoryOverridePath: repositorySettings.worktreeBaseDirectoryPath
       )
+      let existingNames = Set(
+        repository.worktrees.map(\.name) + baseRefOptions
+      )
+      let randomPlaceholder =
+        WorktreeNameGenerator.nextName(excluding: existingNames)
+        ?? "new-worktree"
       state.worktreeCreationPrompt = WorktreeCreationPromptFeature.State(
         repositoryID: repository.id,
         repositoryRootURL: repository.rootURL,
@@ -157,7 +163,8 @@ extension RepositoriesFeature {
         fetchRemote: settingsFile.global.fetchOriginBeforeWorktreeCreation,
         defaultWorktreeBaseDirectory: defaultWorktreeBaseDirectory.path(percentEncoded: false),
         validationMessage: nil,
-        isSuggestingName: true
+        isSuggestingName: true,
+        randomPlaceholder: randomPlaceholder
       )
       let branchNameSuggestionClient = branchNameSuggestionClient
       let repositoryName = repository.name

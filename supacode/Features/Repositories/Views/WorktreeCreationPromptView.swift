@@ -17,21 +17,28 @@ struct WorktreeCreationPromptView: View {
       VStack(alignment: .leading, spacing: 8) {
         Text("Branch name")
           .foregroundStyle(.secondary)
-        TextField("feature/my-change", text: $store.branchName)
-          .textFieldStyle(.roundedBorder)
-          .focused($isBranchFieldFocused)
-          .onSubmit {
-            store.send(.createButtonTapped)
+        TextField(
+          "Branch name",
+          text: $store.branchName,
+          prompt: Text(store.randomPlaceholder)
+        )
+        .textFieldStyle(.roundedBorder)
+        .focused($isBranchFieldFocused)
+        .onSubmit {
+          store.send(.createButtonTapped)
+        }
+        .overlay(alignment: .trailing) {
+          if store.isSuggestingName {
+            ProgressView()
+              .controlSize(.mini)
+              .padding(.trailing, 6)
           }
-          .overlay(alignment: .trailing) {
-            if store.isSuggestingName {
-              ProgressView()
-                .controlSize(.mini)
-                .padding(.trailing, 6)
-            }
-          }
+        }
         if let suggested = store.suggestedBranchName {
           HStack(spacing: 4) {
+            Text("Auto suggestion: ")
+              .font(.footnote)
+              .foregroundStyle(.tertiary)
             Text(suggested)
               .font(.footnote)
               .monospaced()
@@ -46,6 +53,10 @@ struct WorktreeCreationPromptView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.tint)
           }
+          .help(
+            "Suggested by on-device AI based on your repository context "
+              + "and recent terminal activity. May not always be accurate."
+          )
         }
       }
 

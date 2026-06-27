@@ -207,11 +207,14 @@ When no prefix convention is detected (fresh repo), the prefix instruction is re
 1. User triggers Cmd+N → `createRandomWorktreeInRepository`
 2. `.run` effect loads branch refs (existing) + gathers context + calls `suggest` in parallel
 3. `promptedWorktreeCreationDataLoaded` → dialog opens with `branchName: ""`,
-   `isSuggestingName: true`
+   `isSuggestingName: true`, `randomPlaceholder` pre-generated as random name
 4. AI suggestion arrives → `branchNameSuggestionReceived(name)`
-   - If `branchName` is still empty → auto-fill input field
-   - Regardless of user input state → show suggestion below input field as dim hint + "Use" button
+   - Does NOT auto-fill input field — suggestion only shown in dim hint line below
+   - Hint line shows "Auto suggestion: {name}" with a "Use" button
+   - Hover tooltip explains the suggestion source (on-device AI, context-based)
 5. `isSuggestingName = false` → loading indicator disappears, suggestion hint visible
+6. User clicks "Create" → uses **effective name**: user input if non-empty, else random
+   placeholder. Empty input no longer blocks creation.
 
 ### Non-prompt path (auto-create without dialog)
 
@@ -224,6 +227,9 @@ latency would violate that intent. AI naming only applies to the dialog path.
 Add to `State`:
 - `var isSuggestingName: Bool = false`
 - `var suggestedBranchName: String?` — stores the AI suggestion for display
+- `let randomPlaceholder: String` — pre-generated random name, shown as placeholder
+- Computed `effectiveBranchName: String` — returns `branchName` if non-empty, else
+  `randomPlaceholder`. Used by submit and path preview.
 
 Add to `Action`:
 - `case branchNameSuggestionReceived(String?)` — AI result arrived
@@ -231,19 +237,25 @@ Add to `Action`:
 
 Reducer logic:
 - `branchNameSuggestionReceived(name)`: set `isSuggestingName = false`,
-  store `suggestedBranchName = name`. If `branchName` is empty and name is non-nil,
-  also set `branchName = name`.
+  store `suggestedBranchName = name`. Does NOT auto-fill `branchName`.
 - `useSuggestedBranchName`: copy `suggestedBranchName` into `branchName`.
+- `createButtonTapped`: use `effectiveBranchName` instead of `branchName` for validation
+  and submit. Empty input is no longer an error (falls through to random placeholder).
 
 ### UI Changes in `WorktreeCreationPromptView`
 
-**Loading state** (`isSuggestingName == true`):
-- Show a subtle `ProgressView` near the text field (e.g., trailing overlay or below)
+**Branch name field**:
+- Placeholder shows the pre-generated random name (e.g., `bold-cat-042`)
+- Empty input is allowed — placeholder name will be used on submit
 - Text field remains editable at all times
 
+**Loading state** (`isSuggestingName == true`):
+- Show a subtle `ProgressView` near the text field (trailing overlay)
+
 **Suggestion hint** (`suggestedBranchName != nil`):
-- Below the input field, show the suggestion in dim/secondary style
-- Alongside a small "Use" button (clicking overwrites input field content)
+- Below the input field: "Auto suggestion: {name}" in dim/tertiary style
+- "Use" button alongside (clicking copies suggestion into input field)
+- Hover tooltip: explains this is an on-device AI suggestion based on repo context
 - Visible regardless of whether the user has typed anything
 - Hidden once user submits (Create) or cancels
 
