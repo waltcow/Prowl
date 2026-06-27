@@ -8,45 +8,12 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
     owner: String,
     repo: String
   ) -> [String: GithubPullRequest] {
-    let normalizedOwner = owner.lowercased()
-    let normalizedRepo = repo.lowercased()
     var results: [String: GithubPullRequest] = [:]
     for (alias, connection) in data.repository.pullRequestsByAlias {
       guard let branch = aliasMap[alias] else {
         continue
       }
-      let upstreamCandidates = connection.nodes.filter { $0.matches(owner: normalizedOwner, repo: normalizedRepo) }
-      let candidates: [PullRequestNode]
-      if !upstreamCandidates.isEmpty {
-        candidates = upstreamCandidates
-      } else {
-        // Without an upstream-repository match, same-name base branches are likely from unrelated
-        // fork workflows and can shadow the local worktree branch this app is trying to resolve.
-        let forkCandidates = connection.nodes.filter {
-          $0.headRepository != nil && $0.doesNotTargetSameBranch(branch)
-        }
-        candidates =
-          if !forkCandidates.isEmpty {
-            forkCandidates
-          } else {
-            connection.nodes.filter {
-              $0.headRepository == nil && $0.doesNotTargetSameBranch(branch)
-            }
-          }
-      }
-      if let node = candidates.max(by: { left, right in
-        let leftRank = left.stateRank
-        let rightRank = right.stateRank
-        if leftRank != rightRank {
-          return leftRank < rightRank
-        }
-        let leftDate = left.updatedAt ?? .distantPast
-        let rightDate = right.updatedAt ?? .distantPast
-        if leftDate != rightDate {
-          return leftDate < rightDate
-        }
-        return left.number < right.number
-      }) {
+      if let node = connection.bestMatchingPullRequest(owner: owner, repo: repo) {
         results[branch] = node.pullRequest
       }
     }
@@ -87,6 +54,31 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
 
   nonisolated struct PullRequestConnection: Decodable {
     let nodes: [PullRequestNode]
+
+    func bestMatchingPullRequest(owner: String, repo: String) -> PullRequestNode? {
+      bestMatchingPullRequest(allowedHeadRepositories: [RepoKey(owner: owner, repo: repo)])
+    }
+
+    func bestMatchingPullRequest(allowedHeadRepositories: Set<RepoKey>) -> PullRequestNode? {
+      // GitHub's `headRefName` filter is repository-agnostic: forks can have the
+      // same branch name as the local worktree. Only a head repository matching
+      // one of the local GitHub remotes proves this PR belongs to this checkout.
+      let allowedKeys = Set(allowedHeadRepositories.map { $0.normalizedHeadRepositoryKey })
+      let candidates = nodes.filter { $0.matchesAnyRepository(in: allowedKeys) }
+      return candidates.max(by: { left, right in
+        let leftRank = left.stateRank
+        let rightRank = right.stateRank
+        if leftRank != rightRank {
+          return leftRank < rightRank
+        }
+        let leftDate = left.updatedAt ?? .distantPast
+        let rightDate = right.updatedAt ?? .distantPast
+        if leftDate != rightDate {
+          return leftDate < rightDate
+        }
+        return left.number < right.number
+      })
+    }
   }
 
   nonisolated struct PullRequestNode: Decodable {
@@ -146,16 +138,16 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
       guard let headRepository else {
         return false
       }
-      return headRepository.owner.login.lowercased() == owner
-        && headRepository.name.lowercased() == repo
+      return headRepository.normalizedKey == RepoKey(owner: owner, repo: repo).normalizedHeadRepositoryKey
     }
 
-    func doesNotTargetSameBranch(_ branch: String) -> Bool {
-      guard let baseRefName else {
-        return true
+    func matchesAnyRepository(in normalizedKeys: Set<String>) -> Bool {
+      guard let headRepository else {
+        return false
       }
-      return baseRefName != branch
+      return normalizedKeys.contains(headRepository.normalizedKey)
     }
+
   }
 
   nonisolated struct CommitConnection: Decodable {
@@ -169,9 +161,19 @@ nonisolated struct GithubGraphQLPullRequestResponse: Decodable {
   nonisolated struct HeadRepository: Decodable {
     let name: String
     let owner: HeadRepositoryOwner
+
+    nonisolated var normalizedKey: String {
+      RepoKey(owner: owner.login, repo: name).normalizedHeadRepositoryKey
+    }
   }
 
   nonisolated struct HeadRepositoryOwner: Decodable {
     let login: String
+  }
+}
+
+extension RepoKey {
+  nonisolated var normalizedHeadRepositoryKey: String {
+    "\(owner.lowercased())/\(repo.lowercased())"
   }
 }

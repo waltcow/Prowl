@@ -232,7 +232,8 @@ final class PullRequestRefreshCoordinator {
       CrossRepoPullRequestRequest(
         owner: group.key.owner,
         repo: group.key.repo,
-        branches: group.branches
+        branches: group.branches,
+        allowedHeadRepositories: group.allowedHeadRepositories
       )
     }
     do {
@@ -398,8 +399,12 @@ final class PullRequestRefreshCoordinator {
   private func groupBranchesByRepo(_ requests: [Request]) -> [RepoKey: RepoRequestGroup] {
     var groupsByKey: [RepoKey: RepoRequestGroup] = [:]
     for request in requests {
+      let allowedHeadRepositories = Set(request.repositories.map(\.key))
       for repository in request.repositories {
-        groupsByKey[repository.key, default: RepoRequestGroup(key: repository.key)].append(branches: request.branches)
+        groupsByKey[repository.key, default: RepoRequestGroup(key: repository.key)].append(
+          branches: request.branches,
+          allowedHeadRepositories: allowedHeadRepositories
+        )
       }
     }
     return groupsByKey
@@ -408,16 +413,21 @@ final class PullRequestRefreshCoordinator {
   private struct RepoRequestGroup: Sendable {
     let key: RepoKey
     private(set) var branches: [String] = []
+    private(set) var allowedHeadRepositories: Set<RepoKey> = []
     private var seenBranches: Set<String> = []
 
     init(key: RepoKey) {
       self.key = key
     }
 
-    mutating func append(branches newBranches: [String]) {
+    mutating func append(
+      branches newBranches: [String],
+      allowedHeadRepositories newAllowedHeadRepositories: Set<RepoKey>
+    ) {
       for branch in newBranches where seenBranches.insert(branch).inserted {
         branches.append(branch)
       }
+      allowedHeadRepositories.formUnion(newAllowedHeadRepositories)
     }
   }
 

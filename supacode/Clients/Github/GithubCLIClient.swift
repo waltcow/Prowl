@@ -416,7 +416,12 @@ nonisolated private func sanitizeCrossRepoRequests(
       continue
     }
     sanitized.append(
-      CrossRepoPullRequestRequest(owner: request.owner, repo: request.repo, branches: branches)
+      CrossRepoPullRequestRequest(
+        owner: request.owner,
+        repo: request.repo,
+        branches: branches,
+        allowedHeadRepositories: request.allowedHeadRepositories
+      )
     )
   }
   return sanitized
@@ -547,8 +552,7 @@ nonisolated private func fetchCrossRepoChunk(
     let prs = rankCrossRepoPullRequests(
       pullRequestsByAlias: payload.pullRequestsByAlias,
       aliasMap: branchAliasMap,
-      owner: key.owner,
-      repo: key.repo
+      allowedHeadRepositories: plan.allowedHeadRepositoriesByRepoAlias[alias] ?? [key]
     )
     success[key] = prs
   }
@@ -559,6 +563,7 @@ nonisolated private struct CrossRepoBatchQueryPlan: Sendable {
   let query: String
   let repoAliases: [String: RepoKey]
   let branchAliasesByRepo: [String: [String: String]]
+  let allowedHeadRepositoriesByRepoAlias: [String: Set<RepoKey>]
 }
 
 nonisolated private func makeCrossRepoBatchQuery(
@@ -566,11 +571,13 @@ nonisolated private func makeCrossRepoBatchQuery(
 ) -> CrossRepoBatchQueryPlan {
   var repoAliases: [String: RepoKey] = [:]
   var branchAliasesByRepo: [String: [String: String]] = [:]
+  var allowedHeadRepositoriesByRepoAlias: [String: Set<RepoKey>] = [:]
   var repoBlocks: [String] = []
   let orderBy = "orderBy: {field: UPDATED_AT, direction: DESC}"
   for (repoIndex, request) in requests.enumerated() {
     let repoAlias = "r\(repoIndex)"
     repoAliases[repoAlias] = RepoKey(owner: request.owner, repo: request.repo)
+    allowedHeadRepositoriesByRepoAlias[repoAlias] = request.allowedHeadRepositories
     var branchAliasMap: [String: String] = [:]
     var selections: [String] = []
     for (branchIndex, branch) in request.branches.enumerated() {
@@ -653,55 +660,22 @@ nonisolated private func makeCrossRepoBatchQuery(
   return CrossRepoBatchQueryPlan(
     query: query,
     repoAliases: repoAliases,
-    branchAliasesByRepo: branchAliasesByRepo
+    branchAliasesByRepo: branchAliasesByRepo,
+    allowedHeadRepositoriesByRepoAlias: allowedHeadRepositoriesByRepoAlias
   )
 }
 
 nonisolated private func rankCrossRepoPullRequests(
   pullRequestsByAlias: [String: GithubGraphQLPullRequestResponse.PullRequestConnection],
   aliasMap: [String: String],
-  owner: String,
-  repo: String
+  allowedHeadRepositories: Set<RepoKey>
 ) -> [String: GithubPullRequest] {
-  let normalizedOwner = owner.lowercased()
-  let normalizedRepo = repo.lowercased()
   var results: [String: GithubPullRequest] = [:]
   for (alias, connection) in pullRequestsByAlias {
     guard let branch = aliasMap[alias] else {
       continue
     }
-    let upstreamCandidates = connection.nodes.filter {
-      $0.matches(owner: normalizedOwner, repo: normalizedRepo)
-    }
-    let candidates: [GithubGraphQLPullRequestResponse.PullRequestNode]
-    if !upstreamCandidates.isEmpty {
-      candidates = upstreamCandidates
-    } else {
-      let forkCandidates = connection.nodes.filter {
-        $0.headRepository != nil && $0.doesNotTargetSameBranch(branch)
-      }
-      candidates =
-        if !forkCandidates.isEmpty {
-          forkCandidates
-        } else {
-          connection.nodes.filter {
-            $0.headRepository == nil && $0.doesNotTargetSameBranch(branch)
-          }
-        }
-    }
-    if let node = candidates.max(by: { left, right in
-      let leftRank = left.stateRank
-      let rightRank = right.stateRank
-      if leftRank != rightRank {
-        return leftRank < rightRank
-      }
-      let leftDate = left.updatedAt ?? .distantPast
-      let rightDate = right.updatedAt ?? .distantPast
-      if leftDate != rightDate {
-        return leftDate < rightDate
-      }
-      return left.number < right.number
-    }) {
+    if let node = connection.bestMatchingPullRequest(allowedHeadRepositories: allowedHeadRepositories) {
       results[branch] = node.pullRequest
     }
   }

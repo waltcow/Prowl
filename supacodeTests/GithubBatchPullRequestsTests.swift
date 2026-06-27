@@ -66,7 +66,7 @@ struct GithubBatchPullRequestsTests {
     #expect(prs["feature-b"] == nil)
   }
 
-  @Test func fallsBackToForkOnlyMatches() throws {
+  @Test func ignoresForkOnlyMatches() throws {
     let json = """
       {
         "data": {
@@ -104,11 +104,10 @@ struct GithubBatchPullRequestsTests {
       owner: "octo",
       repo: "repo"
     )
-    #expect(prs["feature-a"]?.number == 9)
-    #expect(prs["feature-a"]?.title == "Fork PR")
+    #expect(prs["feature-a"] == nil)
   }
 
-  @Test func fallsBackToMergedPullRequestWithDeletedFork() throws {
+  @Test func ignoresPullRequestWithUnknownHeadRepository() throws {
     let json = """
       {
         "data": {
@@ -143,11 +142,10 @@ struct GithubBatchPullRequestsTests {
       owner: "octo",
       repo: "repo"
     )
-    #expect(prs["feature-a"]?.number == 7)
-    #expect(prs["feature-a"]?.title == "Deleted Fork")
+    #expect(prs["feature-a"] == nil)
   }
 
-  @Test func forkFallbackIgnoresSameBaseBranchMatches() throws {
+  @Test func ignoresForkEvenWhenBaseBranchDiffers() throws {
     let json = """
       {
         "data": {
@@ -203,8 +201,7 @@ struct GithubBatchPullRequestsTests {
       owner: "octo",
       repo: "repo"
     )
-    #expect(prs["feature-a"]?.number == 13)
-    #expect(prs["feature-a"]?.title == "Fork PR From Feature")
+    #expect(prs["feature-a"] == nil)
   }
 
   @Test func prefersOpenOverMergedEvenIfOlder() throws {

@@ -329,6 +329,11 @@ struct PullRequestRefreshCoordinatorTests {
     let calls = await probe.batchedCalls()
     #expect(calls.count == 1)
     #expect(Set(calls.first?.requests.map(\.repo) ?? []) == ["fork", "upstream"])
+    let expectedAllowedHeadRepositories: Set<RepoKey> = [
+      RepoKey(owner: "khoi", repo: "fork"),
+      RepoKey(owner: "khoi", repo: "upstream"),
+    ]
+    #expect(calls.first?.requests.allSatisfy { $0.allowedHeadRepositories == expectedAllowedHeadRepositories } == true)
 
     let refreshed = await outcomes.snapshot().compactMap { outcome -> [String: GithubPullRequest]? in
       if case .refreshed("local", _, _, let prsByBranch) = outcome {

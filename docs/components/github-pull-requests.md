@@ -17,7 +17,9 @@ itself.
 If a repository has multiple GitHub remotes, Prowl checks each remote for a PR on
 the worktree branch. `origin` is preferred, `upstream` comes next, and other
 named remotes are used alphabetically, so fork-based worktrees can show upstream
-PRs without changing `origin` or restarting the app.
+PRs without changing `origin` or restarting the app. A returned PR's head
+repository must match one of the repository's configured GitHub remotes; PRs
+from unrelated forks that happen to use the same branch name are ignored.
 
 Prowl also watches the repository's git config while the app is running. When
 remote URLs are added, removed, or changed, it refreshes the repository's PR

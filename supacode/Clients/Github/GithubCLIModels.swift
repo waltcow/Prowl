@@ -145,6 +145,19 @@ nonisolated struct CrossRepoPullRequestRequest: Sendable, Hashable {
   let owner: String
   let repo: String
   let branches: [String]
+  let allowedHeadRepositories: Set<RepoKey>
+
+  init(
+    owner: String,
+    repo: String,
+    branches: [String],
+    allowedHeadRepositories: Set<RepoKey>? = nil
+  ) {
+    self.owner = owner
+    self.repo = repo
+    self.branches = branches
+    self.allowedHeadRepositories = allowedHeadRepositories ?? [RepoKey(owner: owner, repo: repo)]
+  }
 
   var key: RepoKey {
     RepoKey(owner: owner, repo: repo)
