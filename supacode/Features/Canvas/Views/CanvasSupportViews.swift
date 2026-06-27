@@ -87,6 +87,77 @@ class CanvasScrollCoordinator {
   }
 }
 
+private final class CanvasViewportAnimationTimerBox {
+  nonisolated(unsafe) var timer: Timer?
+
+  deinit {
+    timer?.invalidate()
+  }
+}
+
+@MainActor
+@Observable
+final class CanvasViewportAnimator {
+  struct Snapshot {
+    var offset: CGSize
+    var scale: CGFloat
+  }
+
+  @ObservationIgnored private let timerBox = CanvasViewportAnimationTimerBox()
+  private var startSnapshot = Snapshot(offset: .zero, scale: 1)
+  private var targetSnapshot = Snapshot(offset: .zero, scale: 1)
+  private var startTime: CFTimeInterval = 0
+  private var duration: CFTimeInterval = 0
+  private var onUpdate: (@MainActor (Snapshot) -> Void)?
+
+  func animate(
+    from start: Snapshot,
+    to target: Snapshot,
+    duration: CFTimeInterval = 0.25,
+    onUpdate: @escaping @MainActor (Snapshot) -> Void
+  ) {
+    cancel()
+    self.startSnapshot = start
+    self.targetSnapshot = target
+    self.startTime = CACurrentMediaTime()
+    self.duration = duration
+    self.onUpdate = onUpdate
+
+    timerBox.timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.tick() }
+    }
+  }
+
+  private func tick() {
+    let elapsed = CACurrentMediaTime() - startTime
+    let progress = min(elapsed / duration, 1.0)
+    let eased = progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
+
+    let current = Snapshot(
+      offset: CGSize(
+        width: lerp(startSnapshot.offset.width, targetSnapshot.offset.width, eased),
+        height: lerp(startSnapshot.offset.height, targetSnapshot.offset.height, eased)
+      ),
+      scale: lerp(startSnapshot.scale, targetSnapshot.scale, eased)
+    )
+    onUpdate?(current)
+
+    if progress >= 1.0 {
+      cancel()
+    }
+  }
+
+  func cancel() {
+    timerBox.timer?.invalidate()
+    timerBox.timer = nil
+    onUpdate = nil
+  }
+
+  private func lerp(_ start: CGFloat, _ end: CGFloat, _ fraction: CGFloat) -> CGFloat {
+    start + (end - start) * fraction
+  }
+}
+
 /// Pure zoom math, extracted for testability.
 enum CanvasZoomMath {
   static let minScale: CGFloat = 0.25
@@ -120,6 +191,72 @@ enum CanvasZoomMath {
       height: anchor.y - canvasY * newScale
     )
     return Result(scale: newScale, offset: newOffset)
+  }
+}
+
+enum CanvasViewportMath {
+  struct FitResult: Equatable {
+    let scale: CGFloat
+    let offset: CGSize
+  }
+
+  static func fit(
+    bounds: CGRect,
+    viewport: CGSize,
+    bottomReserve: CGFloat,
+    padding: CGFloat
+  ) -> FitResult? {
+    guard viewport.width > 0, viewport.height > 0,
+      !bounds.isNull, bounds.width > 0, bounds.height > 0,
+      bounds.width.isFinite, bounds.height.isFinite
+    else {
+      return nil
+    }
+
+    let visibleWidth = viewport.width
+    let visibleHeight = max(1, viewport.height - bottomReserve)
+    let paddedWidth = max(1, bounds.width + padding * 2)
+    let paddedHeight = max(1, bounds.height + padding * 2)
+    let scale = max(0.25, min(1.0, min(visibleWidth / paddedWidth, visibleHeight / paddedHeight)))
+
+    return FitResult(
+      scale: scale,
+      offset: CGSize(
+        width: visibleWidth / 2 - bounds.midX * scale,
+        height: visibleHeight / 2 - bounds.midY * scale
+      )
+    )
+  }
+
+  static func revealDelta(
+    for cardRect: CGRect,
+    viewport: CGSize,
+    bottomReserve: CGFloat,
+    margin: CGFloat
+  ) -> CGSize {
+    guard viewport.width > 0, viewport.height > 0 else { return .zero }
+
+    let viewMinX: CGFloat = 0
+    let viewMaxX = viewport.width
+    let viewMinY: CGFloat = 0
+    let viewMaxY = max(0, viewport.height - bottomReserve)
+
+    var deltaX: CGFloat = 0
+    var deltaY: CGFloat = 0
+
+    if cardRect.minX < viewMinX {
+      deltaX = (viewMinX + margin) - cardRect.minX
+    } else if cardRect.maxX > viewMaxX {
+      deltaX = (viewMaxX - margin) - cardRect.maxX
+    }
+
+    if cardRect.minY < viewMinY {
+      deltaY = (viewMinY + margin) - cardRect.minY
+    } else if cardRect.maxY > viewMaxY {
+      deltaY = (viewMaxY - margin) - cardRect.maxY
+    }
+
+    return CGSize(width: deltaX, height: deltaY)
   }
 }
 

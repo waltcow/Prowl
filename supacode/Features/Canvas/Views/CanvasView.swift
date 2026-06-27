@@ -41,6 +41,7 @@ struct CanvasView: View {
   /// The tab currently expanded in place (near-fullscreen overlay) on canvas,
   /// or nil when no card is expanded.
   @State var expandedTabID: TerminalTabID?
+  @State var viewportAnimator = CanvasViewportAnimator()
 
   let minCardWidth: CGFloat = 300
   let minCardHeight: CGFloat = 200
@@ -50,11 +51,13 @@ struct CanvasView: View {
   let cardSpacing: CGFloat = 20
   /// Tighter gap for the Tile layout. It lives in the scaled-up tile frame, so
   /// the on-screen gap shrinks further as more cards are tiled (gap × scale).
-  let tileCardSpacing: CGFloat = 14
+  let tileCardSpacing: CGFloat = 12
+  /// Outer margin kept when fitting the whole canvas into the visible viewport.
+  let viewportFitPadding: CGFloat = 12
   /// Reserved height at the bottom of the viewport for the help button and
   /// layout toolbar so cards don't sit underneath them after auto-fit.
   /// Cards end up shifted upward by half of this amount.
-  let bottomToolbarReserve: CGFloat = 50
+  let bottomToolbarReserve: CGFloat = 40
   /// Margin kept on every side of a card temporarily expanded to near-fullscreen.
   let expandPadding: CGFloat = 40
   /// Shared animation for expand / restore / relayout. Matches the easeInOut
@@ -699,38 +702,27 @@ struct CanvasView: View {
     let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
     guard !keys.isEmpty else { return }
 
-    // Bounding box of all cards in canvas coordinates
-    var minX = CGFloat.infinity
-    var minY = CGFloat.infinity
-    var maxX = -CGFloat.infinity
-    var maxY = -CGFloat.infinity
+    var bounds = CGRect.null
 
     for key in keys {
       guard let layout = layoutStore.cardLayouts[key] else { continue }
-      let halfW = layout.size.width / 2
-      let halfH = (layout.size.height + titleBarHeight) / 2
-      minX = min(minX, layout.position.x - halfW)
-      minY = min(minY, layout.position.y - halfH)
-      maxX = max(maxX, layout.position.x + halfW)
-      maxY = max(maxY, layout.position.y + halfH)
+      bounds = bounds.union(cardRect(for: layout))
     }
 
-    guard minX.isFinite else { return }
+    guard
+      let fit = CanvasViewportMath.fit(
+        bounds: bounds,
+        viewport: canvasSize,
+        bottomReserve: bottomToolbarReserve,
+        padding: viewportFitPadding
+      )
+    else {
+      return
+    }
 
-    let padding: CGFloat = 30
-    let bboxW = maxX - minX + padding * 2
-    let bboxH = maxY - minY + padding * 2
-    let bboxCenterX = (minX + maxX) / 2
-    let bboxCenterY = (minY + maxY) / 2
-
-    let newScale = max(0.25, min(1.0, min(canvasSize.width / bboxW, canvasSize.height / bboxH)))
-
-    canvasOffset = CGSize(
-      width: canvasSize.width / 2 - bboxCenterX * newScale,
-      height: (canvasSize.height - bottomToolbarReserve) / 2 - bboxCenterY * newScale
-    )
-    canvasScale = newScale
-    lastCanvasScale = newScale
+    canvasOffset = fit.offset
+    canvasScale = fit.scale
+    lastCanvasScale = fit.scale
     lastCanvasOffset = canvasOffset
   }
 
@@ -883,6 +875,104 @@ struct CanvasView: View {
     layoutStore.moveToFront(tabID.rawValue.uuidString)
     mutateSelection(states: states) { state in
       state.focusSingle(tabID)
+    }
+  }
+
+  // MARK: - Spatial Navigation
+
+  @discardableResult
+  func navigateCard(_ direction: CanvasNavigationDirection) -> Bool {
+    guard expandedTabID == nil else { return false }
+    let activeStates = terminalManager.activeWorktreeStates
+    guard let currentTabID = selectionState.primaryTabID else {
+      let allTabIDs = collectVisibleTabIDs(from: activeStates)
+      if let first = allTabIDs.first {
+        focusSingleCard(first, states: activeStates)
+        scrollToRevealCard(first)
+      }
+      return !allTabIDs.isEmpty
+    }
+
+    let entries = cardEntries(from: activeStates)
+    let currentKey = currentTabID.rawValue.uuidString
+    guard
+      let targetKey = CanvasSpatialNavigation.nearest(
+        from: currentKey,
+        direction: direction,
+        cards: entries
+      )
+    else {
+      return true
+    }
+
+    let allTabIDs = collectVisibleTabIDs(from: activeStates)
+    guard let targetTabID = allTabIDs.first(where: { $0.rawValue.uuidString == targetKey }) else {
+      return true
+    }
+
+    focusSingleCard(targetTabID, states: activeStates)
+    scrollToRevealCard(targetTabID)
+    return true
+  }
+
+  private func scrollToRevealCard(_ tabID: TerminalTabID) {
+    guard viewportSize.width > 0, viewportSize.height > 0 else { return }
+    let cardKey = tabID.rawValue.uuidString
+    guard let layout = layoutStore.cardLayouts[cardKey] else { return }
+
+    let cardRect = screenRect(for: layout)
+    let delta = CanvasViewportMath.revealDelta(
+      for: cardRect,
+      viewport: viewportSize,
+      bottomReserve: bottomToolbarReserve,
+      margin: 20
+    )
+
+    guard delta != .zero else { return }
+
+    let target = CGSize(
+      width: canvasOffset.width + delta.width,
+      height: canvasOffset.height + delta.height
+    )
+    let start = CanvasViewportAnimator.Snapshot(offset: canvasOffset, scale: canvasScale)
+    let end = CanvasViewportAnimator.Snapshot(offset: target, scale: canvasScale)
+    viewportAnimator.animate(from: start, to: end) { [self] snapshot in
+      canvasOffset = snapshot.offset
+      lastCanvasOffset = snapshot.offset
+    }
+  }
+
+  private func cardRect(for layout: CanvasCardLayout) -> CGRect {
+    let width = layout.size.width
+    let height = layout.size.height + titleBarHeight
+    return CGRect(
+      x: layout.position.x - width / 2,
+      y: layout.position.y - height / 2,
+      width: width,
+      height: height
+    )
+  }
+
+  private func screenRect(for layout: CanvasCardLayout) -> CGRect {
+    let rect = cardRect(for: layout)
+    return CGRect(
+      x: rect.minX * canvasScale + canvasOffset.width,
+      y: rect.minY * canvasScale + canvasOffset.height,
+      width: rect.width * canvasScale,
+      height: rect.height * canvasScale
+    )
+  }
+
+  private func cardEntries(
+    from states: [WorktreeTerminalState]
+  ) -> [CanvasSpatialNavigation.CardEntry] {
+    states.flatMap { state in
+      state.tabManager.tabs.compactMap { tab -> CanvasSpatialNavigation.CardEntry? in
+        guard state.surfaceView(for: tab.id) != nil else { return nil }
+        let key = tab.id.rawValue.uuidString
+        guard let layout = layoutStore.cardLayouts[key] else { return nil }
+        return CanvasSpatialNavigation.CardEntry(id: key, center: layout.position)
+      }
     }
   }
 

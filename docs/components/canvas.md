@@ -43,6 +43,7 @@ Selection controls:
 | Operation | How |
 |-----------|-----|
 | Focus (enter) a card | Single-click its body |
+| Navigate between cards | `⌘⌃↑` / `⌘⌃↓` / `⌘⌃←` / `⌘⌃→` — jump to the nearest card in that direction (spatial, based on card positions) |
 | Move a card | Drag its title bar |
 | Resize a card | Drag its edges/corners |
 | Expand / restore a card | `⌘⌥E`, double-click the title bar, or the title-bar expand button — fills the viewport with that card; click the dimmed background or `⌘⌥E` again to restore |
@@ -114,6 +115,15 @@ performance.
   positions are always restored.
 - `windowTintMode` / repository colors — card and nav tinting.
 - `showRunButtonInToolbar` — whether the Run button appears in the Canvas toolbar.
+
+## Keyboard card navigation
+
+`⌘⌃↑` / `⌘⌃↓` / `⌘⌃←` / `⌘⌃→` move focus to the **nearest card** in
+that direction, based on the 2D card positions on the board. If the target card
+is partially off-screen, the canvas pans smoothly to reveal it without changing
+the zoom level. These are the same key combos used for worktree/book navigation
+in Normal and Shelf views — in Canvas they switch to spatial navigation
+automatically.
 
 ## When to recommend Canvas vs Shelf
 

@@ -444,10 +444,16 @@ extension RepositoriesFeature {
       }
 
     case .selectNextShelfBook:
+      if state.isShowingCanvas {
+        return .send(.requestCanvasCommand(.navigate(.moveRight)))
+      }
       guard let book = shelfBook(atOffset: 1, state: state) else { return .none }
       return shelfBookSelectionEffect(for: book)
 
     case .selectPreviousShelfBook:
+      if state.isShowingCanvas {
+        return .send(.requestCanvasCommand(.navigate(.moveLeft)))
+      }
       guard let book = shelfBook(atOffset: -1, state: state) else { return .none }
       return shelfBookSelectionEffect(for: book)
 
@@ -639,6 +645,9 @@ extension RepositoriesFeature {
       }
 
     case .selectNextWorktree:
+      if state.isShowingCanvas {
+        return .send(.requestCanvasCommand(.navigate(.moveDown)))
+      }
       // In Shelf, the vertical arrow pair maps to tab navigation
       // within the open book — horizontal (← / →) is already book
       // navigation, so the two axes match the Shelf layout.
@@ -651,6 +660,9 @@ extension RepositoriesFeature {
       return .send(.selectWorktree(id, focusTerminal: true))
 
     case .selectPreviousWorktree:
+      if state.isShowingCanvas {
+        return .send(.requestCanvasCommand(.navigate(.moveUp)))
+      }
       if state.isShelfActive, let worktree = state.selectedTerminalWorktree {
         return .run { _ in
           await terminalClient.send(.performBindingAction(worktree, action: "previous_tab"))

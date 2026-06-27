@@ -116,3 +116,60 @@ struct CanvasZoomMathTests {
     #expect(precise.scale > 1.0)
   }
 }
+
+struct CanvasViewportMathTests {
+  @Test func fitKeepsFullHeightTileCardsInsideRevealViewport() throws {
+    let viewport = CGSize(width: 1600, height: 900)
+    let bottomReserve: CGFloat = 50
+    let leftCard = CGRect(x: 20, y: 20, width: 773, height: 860)
+    let rightCard = CGRect(x: 807, y: 20, width: 773, height: 860)
+    let bounds = leftCard.union(rightCard)
+
+    let fit = try #require(
+      CanvasViewportMath.fit(
+        bounds: bounds,
+        viewport: viewport,
+        bottomReserve: bottomReserve,
+        padding: 30
+      )
+    )
+
+    for card in [leftCard, rightCard] {
+      let screenRect = CGRect(
+        x: card.minX * fit.scale + fit.offset.width,
+        y: card.minY * fit.scale + fit.offset.height,
+        width: card.width * fit.scale,
+        height: card.height * fit.scale
+      )
+      let delta = CanvasViewportMath.revealDelta(
+        for: screenRect,
+        viewport: viewport,
+        bottomReserve: bottomReserve,
+        margin: 20
+      )
+      #expect(delta == .zero)
+    }
+  }
+
+  @Test func fullyVisibleCardInsideMarginDoesNotReveal() {
+    let delta = CanvasViewportMath.revealDelta(
+      for: CGRect(x: 10, y: 10, width: 100, height: 100),
+      viewport: CGSize(width: 200, height: 200),
+      bottomReserve: 0,
+      margin: 20
+    )
+
+    #expect(delta == .zero)
+  }
+
+  @Test func partiallyOffscreenCardRevealsWithMargin() {
+    let delta = CanvasViewportMath.revealDelta(
+      for: CGRect(x: -5, y: 50, width: 100, height: 100),
+      viewport: CGSize(width: 200, height: 200),
+      bottomReserve: 0,
+      margin: 20
+    )
+
+    #expect(delta == CGSize(width: 25, height: 0))
+  }
+}

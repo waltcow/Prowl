@@ -49,6 +49,16 @@ struct CanvasHelpButton: View {
       for: AppShortcuts.CommandID.expandCanvasCard,
       in: resolvedKeybindings
     )
+    let navUpDown = [
+      AppShortcuts.display(for: AppShortcuts.CommandID.selectPreviousWorktree, in: resolvedKeybindings),
+      AppShortcuts.display(for: AppShortcuts.CommandID.selectNextWorktree, in: resolvedKeybindings),
+    ].compactMap { $0 }
+    let navLeftRight = [
+      AppShortcuts.display(for: AppShortcuts.CommandID.selectPreviousShelfBook, in: resolvedKeybindings),
+      AppShortcuts.display(for: AppShortcuts.CommandID.selectNextShelfBook, in: resolvedKeybindings),
+    ].compactMap { $0 }
+    let navKeys = (navUpDown + navLeftRight).joined(separator: " / ")
+
     return VStack(alignment: .leading, spacing: 14) {
       Text("Canvas Navigation")
         .font(.headline)
@@ -70,6 +80,13 @@ struct CanvasHelpButton: View {
           detail: expandShortcut.map { "\($0), or the card's title-bar button" }
             ?? "Use the card's title-bar button"
         )
+        if !navKeys.isEmpty {
+          canvasHelpRow(
+            icon: "arrow.up.and.down.and.arrow.left.and.right",
+            title: "Navigate between cards",
+            detail: "\(navKeys) — jump to the nearest card in that direction"
+          )
+        }
       }
     }
     .padding()

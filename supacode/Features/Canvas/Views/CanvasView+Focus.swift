@@ -17,6 +17,8 @@ extension CanvasView {
       tileCardsWithFit()
     case .selectAll:
       selectAllCards()
+    case .navigate(let direction):
+      navigateCard(direction)
     }
     onCommandConsumed(request.id)
   }
@@ -90,11 +92,14 @@ extension CanvasView {
       width: viewportSize.width / 2 - layout.position.x * targetScale,
       height: (viewportSize.height - bottomToolbarReserve) / 2 - layout.position.y * targetScale
     )
-    canvasScale = targetScale
-    canvasOffset = targetOffset
-    lastCanvasScale = targetScale
-    lastCanvasOffset = targetOffset
-    focusViewportAnimationID &+= 1
+    let start = CanvasViewportAnimator.Snapshot(offset: canvasOffset, scale: canvasScale)
+    let end = CanvasViewportAnimator.Snapshot(offset: targetOffset, scale: targetScale)
+    viewportAnimator.animate(from: start, to: end) { [self] snapshot in
+      canvasOffset = snapshot.offset
+      lastCanvasOffset = snapshot.offset
+      canvasScale = snapshot.scale
+      lastCanvasScale = snapshot.scale
+    }
   }
 
   func handleSelectionShieldTap(
@@ -255,6 +260,7 @@ extension CanvasView {
   }
 
   func deactivateCanvas() {
+    viewportAnimator.cancel()
     expandedTabID = nil
     let activeStates = terminalManager.activeWorktreeStates
     for state in activeStates {

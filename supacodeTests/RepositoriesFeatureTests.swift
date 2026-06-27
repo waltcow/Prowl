@@ -42,6 +42,51 @@ struct RepositoriesFeatureTests {
     }
   }
 
+  @Test func selectNextShelfBookRoutesToRightNavigationInCanvas() async {
+    await assertCanvasNavigationActionRoutesToCommand(
+      action: .selectNextShelfBook,
+      command: .navigate(.moveRight)
+    )
+  }
+
+  @Test func selectPreviousShelfBookRoutesToLeftNavigationInCanvas() async {
+    await assertCanvasNavigationActionRoutesToCommand(
+      action: .selectPreviousShelfBook,
+      command: .navigate(.moveLeft)
+    )
+  }
+
+  @Test func selectNextWorktreeRoutesToDownNavigationInCanvas() async {
+    await assertCanvasNavigationActionRoutesToCommand(
+      action: .selectNextWorktree,
+      command: .navigate(.moveDown)
+    )
+  }
+
+  @Test func selectPreviousWorktreeRoutesToUpNavigationInCanvas() async {
+    await assertCanvasNavigationActionRoutesToCommand(
+      action: .selectPreviousWorktree,
+      command: .navigate(.moveUp)
+    )
+  }
+
+  private func assertCanvasNavigationActionRoutesToCommand(
+    action: RepositoriesFeature.Action,
+    command: CanvasCommandRequest.Command
+  ) async {
+    var initialState = RepositoriesFeature.State()
+    initialState.selection = .canvas
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    }
+
+    await store.send(action)
+    await store.receive(\.requestCanvasCommand) {
+      $0.nextCanvasCommandRequestID = 1
+      $0.pendingCanvasCommandRequest = CanvasCommandRequest(id: 1, command: command)
+    }
+  }
+
   @Test func refreshWorktreesSetsRefreshingStateUntilLoadCompletes() async {
     let worktree = makeWorktree(id: "/tmp/repo/main", name: "main")
     let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
