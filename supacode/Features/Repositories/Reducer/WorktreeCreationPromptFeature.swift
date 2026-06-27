@@ -25,6 +25,8 @@ struct WorktreeCreationPromptFeature {
     var showAdvancedOptions: Bool = false
     var validationMessage: String?
     var isValidating = false
+    var isSuggestingName = false
+    var suggestedBranchName: String?
 
     var automaticBaseRefLabel: String {
       automaticBaseRef.isEmpty ? "Automatic" : "Automatic (\(automaticBaseRef))"
@@ -61,6 +63,8 @@ struct WorktreeCreationPromptFeature {
     case createButtonTapped
     case setValidationMessage(String?)
     case setValidating(Bool)
+    case branchNameSuggestionReceived(String?)
+    case useSuggestedBranchName
     case delegate(Delegate)
   }
 
@@ -123,6 +127,20 @@ struct WorktreeCreationPromptFeature {
 
       case .setValidating(let isValidating):
         state.isValidating = isValidating
+        return .none
+
+      case .branchNameSuggestionReceived(let name):
+        state.isSuggestingName = false
+        state.suggestedBranchName = name
+        if let name, state.branchName.isEmpty {
+          state.branchName = name
+        }
+        return .none
+
+      case .useSuggestedBranchName:
+        if let name = state.suggestedBranchName {
+          state.branchName = name
+        }
         return .none
 
       case .delegate:

@@ -112,6 +112,7 @@ struct RepositoriesFeature {
     static func delayedPRRefresh(_ worktreeID: Worktree.ID) -> String {
       "repositories.delayedPRRefresh.\(worktreeID)"
     }
+    static let branchNameSuggestion = "repositories.branchNameSuggestion"
   }
 
   @CasePathable
@@ -534,6 +535,7 @@ struct RepositoriesFeature {
   @Dependency(RepositoryPersistenceClient.self) var repositoryPersistence
   @Dependency(ShellClient.self) var shellClient
   @Dependency(\.date.now) var now
+  @Dependency(BranchNameSuggestionClient.self) var branchNameSuggestionClient
   @Dependency(\.uuid) var uuid
 
   var body: some Reducer<State, Action> {

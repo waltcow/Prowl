@@ -12,7 +12,8 @@ extension RepositoriesFeature {
       state.worktreeCreationPrompt = nil
       return .merge(
         .cancel(id: CancelID.worktreePromptLoad),
-        .cancel(id: CancelID.worktreePromptValidation)
+        .cancel(id: CancelID.worktreePromptValidation),
+        .cancel(id: CancelID.branchNameSuggestion)
       )
 
     case .createRandomWorktree:
@@ -155,9 +156,22 @@ extension RepositoriesFeature {
         selectedBaseRef: selectedBaseRef,
         fetchRemote: settingsFile.global.fetchOriginBeforeWorktreeCreation,
         defaultWorktreeBaseDirectory: defaultWorktreeBaseDirectory.path(percentEncoded: false),
-        validationMessage: nil
+        validationMessage: nil,
+        isSuggestingName: true
       )
-      return .none
+      let branchNameSuggestionClient = branchNameSuggestionClient
+      let repositoryName = repository.name
+      let repositoryRootURL = repository.rootURL
+      return .run { send in
+        let context = await branchNameSuggestionClient.gatherContext(
+          repositoryName,
+          repositoryRootURL,
+          baseRefOptions
+        )
+        let suggestion = await branchNameSuggestionClient.suggest(context)
+        await send(.worktreeCreationPrompt(.presented(.branchNameSuggestionReceived(suggestion))))
+      }
+      .cancellable(id: CancelID.branchNameSuggestion, cancelInFlight: true)
 
     case .startPromptedWorktreeCreation(let repositoryID, let branchName, let baseRef, let placement):
       guard let repository = state.repositories[id: repositoryID] else {

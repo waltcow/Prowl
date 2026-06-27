@@ -223,6 +223,9 @@ struct SupacodeApp: App {
           worktreeInfoWatcher.eventStream()
         }
       )
+      values[BranchNameSuggestionClient.self] = Self.makeBranchNameSuggestionClient(
+        terminalManager: terminalManager
+      )
       values.pullRequestRefreshCoordinator = Self.makePullRequestRefreshCoordinatorClient(
         coordinator: coordinator
       )
@@ -343,6 +346,63 @@ struct SupacodeApp: App {
         terminalManager.markNotificationsRead(worktreeID: worktreeID, surfaceID: surfaceID)
       }
     )
+  }
+
+  @MainActor
+  private static func makeBranchNameSuggestionClient(
+    terminalManager: WorktreeTerminalManager
+  ) -> BranchNameSuggestionClient {
+    var client = BranchNameSuggestionClient.liveValue
+    client.gatherContext = { repositoryName, repositoryRootURL, existingBranchNames in
+      let allStates = terminalManager.activeWorktreeStates
+      let sameRepoStates = allStates.filter { $0.repositoryRootURL == repositoryRootURL }
+
+      let selectedID = terminalManager.selectedWorktreeID
+      let sorted = sameRepoStates.sorted { lhs, rhs in
+        if lhs.worktreeID == selectedID { return true }
+        if rhs.worktreeID == selectedID { return false }
+        let lhsTime = lhs.lastDefocusedAt ?? .distantPast
+        let rhsTime = rhs.lastDefocusedAt ?? .distantPast
+        return lhsTime > rhsTime
+      }
+
+      let hints: [BranchNameSuggestionContext.TerminalHint] = sorted.prefix(3).compactMap {
+        (state) -> BranchNameSuggestionContext.TerminalHint? in
+        guard let selectedTabID = state.tabManager.selectedTabId,
+          let focusedSurfaceID = state.focusedSurfaceIdByTab[selectedTabID]
+        else { return nil }
+
+        let fallbackTitle =
+          state.tabManager.tabs
+          .first(where: { $0.id == selectedTabID })?.displayTitle ?? ""
+        let paneTitle = state.paneTitle(
+          surfaceID: focusedSurfaceID,
+          fallbackTabTitle: fallbackTitle
+        )
+
+        let activeContent: String?
+        if let surfaceView = state.surfaceView(for: focusedSurfaceID) {
+          activeContent = surfaceView.readActiveContentsForCLI()
+            .map { String($0.prefix(300)) }
+        } else {
+          activeContent = nil
+        }
+
+        return BranchNameSuggestionContext.TerminalHint(
+          worktreeBranch: state.worktreeName,
+          title: paneTitle,
+          activeContent: activeContent
+        )
+      }
+
+      return BranchNameSuggestionContext(
+        repositoryName: repositoryName,
+        existingBranchNames: Array(existingBranchNames.prefix(10)),
+        terminalContexts: hints,
+        llmAvailable: FoundationModelLLMService().isAvailable
+      )
+    }
+    return client
   }
 
   private static func makeTargetResolver(

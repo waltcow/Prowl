@@ -167,6 +167,7 @@ final class WorktreeTerminalManager {
       let previousSelectedWorktreeID = selectedWorktreeID
       let leavingCanvas = previousSelectedWorktreeID == nil
       if let previousID = previousSelectedWorktreeID, let previousState = states[previousID] {
+        previousState.lastDefocusedAt = Date()
         previousState.setAllSurfacesOccluded()
       } else if leavingCanvas {
         // Leaving canvas mode: occlude all worktrees except the newly selected one.

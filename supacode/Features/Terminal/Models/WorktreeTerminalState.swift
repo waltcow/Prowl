@@ -84,6 +84,7 @@ final class WorktreeTerminalState {
   var tabAgentBusyById: [TerminalTabID: Bool] = [:]
   var boundDirectoryTabIDs: [String: TerminalTabID] = [:]
   var surfaceRunningStartedAtById: [UUID: Date] = [:]
+  var lastDefocusedAt: Date?
   var runScriptTabId: TerminalTabID?
   var pendingSetupScript: Bool
   var defaultFontSize: Float32?

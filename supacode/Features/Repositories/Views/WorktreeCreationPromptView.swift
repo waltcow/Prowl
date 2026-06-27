@@ -23,6 +23,30 @@ struct WorktreeCreationPromptView: View {
           .onSubmit {
             store.send(.createButtonTapped)
           }
+          .overlay(alignment: .trailing) {
+            if store.isSuggestingName {
+              ProgressView()
+                .controlSize(.mini)
+                .padding(.trailing, 6)
+            }
+          }
+        if let suggested = store.suggestedBranchName {
+          HStack(spacing: 4) {
+            Text(suggested)
+              .font(.footnote)
+              .monospaced()
+              .foregroundStyle(.tertiary)
+              .lineLimit(1)
+            Button {
+              store.send(.useSuggestedBranchName)
+            } label: {
+              Text("Use")
+                .font(.footnote)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
+          }
+        }
       }
 
       Picker("Branch from", selection: $store.selectedBaseRef) {
