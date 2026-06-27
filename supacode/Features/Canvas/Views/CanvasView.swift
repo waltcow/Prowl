@@ -51,11 +51,13 @@ struct CanvasView: View {
   let cardSpacing: CGFloat = 20
   /// Tighter gap for the Tile layout. It lives in the scaled-up tile frame, so
   /// the on-screen gap shrinks further as more cards are tiled (gap × scale).
-  let tileCardSpacing: CGFloat = 14
+  let tileCardSpacing: CGFloat = 10
+  /// Outer margin kept when fitting the whole canvas into the visible viewport.
+  let viewportFitPadding: CGFloat = 12
   /// Reserved height at the bottom of the viewport for the help button and
   /// layout toolbar so cards don't sit underneath them after auto-fit.
   /// Cards end up shifted upward by half of this amount.
-  let bottomToolbarReserve: CGFloat = 50
+  let bottomToolbarReserve: CGFloat = 40
   /// Margin kept on every side of a card temporarily expanded to near-fullscreen.
   let expandPadding: CGFloat = 40
   /// Shared animation for expand / restore / relayout. Matches the easeInOut
@@ -712,7 +714,7 @@ struct CanvasView: View {
         bounds: bounds,
         viewport: canvasSize,
         bottomReserve: bottomToolbarReserve,
-        padding: 30
+        padding: viewportFitPadding
       )
     else {
       return
