@@ -17,8 +17,9 @@ struct EmptyStateView: View {
       Button("Add...") {
         isAddChoicePresented = true
       }
-      .popover(isPresented: $isAddChoicePresented) {
+      .persistentPopover(isPresented: $isAddChoicePresented) {
         AddToProwlView(
+          dismiss: { isAddChoicePresented = false },
           onBrowse: {
             store.send(.setOpenPanelPresented(true))
           },

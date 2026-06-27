@@ -6,7 +6,7 @@ struct CloneRepositoryView: View {
   @State private var locationPath = Self.defaultClonePath
   @State private var isCloning = false
   @State private var errorMessage: String?
-  @Environment(\.dismiss) private var dismiss
+  let dismiss: () -> Void
   let onCloned: (URL) -> Void
 
   var body: some View {

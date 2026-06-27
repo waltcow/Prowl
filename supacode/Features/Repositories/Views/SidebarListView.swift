@@ -203,8 +203,9 @@ struct SidebarListView: View {
             Label("Add...", systemImage: "folder.badge.plus")
           }
           .help("Add Repository or Workspace")
-          .popover(isPresented: $isAddChoicePresented) {
+          .persistentPopover(isPresented: $isAddChoicePresented) {
             AddToProwlView(
+              dismiss: { isAddChoicePresented = false },
               onBrowse: {
                 store.send(.setOpenPanelPresented(true))
               },

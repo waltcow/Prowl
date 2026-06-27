@@ -2,18 +2,18 @@ import AppKit
 import SwiftUI
 
 struct AddToProwlView: View {
+  let dismiss: () -> Void
   let onBrowse: () -> Void
   let onCloneCompleted: (URL) -> Void
   let onWorkspace: () -> Void
   let onDrop: ([URL]) -> Void
-  @Environment(\.dismiss) private var dismiss
   @State private var isDragTargeted = false
   @State private var isWorkspaceHovered = false
   @State private var showCloneForm = false
 
   var body: some View {
     if showCloneForm {
-      CloneRepositoryView { clonedURL in
+      CloneRepositoryView(dismiss: dismiss) { clonedURL in
         dismiss()
         onCloneCompleted(clonedURL)
       }
