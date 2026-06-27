@@ -24,21 +24,21 @@ struct AddToProwlView: View {
 
   private var mainContent: some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 11) {
+      HStack(alignment: .center, spacing: 12) {
         Image(nsImage: NSApp.applicationIconImage)
           .resizable()
           .aspectRatio(contentMode: .fit)
-          .frame(width: 30, height: 30)
-        Text("Add to Prowl")
-          .font(.system(size: 16, weight: .semibold))
+          .frame(width: 38, height: 38)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Add to Prowl")
+            .font(.system(size: 16, weight: .semibold))
+          Text("Bring a project in for an agent to work on.")
+            .font(.system(size: 12.5))
+            .foregroundStyle(.secondary)
+        }
       }
-      .padding(.bottom, 6)
-
-      Text("Bring a project in for an agent to work on.")
-        .font(.system(size: 12.5))
-        .foregroundStyle(.secondary)
-        .padding(.leading, 41)
-        .padding(.bottom, 18)
+      .padding(.bottom, 18)
 
       dropZone
 
@@ -68,6 +68,7 @@ struct AddToProwlView: View {
         .symbolRenderingMode(.hierarchical)
         .foregroundStyle(Color.accentColor)
         .frame(width: 52, height: 52)
+        .accessibilityHidden(true)
         .background(
           Color.accentColor.opacity(isDragTargeted ? 0.2 : 0.1),
           in: .rect(cornerRadius: 14)
@@ -142,6 +143,7 @@ struct AddToProwlView: View {
           .foregroundStyle(.secondary)
           .frame(width: 38, height: 38)
           .background(.quaternary, in: .rect(cornerRadius: 10))
+          .accessibilityHidden(true)
 
         VStack(alignment: .leading, spacing: 1) {
           Text("Add Workspace")
@@ -158,6 +160,7 @@ struct AddToProwlView: View {
           .font(.system(size: 12, weight: .semibold))
           .foregroundStyle(.tertiary)
           .offset(x: isWorkspaceHovered ? 2 : 0)
+          .accessibilityHidden(true)
       }
       .padding(.vertical, 13)
       .padding(.horizontal, 14)

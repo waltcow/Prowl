@@ -35,7 +35,9 @@ struct CloneRepositoryView: View {
               pickLocation()
             } label: {
               Image(systemName: "folder")
+                .accessibilityHidden(true)
             }
+            .accessibilityLabel("Choose clone destination")
             .help("Choose clone destination")
           }
         }
