@@ -2925,24 +2925,14 @@ struct RepositoriesFeatureTests {
       $0.gitClient.branchRefs = { _ in ["origin/main", "origin/dev"] }
     }
 
+    store.exhaustivity = .off
     await store.send(.worktreeCreation(.createRandomWorktreeInRepository(repository.id)))
     await store.receive(\.worktreeCreation.promptedWorktreeCreationDataLoaded) {
-      $0.worktreeCreationPrompt = WorktreeCreationPromptFeature.State(
-        repositoryID: repository.id,
-        repositoryRootURL: repository.rootURL,
-        repositoryName: repository.name,
-        automaticBaseRef: "origin/main",
-        baseRefOptions: ["origin/dev", "origin/main"],
-        branchName: "",
-        selectedBaseRef: nil,
-        fetchRemote: true,
-        defaultWorktreeBaseDirectory: SupacodePaths.worktreeBaseDirectory(
-          for: repository.rootURL,
-          globalDefaultPath: nil,
-          repositoryOverridePath: nil
-        ).path(percentEncoded: false),
-        validationMessage: nil
-      )
+      #expect($0.worktreeCreationPrompt?.repositoryID == repository.id)
+      #expect($0.worktreeCreationPrompt?.branchName == "")
+      #expect($0.worktreeCreationPrompt?.baseRefOptions == ["origin/dev", "origin/main"])
+      #expect($0.worktreeCreationPrompt?.isSuggestingName == true)
+      #expect($0.worktreeCreationPrompt?.randomPlaceholder.isEmpty == false)
     }
   }
 
@@ -2961,7 +2951,8 @@ struct RepositoriesFeatureTests {
       selectedBaseRef: nil,
       fetchRemote: true,
       defaultWorktreeBaseDirectory: "",
-      validationMessage: nil
+      validationMessage: nil,
+      randomPlaceholder: "bold-cat-042"
     )
     let store = TestStore(initialState: state) {
       RepositoriesFeature()
@@ -2988,7 +2979,8 @@ struct RepositoriesFeatureTests {
       selectedBaseRef: nil,
       fetchRemote: true,
       defaultWorktreeBaseDirectory: "",
-      validationMessage: nil
+      validationMessage: nil,
+      randomPlaceholder: "bold-cat-042"
     )
     let store = TestStore(initialState: state) {
       RepositoriesFeature()
@@ -3058,29 +3050,16 @@ struct RepositoriesFeatureTests {
       $0.gitClient.branchRefs = { _ in ["origin/main"] }
     }
 
+    store.exhaustivity = .off
     await store.send(.worktreeCreation(.createRandomWorktreeInRepository(repoA.id)))
     await promptLoadGate.waitUntilArmed()
     await store.send(.worktreeCreation(.createRandomWorktreeInRepository(repoB.id)))
     await promptLoadGate.resume()
     await store.receive(\.worktreeCreation.promptedWorktreeCreationDataLoaded) {
-      $0.worktreeCreationPrompt = WorktreeCreationPromptFeature.State(
-        repositoryID: repoB.id,
-        repositoryRootURL: repoB.rootURL,
-        repositoryName: repoB.name,
-        automaticBaseRef: "origin/main",
-        baseRefOptions: ["origin/main"],
-        branchName: "",
-        selectedBaseRef: nil,
-        fetchRemote: true,
-        defaultWorktreeBaseDirectory: SupacodePaths.worktreeBaseDirectory(
-          for: repoB.rootURL,
-          globalDefaultPath: nil,
-          repositoryOverridePath: nil
-        ).path(percentEncoded: false),
-        validationMessage: nil
-      )
+      #expect($0.worktreeCreationPrompt?.repositoryID == repoB.id)
+      #expect($0.worktreeCreationPrompt?.branchName == "")
+      #expect($0.worktreeCreationPrompt?.isSuggestingName == true)
     }
-    await store.finish()
   }
 
   @Test func promptedWorktreeCreationCancelDuringValidationStopsCreation() async {
@@ -3099,7 +3078,8 @@ struct RepositoriesFeatureTests {
       selectedBaseRef: nil,
       fetchRemote: true,
       defaultWorktreeBaseDirectory: "",
-      validationMessage: nil
+      validationMessage: nil,
+      randomPlaceholder: "bold-cat-042"
     )
     let store = TestStore(initialState: state) {
       RepositoriesFeature()

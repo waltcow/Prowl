@@ -141,7 +141,8 @@ struct WorktreeCreationPromptPlacementTests {
       defaultWorktreeBaseDirectory: "/tmp/base",
       worktreeNameOverride: nameOverride,
       worktreePathOverride: pathOverride,
-      validationMessage: nil
+      validationMessage: nil,
+      randomPlaceholder: "bold-cat-042"
     )
   }
 
