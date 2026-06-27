@@ -666,6 +666,67 @@ struct GithubCLIClientTests {
     #expect(pullRequest.number == 42)
   }
 
+  @Test func batchAcrossRepositoriesIgnoresForkOnlyPullRequestMatches() async throws {
+    let probe = GithubBatchShellProbe()
+    let shell = makeBatchAcrossShellMock(probe: probe) { arguments in
+      let stdout = crossRepoGraphQLResponseWithForkOnlyPR(
+        for: arguments,
+        prNumber: 2174
+      )
+      return ShellOutput(stdout: stdout, stderr: "", exitCode: 0)
+    }
+    let client = GithubCLIClient.live(shell: shell)
+    let requests = [
+      CrossRepoPullRequestRequest(owner: "onevcat", repo: "Kingfisher", branches: ["master"])
+    ]
+
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
+
+    let kingfisherPRs = try #require(result.successByRepo[RepoKey(owner: "onevcat", repo: "Kingfisher")])
+    #expect(kingfisherPRs["master"] == nil)
+  }
+
+  @Test func batchAcrossRepositoriesAllowsPullRequestFromConfiguredHeadRemote() async throws {
+    let probe = GithubBatchShellProbe()
+    let shell = makeBatchAcrossShellMock(probe: probe) { arguments in
+      let stdout = crossRepoGraphQLResponseWithHeadRepositoryPR(
+        for: arguments,
+        fixture: HeadRepositoryPRFixture(
+          baseOwner: "supabitapp",
+          baseRepo: "supacode",
+          headOwner: "onevcat",
+          headRepo: "Prowl",
+          branch: "feature"
+        )
+      )
+      return ShellOutput(stdout: stdout, stderr: "", exitCode: 0)
+    }
+    let client = GithubCLIClient.live(shell: shell)
+    let allowedHeadRepositories: Set<RepoKey> = [
+      RepoKey(owner: "onevcat", repo: "Prowl"),
+      RepoKey(owner: "supabitapp", repo: "supacode"),
+    ]
+    let requests = [
+      CrossRepoPullRequestRequest(
+        owner: "onevcat",
+        repo: "Prowl",
+        branches: ["feature"],
+        allowedHeadRepositories: allowedHeadRepositories
+      ),
+      CrossRepoPullRequestRequest(
+        owner: "supabitapp",
+        repo: "supacode",
+        branches: ["feature"],
+        allowedHeadRepositories: allowedHeadRepositories
+      ),
+    ]
+
+    let result = try await client.batchPullRequestsAcrossRepositories("github.com", requests, nil)
+
+    let upstreamPRs = try #require(result.successByRepo[RepoKey(owner: "supabitapp", repo: "supacode")])
+    #expect(upstreamPRs["feature"]?.number == 42)
+  }
+
   @Test func executableResolutionIsSingleFlightAndReused() async {
     let probe = GithubBatchShellProbe()
     let shell = ShellClient(
@@ -872,10 +933,119 @@ nonisolated func crossRepoGraphQLResponseWithSinglePR(
         "baseRefName": "main",
         "commits": ["totalCount": 1],
         "author": ["login": "khoi"],
-        "headRepository": NSNull(),
+        "headRepository": [
+          "name": entry.repo,
+          "owner": ["login": entry.owner],
+        ],
         "statusCheckRollup": NSNull(),
       ]
       aliasPayload[alias] = ["nodes": [node]]
+    }
+    repositoryPayload[entry.alias] = aliasPayload
+  }
+  let body: [String: Any] = ["data": repositoryPayload]
+  guard let data = try? JSONSerialization.data(withJSONObject: body),
+    let json = String(bytes: data, encoding: .utf8)
+  else {
+    return #"{"data":{}}"#
+  }
+  return json
+}
+
+nonisolated func crossRepoGraphQLResponseWithForkOnlyPR(
+  for arguments: [String],
+  prNumber: Int
+) -> String {
+  guard let queryArgument = arguments.first(where: { $0.hasPrefix("query=") }) else {
+    return #"{"data":{}}"#
+  }
+  let structure = parseCrossRepoQuery(String(queryArgument.dropFirst("query=".count)))
+  var repositoryPayload: [String: Any] = [:]
+  for entry in structure.repos {
+    var aliasPayload: [String: Any] = [:]
+    for alias in entry.branchAliases {
+      let node: [String: Any] = [
+        "number": prNumber,
+        "title": "Add extension to has image property components",
+        "state": "CLOSED",
+        "additions": 254,
+        "deletions": 70,
+        "isDraft": false,
+        "reviewDecision": NSNull(),
+        "mergeable": "CONFLICTING",
+        "mergeStateStatus": "DIRTY",
+        "url": "https://github.com/onevcat/Kingfisher/pull/2174",
+        "updatedAt": NSNull(),
+        "headRefName": "master",
+        "baseRefName": "v8",
+        "commits": ["totalCount": 11],
+        "author": ["login": "Mxlris"],
+        "headRepository": [
+          "name": "Kingfisher",
+          "owner": ["login": "MxIris-Library-Forks"],
+        ],
+        "statusCheckRollup": NSNull(),
+      ]
+      aliasPayload[alias] = ["nodes": [node]]
+    }
+    repositoryPayload[entry.alias] = aliasPayload
+  }
+  let body: [String: Any] = ["data": repositoryPayload]
+  guard let data = try? JSONSerialization.data(withJSONObject: body),
+    let json = String(bytes: data, encoding: .utf8)
+  else {
+    return #"{"data":{}}"#
+  }
+  return json
+}
+
+nonisolated struct HeadRepositoryPRFixture {
+  let baseOwner: String
+  let baseRepo: String
+  let headOwner: String
+  let headRepo: String
+  let branch: String
+}
+
+nonisolated func crossRepoGraphQLResponseWithHeadRepositoryPR(
+  for arguments: [String],
+  fixture: HeadRepositoryPRFixture
+) -> String {
+  guard let queryArgument = arguments.first(where: { $0.hasPrefix("query=") }) else {
+    return #"{"data":{}}"#
+  }
+  let structure = parseCrossRepoQuery(String(queryArgument.dropFirst("query=".count)))
+  var repositoryPayload: [String: Any] = [:]
+  for entry in structure.repos {
+    var aliasPayload: [String: Any] = [:]
+    for alias in entry.branchAliases {
+      if entry.owner == fixture.baseOwner, entry.repo == fixture.baseRepo {
+        let node: [String: Any] = [
+          "number": 42,
+          "title": "Fork workflow PR",
+          "state": "OPEN",
+          "additions": 10,
+          "deletions": 2,
+          "isDraft": false,
+          "reviewDecision": NSNull(),
+          "mergeable": "MERGEABLE",
+          "mergeStateStatus": "CLEAN",
+          "url": "https://github.com/\(fixture.baseOwner)/\(fixture.baseRepo)/pull/42",
+          "updatedAt": NSNull(),
+          "headRefName": fixture.branch,
+          "baseRefName": "main",
+          "commits": ["totalCount": 3],
+          "author": ["login": fixture.headOwner],
+          "headRepository": [
+            "name": fixture.headRepo,
+            "owner": ["login": fixture.headOwner],
+          ],
+          "statusCheckRollup": NSNull(),
+        ]
+        aliasPayload[alias] = ["nodes": [node]]
+      } else {
+        aliasPayload[alias] = ["nodes": []]
+      }
     }
     repositoryPayload[entry.alias] = aliasPayload
   }
