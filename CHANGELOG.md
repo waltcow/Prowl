@@ -1,5 +1,24 @@
 # Changelog
 
+## [2026.6.27](https://github.com/onevcat/Prowl/releases/tag/v2026.6.27)
+
+Canvas view gains spatial keyboard navigation and smoother interactions, alongside a handful of targeted fixes.
+
+### New
+
+- **Spatial card navigation in Canvas**: Press Cmd+Ctrl+Arrow to move focus between cards based on their 2D position on the canvas. The algorithm prefers directly aligned neighbors over diagonal ones, and the viewport pans smoothly to keep the focused card visible.
+- Canvas navigation shortcuts are now listed in the help popover (the `?` button in Canvas view).
+
+### Improved
+
+- The "Archived Worktrees" button in the sidebar footer now acts as a toggle: clicking it while already in the archived view returns you to the previously selected worktree. The icon and tooltip update to reflect the current state.
+- The `prowl` CLI reports clearer error messages when it cannot reach the app socket, distinguishing between a missing socket, a stale socket, a sandbox permission denial, and other transport failures.
+
+### Fixed
+
+- Fixed a hang (issue #506) that could occur when the Active Agents list refreshed while Ghostty was processing a render callback, causing a reentrant call into the terminal surface.
+- Fixed an incorrect SF Symbol used in the Canvas card navigation help row.
+
 ## [2026.6.25](https://github.com/onevcat/Prowl/releases/tag/v2026.6.25)
 
 Canvas gains a Tile layout, hover-reveal help, and full toolbar PR awareness alongside fixes to PR status display and update behavior.
