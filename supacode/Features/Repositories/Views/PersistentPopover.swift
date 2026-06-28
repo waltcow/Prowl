@@ -64,7 +64,7 @@ private struct PersistentPopoverAnchor<PopoverContent: View>: NSViewRepresentabl
     func show(anchorHint: NSView, content: some View) {
       let hosting = NSHostingController(rootView: AnyView(content))
       let popover = NSPopover()
-      popover.behavior = .applicationDefined
+      popover.behavior = .semitransient
       popover.contentViewController = hosting
       popover.delegate = self
 
