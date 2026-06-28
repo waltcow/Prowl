@@ -111,7 +111,7 @@ struct PullRequestChecksPopoverView: View {
                     analyticsClient.capture("github_ci_check_opened", nil)
                     openURL(url)
                   } label: {
-                    Text(check.displayName)
+                    LinkLabel(text: check.displayName)
                       .lineLimit(1)
                   }
                   .buttonStyle(.plain)
@@ -185,5 +185,21 @@ struct PullRequestChecksPopoverView: View {
       return "Open pull request on GitHub (\(display))"
     }
     return "Open pull request on GitHub"
+  }
+}
+
+private struct LinkLabel: View {
+  let text: String
+  @State private var isHovering = false
+
+  var body: some View {
+    Text(text)
+      .underline()
+      .foregroundStyle(isHovering ? .blue : .secondary)
+      .onHover { hovering in
+        isHovering = hovering
+      }
+      .pointerStyle(.link)
+      .accessibilityHint("Open check details on GitHub")
   }
 }
