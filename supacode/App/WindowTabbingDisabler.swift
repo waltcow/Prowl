@@ -31,7 +31,13 @@ final class WindowTabbingView: NSView, NSWindowDelegate {
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    sender.orderOut(nil)
+    if Self.shouldOrderOutOnClose(styleMask: sender.styleMask) {
+      sender.orderOut(nil)
+    }
     return false
+  }
+
+  static func shouldOrderOutOnClose(styleMask: NSWindow.StyleMask) -> Bool {
+    !styleMask.contains(.fullScreen)
   }
 }
