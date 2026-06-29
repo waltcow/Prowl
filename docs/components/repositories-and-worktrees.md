@@ -52,7 +52,10 @@ automatically.
 
 By default a **creation prompt** appears (controlled by
 `promptForWorktreeCreation`) where you:
-- enter a **branch name** (leave blank to auto-generate, e.g. `bold-cat-523`),
+- enter a **branch name** (leave blank to auto-generate, e.g. `bold-cat-523`).
+  On devices with Apple Intelligence, an on-device AI suggestion may appear below
+  the field based on your repository context and recent terminal activity — click
+  **Use** to adopt it,
 - choose the **base ref** (branch/tag) to branch from,
 - optionally **fetch the remote first**.
 
