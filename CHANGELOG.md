@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026.6.29](https://github.com/onevcat/Prowl/releases/tag/v2026.6.29)
+
+Smarter worktree creation — Prowl now suggests branch names using Apple's on-device AI, and the refreshed Add popover lets you clone remote repos without leaving the app.
+
+### New
+
+- **AI branch name suggestions**: When creating a new worktree, Prowl uses Apple's on-device Foundation Model (macOS 26+) to suggest a contextual branch name based on your active terminals and repo conventions. Click "Use" to accept, or type your own name — the suggestion never overwrites what you have typed. Falls back to random adjective-animal names when the model is unavailable.
+- **Clone repository from the Add popover**: The "Add..." toolbar button now opens a custom popover with a dedicated Clone option. Paste a git URL (auto-filled if your clipboard already contains one), choose a destination, and Prowl clones and selects the repo automatically. Drag-and-drop from Finder onto the drop zone also works.
+
+### Improved
+
+- CI check names in the PR status popover now show an underline and a pointer cursor on hover, making it clearer they are clickable links to the build run.
+
+### Fixed
+
+- Pressing Cmd+W while in fullscreen mode no longer leaves the screen black. Prowl now keeps the window visible instead of hiding it when fullscreen is active.
+- PR status no longer surfaces pull requests from unrelated forks that happen to share the same branch name as your local branch.
+
 ## [2026.6.27](https://github.com/onevcat/Prowl/releases/tag/v2026.6.27)
 
 Canvas view gains spatial keyboard navigation and smoother interactions, alongside a handful of targeted fixes.
