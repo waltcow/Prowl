@@ -33,7 +33,7 @@ nonisolated struct GithubAuthStatusSnapshot: Equatable, Sendable {
 
   init(response: GithubAuthStatusResponse) {
     hosts = Dictionary(
-      uniqueKeysWithValues: response.hosts.map { host, accounts in
+      response.hosts.map { host, accounts in
         let statuses = accounts.map {
           GithubAuthAccountStatus(
             host: $0.host.isEmpty ? host : $0.host,
@@ -46,7 +46,9 @@ nonisolated struct GithubAuthStatusSnapshot: Equatable, Sendable {
           )
         }
         return (host, statuses)
-      })
+      },
+      uniquingKeysWith: { first, _ in first }
+    )
   }
 
   var sortedHosts: [String] {

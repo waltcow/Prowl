@@ -242,11 +242,13 @@ extension RepositoriesFeature {
     animated: Bool
   ) -> ApplyRepositoriesResult {
     let previousCounts = Dictionary(
-      uniqueKeysWithValues: state.repositories.map { ($0.id, $0.worktrees.count) }
+      state.repositories.map { ($0.id, $0.worktrees.count) },
+      uniquingKeysWith: { first, _ in first }
     )
     let repositoryIDs = Set(repositories.map(\.id))
     let newCounts = Dictionary(
-      uniqueKeysWithValues: repositories.map { ($0.id, $0.worktrees.count) }
+      repositories.map { ($0.id, $0.worktrees.count) },
+      uniquingKeysWith: { first, _ in first }
     )
     var addedCounts: [Repository.ID: Int] = [:]
     for (id, newCount) in newCounts {

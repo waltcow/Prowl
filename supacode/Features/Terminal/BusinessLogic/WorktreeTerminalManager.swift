@@ -648,7 +648,10 @@ final class WorktreeTerminalManager {
     _ payload: TerminalLayoutSnapshotPayload,
     availableWorktrees: [Worktree]
   ) -> Bool {
-    let worktreeByID = Dictionary(uniqueKeysWithValues: availableWorktrees.map { ($0.id, $0) })
+    let worktreeByID = Dictionary(
+      availableWorktrees.map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
     var restoredStates: [WorktreeTerminalState] = []
     restoredStates.reserveCapacity(payload.worktrees.count)
 

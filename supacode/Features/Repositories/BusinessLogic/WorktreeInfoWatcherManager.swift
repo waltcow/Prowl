@@ -177,7 +177,12 @@ final class WorktreeInfoWatcherManager {
 
   private func setWorktrees(_ worktrees: [Worktree]) {
     let isInitialWorktreeLoad = !hasCompletedInitialWorktreeLoad && self.worktrees.isEmpty && !worktrees.isEmpty
-    let worktreesByID = Dictionary(uniqueKeysWithValues: worktrees.map { ($0.id, $0) })
+    var worktreesByID: [Worktree.ID: Worktree] = [:]
+    var uniqueWorktrees: [Worktree] = []
+    for worktree in worktrees where worktreesByID[worktree.id] == nil {
+      worktreesByID[worktree.id] = worktree
+      uniqueWorktrees.append(worktree)
+    }
     let desiredIDs = Set(worktreesByID.keys)
     let currentIDs = Set(self.worktrees.keys)
     let removedIDs = currentIDs.subtracting(desiredIDs)
@@ -193,7 +198,7 @@ final class WorktreeInfoWatcherManager {
       deferredLineChangeIDs.formUnion(newIDs)
     }
     self.worktrees = worktreesByID
-    for worktree in worktrees {
+    for worktree in uniqueWorktrees {
       configureWatcher(for: worktree)
       if isInitialWorktreeLoad || !deferredLineChangeIDs.contains(worktree.id) {
         emitLineChangesChanged(worktreeID: worktree.id)
@@ -205,7 +210,7 @@ final class WorktreeInfoWatcherManager {
     if isInitialWorktreeLoad {
       hasCompletedInitialWorktreeLoad = true
     }
-    let repositoryRoots = Set(worktrees.map(\.repositoryRootURL))
+    let repositoryRoots = Set(uniqueWorktrees.map(\.repositoryRootURL))
     let normalizedRoots = Set(repositoryRoots.map { $0.standardizedFileURL })
     refreshRepositoryTimings(for: normalizedRoots)
     syncWorktreeRegistryMonitors(repositoryRoots: repositoryRoots)

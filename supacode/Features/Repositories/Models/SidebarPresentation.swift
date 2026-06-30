@@ -133,7 +133,10 @@ extension RepositoriesFeature.State {
     expandedRepositoryIDs: Set<Repository.ID>,
     includesArchivedWorktreesRow: Bool = false
   ) -> SidebarPresentation {
-    let repositoriesByID = Dictionary(uniqueKeysWithValues: repositories.map { ($0.id, $0) })
+    let repositoriesByID = Dictionary(
+      repositories.map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
     let roots = sidebarPresentationRoots()
     let repositoryCount = roots.count
     var items: [SidebarItem] = []

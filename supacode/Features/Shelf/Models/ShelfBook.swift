@@ -50,7 +50,7 @@ extension RepositoriesFeature.State {
   ) -> [ShelfBook] {
     // `ShelfView.body` re-runs on every TCA state change, so this method
     // is on the per-frame hot path. The previous implementation built a
-    // `Dictionary(uniqueKeysWithValues:)` per call and routed worktree
+    // a trapping dictionary initializer per call and routed worktree
     // ordering through `worktreeRowSections(in:)` — which constructs a
     // full `WorktreeRowModel` per worktree (PR/info lookups, icon
     // resolution, etc.) plus several intermediate `Set` allocations per

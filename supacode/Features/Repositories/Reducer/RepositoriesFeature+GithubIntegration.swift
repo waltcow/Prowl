@@ -887,7 +887,8 @@ extension RepositoriesFeature {
       )
       guard !remoteInfos.isEmpty else {
         let clearedPullRequestsByWorktreeID = Dictionary(
-          uniqueKeysWithValues: worktreeIDs.map { ($0, Optional<GithubPullRequest>.none) }
+          worktreeIDs.map { ($0, Optional<GithubPullRequest>.none) },
+          uniquingKeysWith: { first, _ in first }
         )
         await send(
           .githubIntegration(

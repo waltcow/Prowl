@@ -30,10 +30,11 @@ struct WorktreeRowsView: View {
     let isRepositoryRemoving = state.isRemovingRepository(repository)
     let isSidebarDragActive = state.isSidebarDragActive
     let shortcutHintTextByID = Dictionary(
-      uniqueKeysWithValues: hotkeyRows.enumerated().compactMap { index, row -> (Worktree.ID, String)? in
+      hotkeyRows.enumerated().compactMap { index, row -> (Worktree.ID, String)? in
         guard let text = worktreeShortcutHint(for: index) else { return nil }
         return (row.id, text)
-      }
+      },
+      uniquingKeysWith: { first, _ in first }
     )
     let shortcutHints = WorktreeShortcutHints(
       textByID: shortcutHintTextByID,

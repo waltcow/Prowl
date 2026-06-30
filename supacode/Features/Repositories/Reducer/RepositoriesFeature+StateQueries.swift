@@ -322,9 +322,10 @@ extension RepositoriesFeature.State {
 
   func orderedRepositoryRoots() -> [URL] {
     let rootsByID = Dictionary(
-      uniqueKeysWithValues: repositoryRoots.map {
+      repositoryRoots.map {
         ($0.standardizedFileURL.path(percentEncoded: false), $0.standardizedFileURL)
-      }
+      },
+      uniquingKeysWith: { first, _ in first }
     )
     var ordered: [URL] = []
     var seen: Set<Repository.ID> = []
@@ -540,7 +541,10 @@ extension RepositoriesFeature.State {
   }
 
   func orderedWorktreeRows(includingRepositoryIDs: Set<Repository.ID>) -> [WorktreeRowModel] {
-    let repositoriesByID = Dictionary(uniqueKeysWithValues: repositories.map { ($0.id, $0) })
+    let repositoriesByID = Dictionary(
+      repositories.map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
     return orderedRepositoryIDs()
       .filter { includingRepositoryIDs.contains($0) }
       .compactMap { repositoriesByID[$0] }

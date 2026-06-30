@@ -111,7 +111,10 @@ final class TerminalTabManager {
     let existingIds = Set(tabs.map(\.id))
     let incomingIds = Set(orderedIds)
     guard existingIds == incomingIds else { return }
-    let map = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+    let map = Dictionary(
+      tabs.map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
     tabs = orderedIds.compactMap { map[$0] }
   }
 

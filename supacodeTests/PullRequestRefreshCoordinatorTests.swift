@@ -358,9 +358,10 @@ struct PullRequestRefreshCoordinatorTests {
       },
       legacy: { _, _, repo, branches in
         Dictionary(
-          uniqueKeysWithValues: branches.map { branch in
+          branches.map { branch in
             (branch, makeFixturePullRequest(repo: repo))
-          }
+          },
+          uniquingKeysWith: { first, _ in first }
         )
       }
     )

@@ -57,10 +57,10 @@ final class AgentsCommandHandler: CommandHandler {
     )
     let terminalContexts = makeTerminalContexts(from: snapshot.listSnapshot)
     let worktreeContexts = Dictionary(
-      uniqueKeysWithValues:
-        ListRuntimeSnapshotBuilder
+      ListRuntimeSnapshotBuilder
         .orderedWorktreeContexts(from: repositoriesState)
-        .map { ($0.id, $0) }
+        .map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
     )
 
     let agents = repositoriesState.activeAgents.entries.compactMap { entry -> AgentsCommandAgent? in

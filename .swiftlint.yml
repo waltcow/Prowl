@@ -43,3 +43,8 @@ custom_rules:
     message: "Do not mutate store state directly in views. Send actions instead."
     severity: error
     included: "supacode/.*/Views/.*\\.swift"
+  dictionary_unique_keys_with_values:
+    name: "Dictionary Unique Keys With Values"
+    regex: "\\bDictionary\\s*\\(\\s*uniqueKeysWithValues\\s*:"
+    message: "Avoid Dictionary(uniqueKeysWithValues:) because duplicate runtime data traps. Use explicit duplicate handling instead."
+    severity: error

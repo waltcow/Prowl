@@ -133,7 +133,10 @@ extension WorktreeTerminalState {
 
     trees = restoredTrees
     focusedSurfaceIdByTab = restoredFocusedSurfaceIDs
-    tabIsRunningById = Dictionary(uniqueKeysWithValues: restoredTabs.map { ($0.id, false) })
+    tabIsRunningById = Dictionary(
+      restoredTabs.map { ($0.id, false) },
+      uniquingKeysWith: { first, _ in first }
+    )
     tabManager.tabs = restoredTabs
     tabManager.selectedTabId = selectedTabID
     setRunScriptTabId(nil)

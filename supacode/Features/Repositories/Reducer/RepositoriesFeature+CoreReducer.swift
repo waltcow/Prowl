@@ -224,7 +224,8 @@ extension RepositoriesFeature {
       state.repositoryRoots = roots
       state.isInitialLoadComplete = true
       state.loadFailuresByID = Dictionary(
-        uniqueKeysWithValues: failures.map { ($0.rootID, $0.message) }
+        failures.map { ($0.rootID, $0.message) },
+        uniquingKeysWith: { first, _ in first }
       )
       let selectedWorktree = state.worktree(for: state.selectedWorktreeID)
       let selectionChanged = selectionDidChange(

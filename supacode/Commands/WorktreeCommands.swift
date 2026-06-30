@@ -205,7 +205,10 @@ struct WorktreeCommands: Commands {
     }
 
     let repositories = store.repositories
-    let reposByID = Dictionary(uniqueKeysWithValues: repositories.repositories.map { ($0.id, $0) })
+    let reposByID = Dictionary(
+      repositories.repositories.map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
 
     var entries: [WorktreeMenuEntry] = []
     for repoID in repositories.orderedRepositoryIDs() {

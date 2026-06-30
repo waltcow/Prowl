@@ -771,9 +771,10 @@ struct CommandPaletteFeatureTests {
       )
     }
     let recency = Dictionary(
-      uniqueKeysWithValues: items.enumerated().map { idx, item in
+      items.enumerated().map { idx, item in
         (item.id, now.timeIntervalSince1970 - TimeInterval(idx + 1) * 3600)
-      }
+      },
+      uniquingKeysWith: { first, _ in first }
     )
 
     let result = CommandPaletteFeature.suggestions(items: items, recencyByID: recency, now: now)

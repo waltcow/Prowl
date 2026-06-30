@@ -149,8 +149,14 @@ struct AppShortcutsTests {
   }
 
   @Test func configurableSystemFixedAndLocalInteractionShortcutsAreDefinedInRegistry() {
-    let idToDisplay = Dictionary(uniqueKeysWithValues: AppShortcuts.bindings.map { ($0.id, $0.shortcut.display) })
-    let idToScope = Dictionary(uniqueKeysWithValues: AppShortcuts.bindings.map { ($0.id, $0.scope) })
+    let idToDisplay = Dictionary(
+      AppShortcuts.bindings.map { ($0.id, $0.shortcut.display) },
+      uniquingKeysWith: { first, _ in first }
+    )
+    let idToScope = Dictionary(
+      AppShortcuts.bindings.map { ($0.id, $0.scope) },
+      uniquingKeysWith: { first, _ in first }
+    )
 
     expectNoDifference(
       idToDisplay["command_palette"],

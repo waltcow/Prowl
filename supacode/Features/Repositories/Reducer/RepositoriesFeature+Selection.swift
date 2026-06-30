@@ -322,7 +322,10 @@ func pruneWorktreeOrderByRepository(
   state: inout RepositoriesFeature.State
 ) -> Bool {
   let rootIDs = Set(roots.map { $0.standardizedFileURL.path(percentEncoded: false) })
-  let repositoriesByID = Dictionary(uniqueKeysWithValues: state.repositories.map { ($0.id, $0) })
+  let repositoriesByID = Dictionary(
+    state.repositories.map { ($0.id, $0) },
+    uniquingKeysWith: { first, _ in first }
+  )
   let pinnedSet = Set(state.pinnedWorktreeIDs)
   let archivedSet = state.archivedWorktreeIDSet
   var pruned: [Repository.ID: [Worktree.ID]] = [:]
