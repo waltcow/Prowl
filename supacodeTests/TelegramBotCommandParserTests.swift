@@ -53,6 +53,21 @@ struct TelegramBotCommandParserTests {
     #expect(input.last == 50)
   }
 
+  @Test func readUsesBoundSelectorWhenPaneIsOmitted() {
+    let parser = TelegramBotCommandParser(defaultReadLines: 50, requireExplicitPaneForWrite: true)
+
+    let result = parser.parse(text: "/read 12", boundSelector: .pane("pane-123"))
+
+    guard case .command(let request) = result,
+      case .read(let input) = request.envelope.command
+    else {
+      Issue.record("Expected read envelope, got \(result)")
+      return
+    }
+    #expect(input.selector == .pane("pane-123"))
+    #expect(input.last == 12)
+  }
+
   @Test func sendRequiresExplicitPaneWhenWriteProtectionIsEnabled() {
     let parser = TelegramBotCommandParser(defaultReadLines: 80, requireExplicitPaneForWrite: true)
 
@@ -81,6 +96,38 @@ struct TelegramBotCommandParserTests {
     #expect(input.text == "echo hello")
     #expect(input.wait == false)
     #expect(input.captureOutput == false)
+  }
+
+  @Test func sendUsesBoundSelectorWhenWriteProtectionIsEnabled() {
+    let parser = TelegramBotCommandParser(defaultReadLines: 80, requireExplicitPaneForWrite: true)
+
+    let result = parser.parse(text: "/send echo hello", boundSelector: .pane("pane-123"))
+
+    guard case .command(let request) = result,
+      case .send(let input) = request.envelope.command
+    else {
+      Issue.record("Expected send envelope, got \(result)")
+      return
+    }
+    #expect(input.selector == .pane("pane-123"))
+    #expect(input.text == "echo hello")
+  }
+
+  @Test func parsesThreadBindingCommands() {
+    let parser = TelegramBotCommandParser(defaultReadLines: 80, requireExplicitPaneForWrite: true)
+
+    let bindResult = parser.parse(text: "/bind_pane pane-123")
+    guard case .binding(.bindPane(let paneID)) = bindResult else {
+      Issue.record("Expected bind pane command, got \(bindResult)")
+      return
+    }
+    #expect(paneID == "pane-123")
+
+    let whereResult = parser.parse(text: "/where")
+    guard case .binding(.showBinding) = whereResult else {
+      Issue.record("Expected where binding command, got \(whereResult)")
+      return
+    }
   }
 
   @Test func sendCanUseFocusedPaneWhenWriteProtectionIsDisabled() {

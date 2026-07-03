@@ -19,14 +19,39 @@ nonisolated struct TelegramBotChat: Codable, Equatable, Sendable {
   let id: Int64
 }
 
+nonisolated struct TelegramBotTarget: Codable, Equatable, Hashable, Sendable {
+  let chatID: Int64
+  let threadID: Int?
+}
+
 nonisolated struct TelegramBotMessage: Codable, Equatable, Sendable {
   let messageID: Int
+  let messageThreadID: Int?
   let from: TelegramBotUser?
   let chat: TelegramBotChat
   let text: String?
 
+  init(
+    messageID: Int,
+    messageThreadID: Int? = nil,
+    from: TelegramBotUser?,
+    chat: TelegramBotChat,
+    text: String?
+  ) {
+    self.messageID = messageID
+    self.messageThreadID = messageThreadID
+    self.from = from
+    self.chat = chat
+    self.text = text
+  }
+
+  var target: TelegramBotTarget {
+    TelegramBotTarget(chatID: chat.id, threadID: messageThreadID)
+  }
+
   enum CodingKeys: String, CodingKey {
     case messageID = "message_id"
+    case messageThreadID = "message_thread_id"
     case from
     case chat
     case text
@@ -51,7 +76,7 @@ enum TelegramBotClientError: Error, Equatable, Sendable {
 struct TelegramBotClient: Sendable, DependencyKey {
   var getMe: @Sendable (_ token: String) async throws -> TelegramBotUser
   var getUpdates: @Sendable (_ token: String, _ offset: Int?, _ timeout: Int) async throws -> [TelegramBotUpdate]
-  var sendMessage: @Sendable (_ token: String, _ chatID: Int64, _ text: String) async throws -> Void
+  var sendMessage: @Sendable (_ token: String, _ target: TelegramBotTarget, _ text: String) async throws -> Void
 
   static let liveValue = TelegramBotClient(
     getMe: { token in
@@ -75,14 +100,18 @@ struct TelegramBotClient: Sendable, DependencyKey {
         queryItems: queryItems
       )
     },
-    sendMessage: { token, chatID, text in
+    sendMessage: { token, target, text in
+      var queryItems = [
+        URLQueryItem(name: "chat_id", value: String(target.chatID)),
+        URLQueryItem(name: "text", value: text),
+      ]
+      if let threadID = target.threadID {
+        queryItems.append(URLQueryItem(name: "message_thread_id", value: String(threadID)))
+      }
       let _: TelegramBotMessage = try await TelegramBotHTTPClient.request(
         token: token,
         method: "sendMessage",
-        queryItems: [
-          URLQueryItem(name: "chat_id", value: String(chatID)),
-          URLQueryItem(name: "text", value: text),
-        ],
+        queryItems: queryItems,
         httpMethod: "POST"
       )
     }

@@ -29,6 +29,7 @@ window is a sidebar of tabs plus a detail pane.
 ## Where settings live on disk
 
 - **Global:** `~/.prowl/settings.json`
+- **Telegram topic bindings:** `~/.prowl/telegram-thread-bindings.json`
 - **Per-repo:** `~/.prowl/repo/<repo-name>/prowl.json`
 - **Per-repo custom commands:** `~/.prowl/repo/<repo-name>/prowl.onevcat.json`
 
@@ -46,6 +47,11 @@ Settings → Telegram controls the optional Bot API integration:
 - `/send` and `/key` use explicit pane IDs by default; disabling the explicit
   target toggle lets them use the current Prowl focus. `/pane_close` and
   `/tab_close` always require explicit IDs.
+- In Telegram groups with topics enabled, Prowl replies in the same topic. Use
+  `/bind_pane <pane-id>` or `/bind_worktree <worktree>` to bind a topic to one
+  Prowl target, `/where` to inspect the binding, and `/unbind` to remove it.
+  Bound topics can use short forms such as `/read 80`, `/focus`, `/send npm test`,
+  and `/key ctrl-c` without repeating the target ID.
 
 The Test Connection button calls Telegram `getMe` with the configured token and
 shows the bot identity or a short error.

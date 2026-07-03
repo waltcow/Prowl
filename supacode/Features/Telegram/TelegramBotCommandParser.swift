@@ -7,14 +7,37 @@ struct TelegramBotCommandRequest: Sendable {
 
 enum TelegramBotParseResult: Sendable, CustomStringConvertible {
   case command(TelegramBotCommandRequest)
+  case binding(TelegramBotBindingCommand)
   case message(String)
 
   var description: String {
     switch self {
     case .command(let request):
       return "command(\(request.commandName))"
+    case .binding(let command):
+      return "binding(\(command))"
     case .message(let text):
       return "message(\(text))"
+    }
+  }
+}
+
+enum TelegramBotBindingCommand: Sendable, Equatable, CustomStringConvertible {
+  case bindPane(String)
+  case bindWorktree(String)
+  case unbind
+  case showBinding
+
+  var description: String {
+    switch self {
+    case .bindPane(let paneID):
+      return "bindPane(\(paneID))"
+    case .bindWorktree(let worktree):
+      return "bindWorktree(\(worktree))"
+    case .unbind:
+      return "unbind"
+    case .showBinding:
+      return "showBinding"
     }
   }
 }
@@ -28,7 +51,7 @@ struct TelegramBotCommandParser: Sendable {
     self.requireExplicitPaneForWrite = requireExplicitPaneForWrite
   }
 
-  func parse(text: String) -> TelegramBotParseResult {
+  func parse(text: String, boundSelector: TargetSelector? = nil) -> TelegramBotParseResult {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return .message(Self.helpText) }
     guard trimmed.hasPrefix("/") else { return .message(Self.helpText) }
@@ -47,19 +70,27 @@ struct TelegramBotCommandParser: Sendable {
     case "list":
       return makeCommand("list", .list(ListInput()))
     case "read":
-      return parseRead(rest)
+      return parseRead(rest, boundSelector: boundSelector)
     case "focus":
-      return parseFocus(rest)
+      return parseFocus(rest, boundSelector: boundSelector)
     case "send":
-      return parseSend(rest)
+      return parseSend(rest, boundSelector: boundSelector)
     case "key":
-      return parseKey(rest)
+      return parseKey(rest, boundSelector: boundSelector)
     case "tab_create":
       return parseTabCreate(rest)
     case "pane_close":
       return parsePaneClose(rest)
     case "tab_close":
       return parseTabClose(rest)
+    case "bind_pane":
+      return parseBindPane(rest)
+    case "bind_worktree":
+      return parseBindWorktree(rest)
+    case "unbind":
+      return .binding(.unbind)
+    case "where":
+      return .binding(.showBinding)
     case "help", "start":
       return .message(Self.helpText)
     default:
@@ -67,10 +98,26 @@ struct TelegramBotCommandParser: Sendable {
     }
   }
 
-  private func parseRead(_ rest: String) -> TelegramBotParseResult {
+  private func parseRead(_ rest: String, boundSelector: TargetSelector?) -> TelegramBotParseResult {
     let (paneID, lineText) = splitFirst(rest)
     guard !paneID.isEmpty else {
-      return .message("Usage: /read <pane-id> [lines]")
+      guard let boundSelector else {
+        return .message("Usage: /read <pane-id> [lines], or bind this Telegram thread and use /read [lines].")
+      }
+      return makeCommand(
+        "read",
+        .read(ReadInput(selector: boundSelector, last: defaultReadLines))
+      )
+    }
+
+    if let boundSelector, lineText.isEmpty, let lines = Int(paneID) {
+      guard (1...500).contains(lines) else {
+        return .message("Usage: /read [lines], where lines is 1-500.")
+      }
+      return makeCommand(
+        "read",
+        .read(ReadInput(selector: boundSelector, last: lines))
+      )
     }
 
     let lines: Int
@@ -88,15 +135,18 @@ struct TelegramBotCommandParser: Sendable {
     )
   }
 
-  private func parseFocus(_ rest: String) -> TelegramBotParseResult {
+  private func parseFocus(_ rest: String, boundSelector: TargetSelector?) -> TelegramBotParseResult {
     let paneID = rest.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !paneID.isEmpty else {
+      if let boundSelector {
+        return makeCommand("focus", .focus(FocusInput(selector: boundSelector)))
+      }
       return .message("Usage: /focus <pane-id>")
     }
     return makeCommand("focus", .focus(FocusInput(selector: .pane(paneID))))
   }
 
-  private func parseSend(_ rest: String) -> TelegramBotParseResult {
+  private func parseSend(_ rest: String, boundSelector: TargetSelector?) -> TelegramBotParseResult {
     let (firstToken, remainder) = splitFirst(rest)
     guard !firstToken.isEmpty else {
       return .message("Usage: /send <pane-id> <text>")
@@ -104,12 +154,17 @@ struct TelegramBotCommandParser: Sendable {
 
     let selector: TargetSelector
     let text: String
-    if requireExplicitPaneForWrite || isExplicitPaneToken(firstToken) {
+    if isExplicitPaneToken(firstToken) {
       guard !remainder.isEmpty else {
         return .message("Usage: /send <pane-id> <text>")
       }
       selector = .pane(firstToken)
       text = remainder
+    } else if let boundSelector {
+      selector = boundSelector
+      text = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+    } else if requireExplicitPaneForWrite {
+      return .message("Usage: /send <pane-id> <text>, or bind this Telegram thread and use /send <text>.")
     } else {
       selector = .none
       text = rest.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,7 +190,7 @@ struct TelegramBotCommandParser: Sendable {
     )
   }
 
-  private func parseKey(_ rest: String) -> TelegramBotParseResult {
+  private func parseKey(_ rest: String, boundSelector: TargetSelector?) -> TelegramBotParseResult {
     let (firstToken, remainder) = splitFirst(rest)
     guard !firstToken.isEmpty else {
       return .message("Usage: /key <pane-id> <token>")
@@ -143,12 +198,17 @@ struct TelegramBotCommandParser: Sendable {
 
     let selector: TargetSelector
     let rawToken: String
-    if requireExplicitPaneForWrite || isExplicitPaneToken(firstToken) {
+    if isExplicitPaneToken(firstToken) {
       guard !remainder.isEmpty else {
         return .message("Usage: /key <pane-id> <token>")
       }
       selector = .pane(firstToken)
       rawToken = remainder
+    } else if let boundSelector {
+      selector = boundSelector
+      rawToken = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+    } else if requireExplicitPaneForWrite {
+      return .message("Usage: /key <pane-id> <token>, or bind this Telegram thread and use /key <token>.")
     } else {
       selector = .none
       rawToken = rest.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,6 +253,22 @@ struct TelegramBotCommandParser: Sendable {
     return makeCommand("tab", .tab(TabInput(action: .close, selector: .tab(tabID), force: false)))
   }
 
+  private func parseBindPane(_ rest: String) -> TelegramBotParseResult {
+    let paneID = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !paneID.isEmpty, !paneID.contains(" ") else {
+      return .message("Usage: /bind_pane <pane-id>")
+    }
+    return .binding(.bindPane(paneID))
+  }
+
+  private func parseBindWorktree(_ rest: String) -> TelegramBotParseResult {
+    let worktree = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !worktree.isEmpty else {
+      return .message("Usage: /bind_worktree <worktree>")
+    }
+    return .binding(.bindWorktree(worktree))
+  }
+
   private func makeCommand(_ commandName: String, _ command: Command) -> TelegramBotParseResult {
     .command(
       TelegramBotCommandRequest(commandName: commandName, envelope: CommandEnvelope(output: .json, command: command)))
@@ -214,7 +290,8 @@ struct TelegramBotCommandParser: Sendable {
 
   static let helpText = """
     Commands: /agents, /list, /read <pane-id> [lines], /focus <pane-id>, /send <pane-id> <text>, \
-    /key <pane-id> <token>, /tab_create <worktree>, /pane_close <pane-id>, /tab_close <tab-id>.
+    /key <pane-id> <token>, /tab_create <worktree>, /pane_close <pane-id>, /tab_close <tab-id>, \
+    /bind_pane <pane-id>, /bind_worktree <worktree>, /where, /unbind.
     """
 }
 

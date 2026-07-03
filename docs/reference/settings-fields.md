@@ -13,6 +13,7 @@ For the UI grouping of these into tabs, see [`components/settings.md`](../compon
 | Scope | Path |
 |-------|------|
 | Global settings | `~/.prowl/settings.json` |
+| Telegram topic bindings | `~/.prowl/telegram-thread-bindings.json` |
 | Per-repository settings | `~/.prowl/repo/<repo-name>/prowl.json` |
 | Per-repository custom commands | `~/.prowl/repo/<repo-name>/prowl.onevcat.json` |
 
@@ -69,8 +70,8 @@ JSON is pretty-printed with sorted keys. Legacy `~/.supacode` is migrated to
 | `telegramBotEnabled` | Bool | `false` | Start the built-in Telegram bot long-polling runtime. |
 | `telegramBotToken` | String? | `nil` | Telegram Bot API token used for `getUpdates`, `getMe`, and `sendMessage`; never logged. |
 | `telegramAllowedUserIDs` | `[Int64]` | `[]` | Telegram user ID allowlist. Messages from other users are ignored. |
-| `telegramDefaultReadLines` | Int | `80` | Default line count for Telegram `/read <pane-id>` when no count is provided; decoded values are clamped to `1...500`. |
-| `telegramRequireExplicitPaneForWrite` | Bool | `true` | Require explicit pane IDs for Telegram `/send` and `/key`; close commands always require explicit IDs. |
+| `telegramDefaultReadLines` | Int | `80` | Default line count for Telegram `/read <pane-id>` or bound-topic `/read` when no count is provided; decoded values are clamped to `1...500`. |
+| `telegramRequireExplicitPaneForWrite` | Bool | `true` | Require explicit pane IDs for unbound Telegram `/send` and `/key`; bound topics use their binding, and close commands always require explicit IDs. |
 
 ## Per-repository settings (`RepositorySettings`)
 

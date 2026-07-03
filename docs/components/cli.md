@@ -23,11 +23,16 @@ inside a repo, and not for how-to questions about Prowl's settings.
 The built-in Telegram bot uses the same command router as this CLI. Its commands
 are shorter Telegram forms (`/agents`, `/list`, `/read <pane-id> [lines]`,
 `/focus <pane-id>`, `/send <pane-id> <text>`, `/key <pane-id> <token>`,
-`/tab_create <worktree>`, `/pane_close <pane-id>`, `/tab_close <tab-id>`), but
+`/tab_create <worktree>`, `/pane_close <pane-id>`, `/tab_close <tab-id>`,
+`/bind_pane <pane-id>`, `/bind_worktree <worktree>`, `/where`, `/unbind`), but
 they resolve to the same app-side operations and target model documented here.
-By default, `/send` and `/key` require a pane ID; Settings → Telegram can allow
-those two commands to use the current Prowl focus instead. Close commands always
-require an explicit target. Configure it in Settings → Telegram.
+In Telegram groups with topics enabled, Prowl replies in the source topic and can
+bind each topic to a different pane or worktree. After binding, that topic can use
+short forms such as `/read 80`, `/focus`, `/send npm test`, and `/key ctrl-c`
+without repeating the target ID. Explicit pane IDs still win when supplied. By
+default, unbound `/send` and `/key` require a pane ID; Settings → Telegram can
+allow those two commands to use the current Prowl focus instead. Close commands
+always require an explicit target. Configure it in Settings → Telegram.
 
 ## Install
 
