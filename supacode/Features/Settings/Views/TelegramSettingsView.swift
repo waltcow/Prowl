@@ -63,6 +63,14 @@ struct TelegramSettingsView: View {
             .disabled(store.telegramConnectionStatus == .testing)
 
             telegramConnectionStatusView
+
+            Button("Sync Commands") {
+              store.send(.syncTelegramCommandsButtonTapped)
+            }
+            .help("Register Prowl commands in Telegram's bot command panel")
+            .disabled(store.telegramCommandSyncStatus == .syncing)
+
+            telegramCommandSyncStatusView
           }
         }
 
@@ -77,6 +85,11 @@ struct TelegramSettingsView: View {
             commandRow("/tab_create <worktree>", "Create a tab in a worktree.")
             commandRow("/pane_close <pane-id>", "Close a pane with normal confirmation policy.")
             commandRow("/tab_close <tab-id>", "Close a tab with normal confirmation policy.")
+            commandRow("/bind_pane <pane-id>", "Bind this thread to a pane.")
+            commandRow("/bind_worktree <worktree>", "Bind this thread to a worktree.")
+            commandRow("/where", "Show this thread binding.")
+            commandRow("/unbind", "Remove this thread binding.")
+            commandRow("/help", "Show available commands.")
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -100,6 +113,27 @@ struct TelegramSettingsView: View {
       }
     case .success(let label):
       Label("Connected as \(label)", systemImage: "checkmark.circle.fill")
+        .foregroundStyle(.green)
+    case .failure(let message):
+      Label(message, systemImage: "xmark.circle.fill")
+        .foregroundStyle(.red)
+    }
+  }
+
+  @ViewBuilder
+  private var telegramCommandSyncStatusView: some View {
+    switch store.telegramCommandSyncStatus {
+    case .idle:
+      EmptyView()
+    case .syncing:
+      HStack(spacing: 6) {
+        ProgressView()
+          .controlSize(.small)
+        Text("Syncing...")
+          .foregroundStyle(.secondary)
+      }
+    case .success(let message):
+      Label(message, systemImage: "checkmark.circle.fill")
         .foregroundStyle(.green)
     case .failure(let message):
       Label(message, systemImage: "xmark.circle.fill")

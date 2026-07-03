@@ -23,7 +23,7 @@ window is a sidebar of tabs plus a detail pane.
 | **Updates** | Update channel (Stable/Tip), auto-check toggle, "Check for Updates Now". → [updates](updates.md) |
 | **Advanced** | Analytics, crash reports, restore terminal layout on launch (experimental) + clear saved layout, and the **Install Command Line Tool** (`prowl` CLI) action. |
 | **GitHub** | Enable GitHub integration (uses the `gh` CLI). → [github-pull-requests](github-pull-requests.md) |
-| **Telegram** | Enable the built-in Telegram bot, store the Bot API token, allowlist Telegram user IDs, test `getMe`, and tune default `/read` output. The bot routes to the same command handlers as the [`prowl` CLI](cli.md). |
+| **Telegram** | Enable the built-in Telegram bot, store the Bot API token, allowlist Telegram user IDs, test `getMe`, sync the bot command panel, and tune default `/read` output. The bot routes to the same command handlers as the [`prowl` CLI](cli.md). |
 | **Repositories / Repo Settings** | Per-repository: setup/archive/run scripts, **Custom Commands**, default base ref & directory, copy-files overrides, open-with app, custom title, icon & color, PR merge strategy, line-diff & PR-state fetching. Reached from the sidebar context menu → "Repo Settings". → [custom-actions](custom-actions.md), [repositories-and-worktrees](repositories-and-worktrees.md) |
 
 ## Where settings live on disk
@@ -55,6 +55,10 @@ Settings → Telegram controls the optional Bot API integration:
 
 The Test Connection button calls Telegram `getMe` with the configured token and
 shows the bot identity or a short error.
+
+The Sync Commands button calls Telegram `setMyCommands` with Prowl's supported
+bot commands so Telegram's command panel shows the current `/agents`, `/list`,
+`/read`, `/send`, `/key`, tab/pane, binding, and help commands.
 
 ## Install the CLI from here
 

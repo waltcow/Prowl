@@ -68,6 +68,30 @@ nonisolated struct TelegramBotUpdate: Codable, Equatable, Sendable {
   }
 }
 
+nonisolated struct TelegramBotCommand: Codable, Equatable, Sendable {
+  let command: String
+  let description: String
+}
+
+nonisolated enum TelegramBotCommandCatalog {
+  static let commands: [TelegramBotCommand] = [
+    TelegramBotCommand(command: "agents", description: "Show current agent roster"),
+    TelegramBotCommand(command: "list", description: "Show worktrees, tabs, and panes"),
+    TelegramBotCommand(command: "read", description: "Read recent terminal output"),
+    TelegramBotCommand(command: "focus", description: "Focus a pane in Prowl"),
+    TelegramBotCommand(command: "send", description: "Send text and Enter to a pane"),
+    TelegramBotCommand(command: "key", description: "Send a supported key token"),
+    TelegramBotCommand(command: "tab_create", description: "Create a tab in a worktree"),
+    TelegramBotCommand(command: "pane_close", description: "Close a pane by ID"),
+    TelegramBotCommand(command: "tab_close", description: "Close a tab by ID"),
+    TelegramBotCommand(command: "bind_pane", description: "Bind this thread to a pane"),
+    TelegramBotCommand(command: "bind_worktree", description: "Bind this thread to a worktree"),
+    TelegramBotCommand(command: "where", description: "Show this thread binding"),
+    TelegramBotCommand(command: "unbind", description: "Remove this thread binding"),
+    TelegramBotCommand(command: "help", description: "Show available commands"),
+  ]
+}
+
 enum TelegramBotClientError: Error, Equatable, Sendable {
   case invalidResponse
   case api(errorCode: Int?, description: String)
@@ -77,6 +101,7 @@ struct TelegramBotClient: Sendable, DependencyKey {
   var getMe: @Sendable (_ token: String) async throws -> TelegramBotUser
   var getUpdates: @Sendable (_ token: String, _ offset: Int?, _ timeout: Int) async throws -> [TelegramBotUpdate]
   var sendMessage: @Sendable (_ token: String, _ target: TelegramBotTarget, _ text: String) async throws -> Void
+  var setMyCommands: @Sendable (_ token: String, _ commands: [TelegramBotCommand]) async throws -> Void
 
   static let liveValue = TelegramBotClient(
     getMe: { token in
@@ -114,6 +139,18 @@ struct TelegramBotClient: Sendable, DependencyKey {
         queryItems: queryItems,
         httpMethod: "POST"
       )
+    },
+    setMyCommands: { token, commands in
+      let data = try JSONEncoder().encode(commands)
+      guard let json = String(data: data, encoding: .utf8) else {
+        throw TelegramBotClientError.invalidResponse
+      }
+      let _: Bool = try await TelegramBotHTTPClient.request(
+        token: token,
+        method: "setMyCommands",
+        queryItems: [URLQueryItem(name: "commands", value: json)],
+        httpMethod: "POST"
+      )
     }
   )
 
@@ -125,6 +162,9 @@ struct TelegramBotClient: Sendable, DependencyKey {
       throw TelegramBotClientError.invalidResponse
     },
     sendMessage: { _, _, _ in
+      throw TelegramBotClientError.invalidResponse
+    },
+    setMyCommands: { _, _ in
       throw TelegramBotClientError.invalidResponse
     }
   )

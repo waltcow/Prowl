@@ -478,6 +478,33 @@ struct SettingsFeatureTests {
     #expect(requestedTokens.value == ["token"])
   }
 
+  @Test(.dependencies) func telegramCommandSyncUsesConfiguredTokenAndCommandCatalog() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.telegramBotToken = "token"
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+    let requests = LockIsolated<[(String, [TelegramBotCommand])]>([])
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    } withDependencies: {
+      $0[TelegramBotClient.self].setMyCommands = { token, commands in
+        requests.withValue { $0.append((token, commands)) }
+      }
+    }
+
+    await store.send(.syncTelegramCommandsButtonTapped) {
+      $0.telegramCommandSyncStatus = .syncing
+    }
+    await store.receive(\.telegramCommandSyncCompleted) {
+      $0.telegramCommandSyncStatus = .success("Commands synced.")
+    }
+
+    #expect(requests.value.count == 1)
+    #expect(requests.value.first?.0 == "token")
+    #expect(requests.value.first?.1 == TelegramBotCommandCatalog.commands)
+  }
+
   @Test(.dependencies) func showActiveAgentTabTitlesPersistsChanges() async {
     var initialSettings = GlobalSettings.default
     initialSettings.showActiveAgentTabTitles = false

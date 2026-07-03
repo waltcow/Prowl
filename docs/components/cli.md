@@ -32,7 +32,8 @@ short forms such as `/read 80`, `/focus`, `/send npm test`, and `/key ctrl-c`
 without repeating the target ID. Explicit pane IDs still win when supplied. By
 default, unbound `/send` and `/key` require a pane ID; Settings → Telegram can
 allow those two commands to use the current Prowl focus instead. Close commands
-always require an explicit target. Configure it in Settings → Telegram.
+always require an explicit target. Configure it in Settings → Telegram, where
+Sync Commands registers the supported commands in Telegram's bot command panel.
 
 ## Install
 

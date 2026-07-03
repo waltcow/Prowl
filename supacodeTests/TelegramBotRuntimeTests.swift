@@ -219,6 +219,9 @@ struct TelegramBotRuntimeTests {
       },
       sendMessage: { _, target, text in
         sentMessages.withValue { $0.append("\(target.chatID):\(text)") }
+      },
+      setMyCommands: { _, _ in
+        throw TelegramBotClientError.invalidResponse
       }
     )
     let runtime = TelegramBotRuntime(

@@ -28,6 +28,7 @@ struct SettingsFeature {
     var telegramDefaultReadLines: Int
     var telegramRequireExplicitPaneForWrite: Bool
     var telegramConnectionStatus: TelegramConnectionStatus = .idle
+    var telegramCommandSyncStatus: TelegramCommandSyncStatus = .idle
     var deleteBranchOnDeleteWorktree: Bool
     var mergedWorktreeAction: MergedWorktreeAction?
     var archivedAutoDeletePeriod: AutoDeletePeriod?
@@ -189,6 +190,8 @@ struct SettingsFeature {
     case setTelegramAllowedUserIDsText(String)
     case testTelegramConnectionButtonTapped
     case telegramConnectionTestCompleted(Result<String, TelegramConnectionTestError>)
+    case syncTelegramCommandsButtonTapped
+    case telegramCommandSyncCompleted(Result<String, TelegramCommandSyncError>)
     case setTerminalFontSize(Float32?)
     case clearTerminalLayoutSnapshotButtonTapped
     case installCLIButtonTapped(showAlert: Bool = true)
@@ -223,6 +226,17 @@ struct SettingsFeature {
   }
 
   struct TelegramConnectionTestError: Error, Equatable {
+    let message: String
+  }
+
+  enum TelegramCommandSyncStatus: Equatable {
+    case idle
+    case syncing
+    case success(String)
+    case failure(String)
+  }
+
+  struct TelegramCommandSyncError: Error, Equatable {
     let message: String
   }
 
@@ -370,6 +384,33 @@ struct SettingsFeature {
 
       case .telegramConnectionTestCompleted(.failure(let error)):
         state.telegramConnectionStatus = .failure(error.message)
+        return .none
+
+      case .syncTelegramCommandsButtonTapped:
+        guard let token = state.globalSettings.telegramBotToken else {
+          state.telegramCommandSyncStatus = .failure("Bot token is required.")
+          return .none
+        }
+        state.telegramCommandSyncStatus = .syncing
+        return .run { [telegramBotClient] send in
+          do {
+            try await telegramBotClient.setMyCommands(token, TelegramBotCommandCatalog.commands)
+            await send(.telegramCommandSyncCompleted(.success("Commands synced.")))
+          } catch {
+            await send(
+              .telegramCommandSyncCompleted(
+                .failure(TelegramCommandSyncError(message: telegramConnectionErrorMessage(error)))
+              )
+            )
+          }
+        }
+
+      case .telegramCommandSyncCompleted(.success(let message)):
+        state.telegramCommandSyncStatus = .success(message)
+        return .none
+
+      case .telegramCommandSyncCompleted(.failure(let error)):
+        state.telegramCommandSyncStatus = .failure(error.message)
         return .none
 
       case .setTerminalFontSize(let fontSize):
