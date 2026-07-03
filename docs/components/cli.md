@@ -29,11 +29,23 @@ they resolve to the same app-side operations and target model documented here.
 In Telegram groups with topics enabled, Prowl replies in the source topic and can
 bind each topic to a different pane or worktree. After binding, that topic can use
 short forms such as `/read 80`, `/focus`, `/send npm test`, and `/key ctrl-c`
-without repeating the target ID. Explicit pane IDs still win when supplied. By
-default, unbound `/send` and `/key` require a pane ID; Settings → Telegram can
-allow those two commands to use the current Prowl focus instead. Close commands
-always require an explicit target. Configure it in Settings → Telegram, where
-Sync Commands registers the supported commands in Telegram's bot command panel.
+without repeating the target ID. Plain text messages in a bound topic are sent
+directly to the bound target, so a topic bound to an agent pane can be used like a
+chat; successful direct sends are acknowledged with a `👀` reaction, falling back
+to a `👀` message only if Telegram rejects the reaction. For detected agent panes,
+Prowl watches the pane after the direct send; once the agent has gone busy and
+returns to done/idle, Prowl replies to the original Telegram message with newly
+captured terminal output. Explicit `/send` commands still return their normal
+formatted response. When a topic is bound, Prowl also tries to rename the
+Telegram topic to a readable agent or pane label such as
+`Prowl - codex - feature/foo`; this requires Telegram topic-management permission
+and is best-effort, so the binding still works if Telegram rejects the rename.
+Explicit pane IDs still win when supplied. By default, unbound `/send` and `/key`
+require a pane ID;
+Settings → Telegram can allow those two commands to use the current Prowl focus
+instead. Close commands always require an explicit target. Configure it in
+Settings → Telegram, where Sync Commands registers the supported commands in
+Telegram's bot command panel.
 
 ## Install
 

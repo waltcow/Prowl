@@ -19,6 +19,19 @@ private final class SupacodeAppStoreBox {
   weak var store: StoreOf<AppFeature>?
 }
 
+@MainActor
+private final class TelegramRuntimeEventBridge {
+  weak var runtime: TelegramBotRuntime?
+
+  func agentEntryChanged(_ entry: ActiveAgentEntry) async {
+    await runtime?.agentEntryChanged(entry)
+  }
+
+  func agentEntryRemoved(_ id: UUID) async {
+    runtime?.agentEntryRemoved(id)
+  }
+}
+
 private enum GhosttyCLI {
   static func argv(resolvedKeybindings: ResolvedKeybindingMap) -> [UnsafeMutablePointer<CChar>?] {
     var args: [UnsafeMutablePointer<CChar>?] = []
@@ -209,6 +222,7 @@ struct SupacodeApp: App {
     _pullRequestRefreshCoordinator = State(initialValue: coordinator)
     let keyObserver = CommandKeyObserver()
     _commandKeyObserver = State(initialValue: keyObserver)
+    let telegramRuntimeEventBridge = TelegramRuntimeEventBridge()
     var initialAppState = AppFeature.State(settings: SettingsFeature.State(settings: initialSettings))
     if let cliOpenPath = Self.cliLaunchOpenPath() {
       initialAppState.launchRestoreMode = .cliOpenPath(cliOpenPath)
@@ -234,6 +248,14 @@ struct SupacodeApp: App {
       values.pullRequestRefreshCoordinator = Self.makePullRequestRefreshCoordinatorClient(
         coordinator: coordinator
       )
+      values.telegramBotRuntimeClient = TelegramBotRuntimeClient(
+        agentEntryChanged: { entry in
+          await telegramRuntimeEventBridge.agentEntryChanged(entry)
+        },
+        agentEntryRemoved: { id in
+          await telegramRuntimeEventBridge.agentEntryRemoved(id)
+        }
+      )
     }
     _store = State(initialValue: appStore)
     storeBox.store = appStore
@@ -245,8 +267,12 @@ struct SupacodeApp: App {
       client: .liveValue,
       route: { envelope in
         await cliRouter.route(envelope)
+      },
+      capturePane: { worktreeID, paneID in
+        Self.captureTelegramPane(terminalManager: terminalManager, worktreeID: worktreeID, paneID: paneID)
       }
     )
+    telegramRuntimeEventBridge.runtime = telegramRuntime
     telegramRuntime.apply(configuration: initialAppState.settings.telegramBotConfiguration)
     _telegramBotRuntime = State(initialValue: telegramRuntime)
 
@@ -360,6 +386,23 @@ struct SupacodeApp: App {
       markNotificationsReadForSurface: { worktreeID, surfaceID in
         terminalManager.markNotificationsRead(worktreeID: worktreeID, surfaceID: surfaceID)
       }
+    )
+  }
+
+  private static func captureTelegramPane(
+    terminalManager: WorktreeTerminalManager,
+    worktreeID: Worktree.ID,
+    paneID: UUID
+  ) -> TelegramPaneCapture? {
+    guard let state = terminalManager.stateIfExists(for: worktreeID),
+      let surface = state.surfaceView(for: paneID),
+      let viewportText = surface.readViewportContentsForCLI()
+    else {
+      return nil
+    }
+    return TelegramPaneCapture(
+      viewportText: viewportText,
+      screenText: surface.readScreenContentsForCLI()
     )
   }
 

@@ -113,6 +113,26 @@ struct TelegramBotCommandParserTests {
     #expect(input.text == "echo hello")
   }
 
+  @Test func plainTextUsesBoundSelectorAsSendInput() {
+    let parser = TelegramBotCommandParser(defaultReadLines: 80, requireExplicitPaneForWrite: true)
+
+    let result = parser.parse(text: "echo hello", boundSelector: .pane("pane-123"))
+
+    guard case .command(let request) = result,
+      case .send(let input) = request.envelope.command
+    else {
+      Issue.record("Expected send envelope, got \(result)")
+      return
+    }
+    #expect(request.commandName == "send")
+    #expect(request.acknowledgement == "👀")
+    #expect(input.selector == .pane("pane-123"))
+    #expect(input.text == "echo hello")
+    #expect(input.trailingEnter == true)
+    #expect(input.wait == false)
+    #expect(input.captureOutput == false)
+  }
+
   @Test func parsesThreadBindingCommands() {
     let parser = TelegramBotCommandParser(defaultReadLines: 80, requireExplicitPaneForWrite: true)
 

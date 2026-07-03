@@ -3,6 +3,13 @@ import Foundation
 struct TelegramBotCommandRequest: Sendable {
   let commandName: String
   let envelope: CommandEnvelope
+  let acknowledgement: String?
+
+  init(commandName: String, envelope: CommandEnvelope, acknowledgement: String? = nil) {
+    self.commandName = commandName
+    self.envelope = envelope
+    self.acknowledgement = acknowledgement
+  }
 }
 
 enum TelegramBotParseResult: Sendable, CustomStringConvertible {
@@ -54,7 +61,10 @@ struct TelegramBotCommandParser: Sendable {
   func parse(text: String, boundSelector: TargetSelector? = nil) -> TelegramBotParseResult {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return .message(Self.helpText) }
-    guard trimmed.hasPrefix("/") else { return .message(Self.helpText) }
+    guard trimmed.hasPrefix("/") else {
+      guard let boundSelector else { return .message(Self.helpText) }
+      return makeSendCommand(selector: boundSelector, text: trimmed, acknowledgement: Self.plainTextAcknowledgement)
+    }
 
     let (rawCommand, rest) = splitFirst(trimmed)
     let command =
@@ -176,17 +186,7 @@ struct TelegramBotCommandParser: Sendable {
 
     return makeCommand(
       "send",
-      .send(
-        SendInput(
-          selector: selector,
-          text: text,
-          trailingEnter: true,
-          source: .argv,
-          wait: false,
-          timeoutSeconds: nil,
-          captureOutput: false
-        )
-      )
+      makeSendInput(selector: selector, text: text)
     )
   }
 
@@ -269,9 +269,39 @@ struct TelegramBotCommandParser: Sendable {
     return .binding(.bindWorktree(worktree))
   }
 
-  private func makeCommand(_ commandName: String, _ command: Command) -> TelegramBotParseResult {
+  private func makeSendCommand(
+    selector: TargetSelector,
+    text: String,
+    acknowledgement: String? = nil
+  ) -> TelegramBotParseResult {
+    makeCommand("send", makeSendInput(selector: selector, text: text), acknowledgement: acknowledgement)
+  }
+
+  private func makeSendInput(selector: TargetSelector, text: String) -> Command {
+    .send(
+      SendInput(
+        selector: selector,
+        text: text,
+        trailingEnter: true,
+        source: .argv,
+        wait: false,
+        timeoutSeconds: nil,
+        captureOutput: false
+      )
+    )
+  }
+
+  private func makeCommand(
+    _ commandName: String,
+    _ command: Command,
+    acknowledgement: String? = nil
+  ) -> TelegramBotParseResult {
     .command(
-      TelegramBotCommandRequest(commandName: commandName, envelope: CommandEnvelope(output: .json, command: command)))
+      TelegramBotCommandRequest(
+        commandName: commandName,
+        envelope: CommandEnvelope(output: .json, command: command),
+        acknowledgement: acknowledgement
+      ))
   }
 
   private func splitFirst(_ text: String) -> (String, String) {
@@ -292,7 +322,10 @@ struct TelegramBotCommandParser: Sendable {
     Commands: /agents, /list, /read <pane-id> [lines], /focus <pane-id>, /send <pane-id> <text>, \
     /key <pane-id> <token>, /tab_create <worktree>, /pane_close <pane-id>, /tab_close <tab-id>, \
     /bind_pane <pane-id>, /bind_worktree <worktree>, /where, /unbind.
+    In a bound Telegram thread, plain text is sent directly to the bound pane.
     """
+
+  private static let plainTextAcknowledgement = "👀"
 }
 
 enum TelegramAllowedUserIDsParser {

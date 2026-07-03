@@ -101,6 +101,12 @@ struct TelegramBotClient: Sendable, DependencyKey {
   var getMe: @Sendable (_ token: String) async throws -> TelegramBotUser
   var getUpdates: @Sendable (_ token: String, _ offset: Int?, _ timeout: Int) async throws -> [TelegramBotUpdate]
   var sendMessage: @Sendable (_ token: String, _ target: TelegramBotTarget, _ text: String) async throws -> Void
+  var sendReplyMessage:
+    @Sendable (_ token: String, _ target: TelegramBotTarget, _ text: String, _ replyToMessageID: Int) async throws
+      -> Void
+  var editForumTopic: @Sendable (_ token: String, _ target: TelegramBotTarget, _ name: String) async throws -> Void
+  var setMessageReaction:
+    @Sendable (_ token: String, _ target: TelegramBotTarget, _ messageID: Int, _ emoji: String) async throws -> Void
   var setMyCommands: @Sendable (_ token: String, _ commands: [TelegramBotCommand]) async throws -> Void
 
   static let liveValue = TelegramBotClient(
@@ -126,17 +132,42 @@ struct TelegramBotClient: Sendable, DependencyKey {
       )
     },
     sendMessage: { token, target, text in
-      var queryItems = [
-        URLQueryItem(name: "chat_id", value: String(target.chatID)),
-        URLQueryItem(name: "text", value: text),
-      ]
-      if let threadID = target.threadID {
-        queryItems.append(URLQueryItem(name: "message_thread_id", value: String(threadID)))
-      }
-      let _: TelegramBotMessage = try await TelegramBotHTTPClient.request(
+      try await TelegramBotClient.postMessage(token: token, target: target, text: text, replyToMessageID: nil)
+    },
+    sendReplyMessage: { token, target, text, replyToMessageID in
+      try await TelegramBotClient.postMessage(
         token: token,
-        method: "sendMessage",
-        queryItems: queryItems,
+        target: target,
+        text: text,
+        replyToMessageID: replyToMessageID
+      )
+    },
+    editForumTopic: { token, target, name in
+      guard let threadID = target.threadID else { return }
+      let _: Bool = try await TelegramBotHTTPClient.request(
+        token: token,
+        method: "editForumTopic",
+        queryItems: [
+          URLQueryItem(name: "chat_id", value: String(target.chatID)),
+          URLQueryItem(name: "message_thread_id", value: String(threadID)),
+          URLQueryItem(name: "name", value: name),
+        ],
+        httpMethod: "POST"
+      )
+    },
+    setMessageReaction: { token, target, messageID, emoji in
+      let data = try JSONEncoder().encode([TelegramReactionTypeEmoji(emoji: emoji)])
+      guard let reaction = String(data: data, encoding: .utf8) else {
+        throw TelegramBotClientError.invalidResponse
+      }
+      let _: Bool = try await TelegramBotHTTPClient.request(
+        token: token,
+        method: "setMessageReaction",
+        queryItems: [
+          URLQueryItem(name: "chat_id", value: String(target.chatID)),
+          URLQueryItem(name: "message_id", value: String(messageID)),
+          URLQueryItem(name: "reaction", value: reaction),
+        ],
         httpMethod: "POST"
       )
     },
@@ -164,10 +195,51 @@ struct TelegramBotClient: Sendable, DependencyKey {
     sendMessage: { _, _, _ in
       throw TelegramBotClientError.invalidResponse
     },
+    sendReplyMessage: { _, _, _, _ in
+      throw TelegramBotClientError.invalidResponse
+    },
+    editForumTopic: { _, _, _ in
+      throw TelegramBotClientError.invalidResponse
+    },
+    setMessageReaction: { _, _, _, _ in
+      throw TelegramBotClientError.invalidResponse
+    },
     setMyCommands: { _, _ in
       throw TelegramBotClientError.invalidResponse
     }
   )
+}
+
+extension TelegramBotClient {
+  fileprivate static func postMessage(
+    token: String,
+    target: TelegramBotTarget,
+    text: String,
+    replyToMessageID: Int?
+  ) async throws {
+    var queryItems = [
+      URLQueryItem(name: "chat_id", value: String(target.chatID)),
+      URLQueryItem(name: "text", value: text),
+    ]
+    if let threadID = target.threadID {
+      queryItems.append(URLQueryItem(name: "message_thread_id", value: String(threadID)))
+    }
+    if let replyToMessageID {
+      let data = try JSONEncoder().encode(
+        TelegramReplyParameters(messageID: replyToMessageID, allowSendingWithoutReply: true)
+      )
+      guard let replyParameters = String(data: data, encoding: .utf8) else {
+        throw TelegramBotClientError.invalidResponse
+      }
+      queryItems.append(URLQueryItem(name: "reply_parameters", value: replyParameters))
+    }
+    let _: TelegramBotMessage = try await TelegramBotHTTPClient.request(
+      token: token,
+      method: "sendMessage",
+      queryItems: queryItems,
+      httpMethod: "POST"
+    )
+  }
 }
 
 extension DependencyValues {
@@ -242,4 +314,19 @@ nonisolated private struct TelegramBotAPIResponse<Result: Decodable>: Decodable 
     case description
     case errorCode = "error_code"
   }
+}
+
+nonisolated private struct TelegramReplyParameters: Encodable {
+  let messageID: Int
+  let allowSendingWithoutReply: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case messageID = "message_id"
+    case allowSendingWithoutReply = "allow_sending_without_reply"
+  }
+}
+
+nonisolated private struct TelegramReactionTypeEmoji: Encodable {
+  let type = "emoji"
+  let emoji: String
 }

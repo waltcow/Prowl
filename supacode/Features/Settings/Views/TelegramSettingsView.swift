@@ -23,7 +23,7 @@ struct TelegramSettingsView: View {
 
           LabeledContent("Allowed user IDs") {
             TextField(
-              "Telegram user ID, comma separated",
+              "Telegram user ID",
               text: Binding(
                 get: { store.telegramAllowedUserIDsText },
                 set: { store.send(.setTelegramAllowedUserIDsText($0)) }
@@ -87,6 +87,7 @@ struct TelegramSettingsView: View {
             commandRow("/tab_close <tab-id>", "Close a tab with normal confirmation policy.")
             commandRow("/bind_pane <pane-id>", "Bind this thread to a pane.")
             commandRow("/bind_worktree <worktree>", "Bind this thread to a worktree.")
+            commandRow("Bound thread text", "Send plain text directly to the bound target.")
             commandRow("/where", "Show this thread binding.")
             commandRow("/unbind", "Remove this thread binding.")
             commandRow("/help", "Show available commands.")

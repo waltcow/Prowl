@@ -104,6 +104,7 @@ struct AppFeature {
   @Dependency(WorktreeInfoWatcherClient.self) var worktreeInfoWatcher
   @Dependency(CustomShortcutRegistryClient.self) var customShortcutRegistryClient
   @Dependency(ExternalDiffToolClient.self) var externalDiffToolClient
+  @Dependency(TelegramBotRuntimeClient.self) var telegramBotRuntimeClient
 
   var body: some Reducer<State, Action> {
     let core = Reduce<State, Action> { state, action in
