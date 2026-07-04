@@ -588,7 +588,7 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     var createdMetadataDirectory = false
   }
 
-  // Rollback runs in a detached task so it survives cooperative cancellation of
+  // Git rollback runs in a detached task so it survives cooperative cancellation of
   // the surrounding effect: a cancelled parent task would otherwise SIGTERM the
   // cleanup git subprocesses before they finish.
   private static func rollback(
@@ -597,36 +597,37 @@ nonisolated struct ProjectWorkspace: Codable, Equatable, Hashable, Sendable {
     fileManager: FileManager,
     gitRunner: ProjectWorkspaceGitRunner
   ) async {
-    nonisolated(unsafe) let fileManager = fileManager
-    let task = Task.detached {
-      for command in ledger.cleanupCommands.reversed() {
+    let cleanupCommands = Array(ledger.cleanupCommands.reversed())
+    let task = Task.detached { [cleanupCommands, gitRunner] in
+      for command in cleanupCommands {
         do {
           try await gitRunner.run(command)
         } catch {
           log.warning("Workspace rollback command failed: \(command.displayCommand): \(error)")
         }
       }
-      let removableURLs =
-        ledger.createdURLs.reversed()
-        + (ledger.createdRoot
-          ? [rootURL]
-          : ledger.createdMetadataDirectory
-            ? [rootURL.appending(path: metadataDirectoryName, directoryHint: .isDirectory)]
-            : [])
-      for url in removableURLs {
-        let path = url.path(percentEncoded: false)
-        guard fileManager.fileExists(atPath: path) || (try? url.checkResourceIsReachable()) == true
-        else {
-          continue
-        }
-        do {
-          try fileManager.removeItem(at: url)
-        } catch {
-          log.warning("Workspace rollback could not remove \(path): \(error)")
-        }
-      }
     }
     await task.value
+
+    let removableURLs =
+      ledger.createdURLs.reversed()
+      + (ledger.createdRoot
+        ? [rootURL]
+        : ledger.createdMetadataDirectory
+          ? [rootURL.appending(path: metadataDirectoryName, directoryHint: .isDirectory)]
+          : [])
+    for url in removableURLs {
+      let path = url.path(percentEncoded: false)
+      guard fileManager.fileExists(atPath: path) || (try? url.checkResourceIsReachable()) == true
+      else {
+        continue
+      }
+      do {
+        try fileManager.removeItem(at: url)
+      } catch {
+        log.warning("Workspace rollback could not remove \(path): \(error)")
+      }
+    }
   }
 
   // Best-effort worktree removal for a workspace being deleted. Every failure
