@@ -141,16 +141,26 @@ extension AppFeature {
   ) -> Effect<Action>? {
     switch event {
     case .agentEntryChanged(let entry):
-      return .send(
-        .repositories(
-          .activeAgents(
-            .agentEntryChanged(entry, autoShowPanel: state.settings.autoShowActiveAgentsPanel)
+      return .merge(
+        .send(
+          .repositories(
+            .activeAgents(
+              .agentEntryChanged(entry, autoShowPanel: state.settings.autoShowActiveAgentsPanel)
+            )
           )
-        )
+        ),
+        .run { _ in
+          await telegramBotRuntimeClient.agentEntryChanged(entry)
+        }
       )
 
     case .agentEntryRemoved(let id):
-      return .send(.repositories(.activeAgents(.agentEntryRemoved(id))))
+      return .merge(
+        .send(.repositories(.activeAgents(.agentEntryRemoved(id)))),
+        .run { _ in
+          await telegramBotRuntimeClient.agentEntryRemoved(id)
+        }
+      )
 
     default:
       return nil

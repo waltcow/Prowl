@@ -3,7 +3,7 @@
 > The Settings window (`⌘,`): what each tab controls. For the exhaustive
 > field-by-field list, see [`reference/settings-fields.md`](../reference/settings-fields.md).
 
-**Keywords:** settings, preferences, ⌘comma, general, notifications, shortcuts, worktree, updates, advanced, github, repo settings, appearance
+**Keywords:** settings, preferences, ⌘comma, general, notifications, shortcuts, worktree, updates, advanced, github, telegram, repo settings, appearance
 
 **Related:** [reference/settings-fields](../reference/settings-fields.md) · [custom-actions](custom-actions.md) · [updates](updates.md) · [notifications](notifications.md)
 
@@ -23,15 +23,50 @@ window is a sidebar of tabs plus a detail pane.
 | **Updates** | Update channel (Stable/Tip), auto-check toggle, "Check for Updates Now". → [updates](updates.md) |
 | **Advanced** | Analytics, crash reports, restore terminal layout on launch (experimental) + clear saved layout, and the **Install Command Line Tool** (`prowl` CLI) action. |
 | **GitHub** | Enable GitHub integration (uses the `gh` CLI). → [github-pull-requests](github-pull-requests.md) |
+| **Telegram** | Enable the built-in Telegram bot, store the Bot API token, allowlist Telegram user IDs, test `getMe`, sync the bot command panel, and tune default `/read` output. The bot routes to the same command handlers as the [`prowl` CLI](cli.md). |
 | **Repositories / Repo Settings** | Per-repository: setup/archive/run scripts, **Custom Commands**, default base ref & directory, copy-files overrides, open-with app, custom title, icon & color, PR merge strategy, line-diff & PR-state fetching. Reached from the sidebar context menu → "Repo Settings". → [custom-actions](custom-actions.md), [repositories-and-worktrees](repositories-and-worktrees.md) |
 
 ## Where settings live on disk
 
 - **Global:** `~/.prowl/settings.json`
+- **Telegram topic bindings:** `~/.prowl/telegram-thread-bindings.json`
 - **Per-repo:** `~/.prowl/repo/<repo-name>/prowl.json`
 - **Per-repo custom commands:** `~/.prowl/repo/<repo-name>/prowl.onevcat.json`
 
 Legacy `~/.supacode` is migrated to `~/.prowl` on first launch.
+
+## Telegram bot
+
+Settings → Telegram controls the optional Bot API integration:
+
+- Enable/disable starts or stops the long-polling runtime.
+- Bot token is stored in `~/.prowl/settings.json`; logs never include it.
+- Allowed user IDs are a comma/space/newline-separated allowlist. Messages from
+  any other Telegram user are ignored.
+- Default read lines controls `/read <pane-id>` when the message omits a count.
+- `/send` and `/key` use explicit pane IDs by default; disabling the explicit
+  target toggle lets them use the current Prowl focus. `/pane_close` and
+  `/tab_close` always require explicit IDs.
+- In Telegram groups with topics enabled, Prowl replies in the same topic. Use
+  `/bind_pane <pane-id>` or `/bind_worktree <worktree>` to bind a topic to one
+  Prowl target, `/where` to inspect the binding, and `/unbind` to remove it.
+  After a successful bind, Prowl tries to rename the topic to a readable agent or
+  pane label; Telegram may reject this if the bot cannot manage topics, but the
+  binding is kept either way.
+  Bound topics can use short forms such as `/read 80`, `/focus`, `/send npm test`,
+  and `/key ctrl-c` without repeating the target ID. Plain text in a bound topic
+  is sent directly to the bound target and acknowledged with a `👀` reaction when
+  delivery succeeds. If Telegram rejects the reaction, Prowl falls back to a `👀`
+  message. For detected agent panes, Prowl replies to the original Telegram
+  message after the agent has gone busy and returned to done/idle, using the newly
+  captured terminal output.
+
+The Test Connection button calls Telegram `getMe` with the configured token and
+shows the bot identity or a short error.
+
+The Sync Commands button calls Telegram `setMyCommands` with Prowl's supported
+bot commands so Telegram's command panel shows the current `/agents`, `/list`,
+`/read`, `/send`, `/key`, tab/pane, binding, and help commands.
 
 ## Install the CLI from here
 
